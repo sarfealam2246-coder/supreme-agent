@@ -8,7 +8,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 
-# 1. 100% व्हाइट-लेबलिंग व प्रीमियम Hero 11 डार्क लुक
+# 1. 100% व्हाइट-लेबलिंग व प्रीमियम Dream11/Hero 11 डार्क लुक
 st.set_page_config(
     page_title="Fantasy Commander AI", 
     page_icon="🏏", 
@@ -18,7 +18,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* बाहरी लोगो और मेनू छिपाएं */
+    /* बाहरी लोगो पूरी तरह छिपाएं */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -27,52 +27,41 @@ st.markdown("""
     div[data-testid="stDecoration"] {visibility: hidden; height: 0%;}
     div[data-testid="stStatusWidget"] {visibility: hidden; height: 0%;}
     
-    /* प्रीमियम फैंटेसी डार्क गोल्ड लुक */
-    .stApp { background-color: #080b10; color: #ffffff; }
+    .stApp { background-color: #07090e; color: #ffffff; }
     .stButton>button { 
         width: 100%; 
         border-radius: 12px; 
         font-weight: bold; 
-        height: 3.4em; 
-        background: linear-gradient(90deg, #d4af37, #238636); 
-        color: #ffffff; 
+        height: 3.5em; 
+        background: linear-gradient(90deg, #d4af37, #22c55e); 
+        color: #000000; 
         border: none; 
-        font-size: 16px;
-        box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+        font-size: 17px;
+        box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
     }
     .stDownloadButton>button { 
         width: 100%; 
         border-radius: 12px; 
-        background-color: #0066cc; 
+        background-color: #2563eb; 
         color: white; 
         font-weight: bold; 
         height: 3.2em; 
-    }
-    .match-card {
-        background: linear-gradient(135deg, #131822, #1c2433);
-        border: 1px solid #d4af37;
-        border-radius: 14px;
-        padding: 16px;
-        margin-bottom: 14px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.5);
     }
     div[data-baseweb="tab-list"] { gap: 8px; }
     div[data-baseweb="tab"] { 
         border-radius: 8px; 
         padding: 10px 16px; 
         font-weight: bold; 
-        background-color: #131822;
+        background-color: #111622;
         color: #d4af37;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 2. तीनों सुरक्षित चाभियां (बिना GitHub एरर के)
 GROQ_KEY = "".join(["gsk_", "CTrNmnTqhJOnplwoJ71uWGdyb3FYUgpmKi1CAKticmfrRgkVfblF"])
 GEMINI_KEY = "".join(["AQ.Ab8RN6Kx2uNI-", "EuYt71tUNODmEIC1ySUBZqXhhrChxdVkNPVIw"])
 GITHUB_TOKEN = "".join(["ghp_", "9phfcE66Vy6tHQ4zAJqzJRuN10na2i27n7Zz"])
 
-# 3. 7-दिन का इतिहास डेटाबेस इंजन
 HISTORY_FILE = "fantasy_7day_history.json"
 
 def get_history_records():
@@ -82,18 +71,16 @@ def get_history_records():
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             records = json.load(f)
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        valid_records = [r for r in records if r.get("date", "") >= cutoff]
-        return valid_records
+        return [r for r in records if r.get("date", "") >= cutoff]
     except Exception:
         return []
 
-def save_match_to_history(match_title, analysis_text, img_url):
+def save_match_to_history(match_title, analysis_text):
     records = get_history_records()
     records.insert(0, {
         "title": match_title,
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "analysis": analysis_text,
-        "image_url": img_url
+        "analysis": analysis_text
     })
     try:
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
@@ -101,7 +88,6 @@ def save_match_to_history(match_title, analysis_text, img_url):
     except Exception:
         pass
 
-# 4. हेल्पर्स व टूल्स
 def search_live_cricket(query):
     try:
         with DDGS() as ddgs:
@@ -110,41 +96,110 @@ def search_live_cricket(query):
     except Exception:
         return ""
 
-def generate_pitch_visual(match_name, captain_name="Leader", vc_name="Star"):
-    prompt = f"3D photorealistic broadcast view of green cricket stadium pitch with 11 player jerseys, captain badge C {captain_name}, vice captain badge VC {vc_name}, fantasy XI tactical lineup board, cinematic lighting, 8k render, hyper detailed"
-    clean_p = urllib.parse.quote(prompt.strip())
-    return f"https://image.pollinations.ai/prompt/{clean_p}?width=1080&height=1080&nologo=true"
+# Dream11 जैसी असली हरी पिच पर 11 खिलाड़ियों का विजुअल बोर्ड
+def render_dream11_pitch_board(match_name, captain_name="Captain", vc_name="Vice Captain"):
+    return f"""
+    <div style="background: linear-gradient(180deg, #15803d 0%, #166534 50%, #14532d 100%); border-radius:16px; padding:20px 10px; border:2px solid #d4af37; box-shadow:0 8px 30px rgba(0,0,0,0.8); margin:15px 0; font-family:sans-serif;">
+        <div style="text-align:center; color:#fef08a; font-size:14px; font-weight:900; letter-spacing:1px; margin-bottom:12px; text-transform:uppercase;">
+            🏏 {match_name} — 3D फैंटेसी प्लेइंग 11 पिच
+        </div>
+        
+        <!-- WICKET KEEPER -->
+        <div style="text-align:center; color:#bbf7d0; font-size:11px; font-weight:bold; margin-bottom:4px;">🧤 WICKET-KEEPERS</div>
+        <div style="display:flex; justify-content:center; gap:16px; margin-bottom:14px;">
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #22c55e; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">🧤</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:11px; font-weight:bold; padding:2px 6px; border-radius:4px; margin-top:3px;">टॉप कीपर</div>
+            </div>
+        </div>
+
+        <!-- BATTERS -->
+        <div style="text-align:center; color:#bbf7d0; font-size:11px; font-weight:bold; margin-bottom:4px;">🏏 BATTERS</div>
+        <div style="display:flex; justify-content:center; gap:12px; margin-bottom:14px;">
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #3b82f6; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">👕</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">ओपनर 1</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #3b82f6; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">👕</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">ओपनर 2</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #3b82f6; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">👕</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">मिडिल ऑर्डर</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #3b82f6; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">👕</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">पावर हिटर</div>
+            </div>
+        </div>
+
+        <!-- ALL ROUNDERS (WITH C AND VC) -->
+        <div style="text-align:center; color:#fde047; font-size:11px; font-weight:bold; margin-bottom:4px;">⭐ ALL-ROUNDERS (C व VC)</div>
+        <div style="display:flex; justify-content:center; gap:16px; margin-bottom:14px;">
+            <div style="position:relative; text-align:center;">
+                <div style="width:50px; height:50px; background:#1e293b; border:3px solid #d4af37; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 0 15px rgba(212,175,55,0.8);">👑</div>
+                <span style="background:#d4af37; color:#000; font-size:11px; font-weight:900; padding:2px 6px; border-radius:50%; position:absolute; top:-8px; right:-6px; border:1px solid #fff;">C</span>
+                <div style="background:#d4af37; color:#000; font-size:11px; font-weight:900; padding:2px 6px; border-radius:4px; margin-top:3px;">कैप्टन (2x)</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:50px; height:50px; background:#1e293b; border:3px solid #e2e8f0; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 0 15px rgba(226,232,240,0.6);">⭐</div>
+                <span style="background:#e2e8f0; color:#000; font-size:11px; font-weight:900; padding:2px 5px; border-radius:50%; position:absolute; top:-8px; right:-6px; border:1px solid #000;">VC</span>
+                <div style="background:#e2e8f0; color:#000; font-size:11px; font-weight:900; padding:2px 6px; border-radius:4px; margin-top:3px;">वाइस-कैप्टन (1.5x)</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #eab308; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">⚡</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">ऑल-राउंडर 3</div>
+            </div>
+        </div>
+
+        <!-- BOWLERS -->
+        <div style="text-align:center; color:#bbf7d0; font-size:11px; font-weight:bold; margin-bottom:4px;">🎯 BOWLERS (डेथ ओवर स्पेशलिस्ट)</div>
+        <div style="display:flex; justify-content:center; gap:14px;">
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #ef4444; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">🔴</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">तेज बॉलर 1</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #ef4444; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">🔴</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">तेज बॉलर 2</div>
+            </div>
+            <div style="position:relative; text-align:center;">
+                <div style="width:48px; height:48px; background:#1e293b; border:2px solid #a855f7; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:22px;">🌀</div>
+                <div style="background:rgba(0,0,0,0.85); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:4px; margin-top:3px;">स्पिन बॉलर</div>
+            </div>
+        </div>
+    </div>
+    """
 
 def speak_button_html(text):
     clean_js = re.sub(r'\[IMAGE:.*?\]', '', text)
     clean_js = re.sub(r'```.*?```', '', clean_js, flags=re.DOTALL)
     clean_js = clean_js.replace("'", "").replace('"', '').replace('\n', ' ')[:350].strip()
     return f"""
-    <div style="margin: 10px 0;">
+    <div style="margin: 12px 0;">
         <button onclick="window.speechSynthesis.cancel(); let u = new SpeechSynthesisUtterance('{clean_js}'); u.lang='hi-IN'; window.speechSynthesis.speak(u);" 
-            style="background: linear-gradient(90deg, #28a745, #1e7e34); color: white; border: none; padding: 14px 20px; font-size: 16px; font-weight: bold; border-radius: 10px; width: 100%; cursor: pointer; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);">
-            🔊 देसी आवाज में मैच व टीम का हाल सुनें (टैप करें)
+            style="background: linear-gradient(90deg, #22c55e, #16a34a); color: white; border: none; padding: 14px 20px; font-size: 16px; font-weight: bold; border-radius: 10px; width: 100%; cursor: pointer; box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);">
+            🔊 देसी आवाज में मैच व टीम का हाल सुनें (यहाँ टैप करें)
         </button>
     </div>
     """
 
-# 5. 14-वर्कर सुपर ऑटोनॉमस फैंटेसी दिमाग
 def run_fantasy_swarm(query):
     live_data = search_live_cricket(query)
-    
     system_instruction = f"""
 तुम 14-वर्करों की अनुशासित टीम के सुप्रीम हेड और दुनिया के सबसे बड़े फैंटेसी क्रिकेट प्रेडिक्टर हो।
-यूजर पढ़ा-लिखा नहीं है, इसलिए तुम्हारा जवाब सरल, देसी, आत्मविश्वास से भरा और 100% सटीक होना चाहिए।
+यूजर पढ़ा-लिखा नहीं है, इसलिए तुम्हारा जवाब सीधा, आत्मीय और 100% सटीक होना चाहिए।
 
 सख्त नियम (Strict Rules):
 1. कभी भी पुराने या रिटायर्ड खिलाड़ियों का नाम मत लो! केवल आज की तारीख (2026 सीजन) की आधिकारिक प्लेइंग 11 और एक्टिव 15-सदस्यीय स्क्वॉड से ही खिलाड़ी चुनो।
 2. जवाब में ये 5 हिस्से साफ-साफ दो:
-   - 🏟️ **पिच, मौसम व ओस (Dew) का असर** (गेंदबाजी हावी होगी या चेज करने वाले बल्लेबाज)।
-   - 🎙️ **टॉस व कप्तान की रणनीति** (टॉस जीतने वाली टीम का फैसला व कमजोरी)।
-   - ⚔️ **बल्लेबाज vs गेंदबाज हेड-टू-हेड मैच-अप** (कौन सा बॉलर किस बैट्समैन का शिकार करेगा)।
-   - 🟢 **टीम 1: सेफ स्मॉल लीग (SL)** (100% पैसा वापसी वाली सेफ टीम, Best C & VC)।
-   - 🔴 **टीम 2: मेगा ग्रैंड लीग (GL जैकपॉट)** (1 करोड़ जीतने के लिए 2-3 ट्रंप खिलाड़ियों वाली टीम, रिस्की C & VC)।
-3. कभी भी कोई कोडिंग, HTML या लंबे बोरिंग निबंध मत लिखो। सीधे काम की बुलेट लाइन्स दो।
+   - 🏟️ **पिच, मौसम व ओस (Dew) का असर**
+   - 🎙️ **टॉस व कप्तान की रणनीति**
+   - ⚔️ **बल्लेबाज vs गेंदबाज हेड-टू-हेड मैच-अप**
+   - 🟢 **टीम 1: सेफ स्मॉल लीग (SL - 100% पैसा वापसी)** (Best C & VC)
+   - 🔴 **टीम 2: ग्रैंड लीग (GL 1 करोड़ जैकपॉट)** (2-3 ट्रंप खिलाड़ी, Risky C & VC)
+3. कभी भी कोई कोडिंग, HTML या लंबे निबंध मत लिखो। सीधे काम की बुलेट लाइन्स दो।
 
 लाइव इंटरनेट संदर्भ डेटा:
 {live_data}
@@ -157,7 +212,7 @@ def run_fantasy_swarm(query):
                 model=m,
                 messages=[
                     {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": f"{query} के लिए 2026 की फैंटेसी प्रेडिक्शन और विनिंग टीमें तैयार करो।"}
+                    {"role": "user", "content": f"{query} के लिए 2026 की फैंटेसी प्रेडिक्शन और दोनों विनिंग टीमें तैयार करो।"}
                 ]
             )
             ans = res.choices[0].message.content
@@ -167,7 +222,7 @@ def run_fantasy_swarm(query):
             continue
     return "मालिक, लाइव स्कोर सर्वर अपडेट हो रहा है। कृपया 5 सेकंड बाद पुनः टैप करें।"
 
-# ऐप का मुख्य हेडर
+# हेडर
 st.markdown("""
 <div style="text-align: center; padding: 10px 0 15px 0;">
     <h1 style="color: #d4af37; margin: 0; font-size: 28px;">👑 FANTASY COMMANDER AI</h1>
@@ -175,83 +230,73 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# मुख्य नेविगेशन टैब्स
 tab1, tab2, tab3 = st.tabs(["🏏 आज का मैच प्रेडिक्टर", "⚡ Hero 11 Yes/No मीटर", "📜 7-दिन का मैच इतिहास"])
 
-# TAB 1: आज का मैच प्रेडिक्टर
 with tab1:
     st.markdown("### 🏆 लाइव मैच चुनें व विनिंग टीम पाएं")
+    
+    # आसान 1-टैप क्विक मैच बटन्स
+    st.caption("⚡ तुरंत मैच चुनने के लिए टैप करें:")
+    col_q1, col_q2 = st.columns(2)
+    quick_m = ""
+    if col_q1.button("🏏 PS-W vs MS-W"):
+        quick_m = "PS-W vs MS-W"
+    if col_q2.button("🏏 आज का T20 / IPL मैच"):
+        quick_m = "Today Live T20 Match"
+        
     match_input = st.text_input(
-        "मैच का नाम लिखें या बोलें:", 
-        placeholder="जैसे: PS-W vs MS-W या आज का T20 / IPL / ODI मैच",
+        "या खुद मैच का नाम लिखें:", 
+        value=quick_m if quick_m else "",
+        placeholder="यहाँ लिखें: जैसे PS-W vs MS-W",
         key="match_input_box"
     )
     
-    col_b1, col_b2 = st.columns([2, 1])
-    format_type = col_b1.selectbox("फॉर्मेट चुनें:", ["T20 (IPL, WBBL, BBL)", "ODI (इंटरनेशनल वनडे)", "T10 लीग्स", "टेस्ट मैच"])
-    auto_voice = col_b2.checkbox("🔊 ऑटो-वॉयस ऑन", value=True)
-    
     if st.button("🔥 14-वर्कर टीम से विनिंग प्रेडिक्शन निकालें"):
-        if match_input:
-            with st.spinner("14 वर्कर लाइव स्क्वॉड, पिच, मौसम और मैच-अप्स स्कैन कर रहे हैं..."):
-                analysis_result = run_fantasy_swarm(f"{match_input} ({format_type})")
-                pitch_card_url = generate_pitch_visual(match_input)
-                
-                # 7-दिन के इतिहास में सेव करें
-                save_match_to_history(f"{match_input} ({format_type})", analysis_result, pitch_card_url)
-                
-                # 1. हरी घास वाली 3D पिच पर सजी 11 खिलाड़ियों की विजुअल फोटो
-                st.markdown("### 🏟️ हरी पिच पर सजी फाइनल फैंटेसी 11:")
-                st.image(pitch_card_url, caption=f"{match_input} 3D फैंटेसी विजुअल कार्ड", use_container_width=True)
-                st.markdown(f"[📥 3D फैंटेसी कार्ड फोटो डाउनलोड करें]({pitch_card_url})")
-                
-                # 2. आवाज में सुनाने वाला बटन
-                spk_btn = speak_button_html(analysis_result)
-                components.html(spk_btn, height=65)
-                
-                # 3. पूरी विश्लेषण रिपोर्ट व टीमें
-                st.markdown("### 📋 14-वर्कर विशेषज्ञ रिपोर्ट व टीमें:")
-                st.markdown(analysis_result)
-                
-                # 4. 1-क्लिक डाउनलोड बटन
-                st.download_button(
-                    label="📥 आज की पूरी फैंटेसी रिपोर्ट डाउनलोड करें (.txt)",
-                    data=analysis_result,
-                    file_name=f"{match_input}_fantasy_prediction.txt"
-                )
-        else:
-            st.warning("कृपया मैच का नाम लिखें या माइक से बोलें।")
+        target = match_input if match_input else "Today Top Live Cricket Match"
+        with st.spinner("14 वर्कर लाइव स्क्वॉड, पिच, मौसम और मैच-अप्स स्कैन कर रहे हैं..."):
+            analysis_result = run_fantasy_swarm(target)
+            save_match_to_history(target, analysis_result)
+            
+            # 1. 100% INSTANT 3D GREEN PITCH FORMATION (Dream11 स्टाइल में सजी हुई पिच)
+            pitch_html = render_dream11_pitch_board(target)
+            components.html(pitch_html, height=480, scrolling=False)
+            
+            # 2. आवाज में सुनाने वाला बड़ा हरा बटन
+            spk_btn = speak_button_html(analysis_result)
+            components.html(spk_btn, height=65)
+            
+            # 3. पूरी 14-वर्कर रिपोर्ट
+            st.markdown("### 📋 14-वर्कर विशेषज्ञ रिपोर्ट व टीमें:")
+            st.markdown(analysis_result)
+            
+            # 4. 1-क्लिक डाउनलोड बटन
+            st.download_button(
+                label="📥 आज की पूरी फैंटेसी रिपोर्ट डाउनलोड करें (.txt)",
+                data=analysis_result,
+                file_name=f"{target}_fantasy_team.txt"
+            )
 
-# TAB 2: Hero 11 Yes/No प्रेडिक्शन मीटर
 with tab2:
     st.markdown("### ⚡ Hero 11 लाइव प्रेडिक्शन मीटर")
     st.caption("टॉस के बाद 1-क्लिक में जानें कि किस सवाल पर [YES] दबाना है और किस पर [NO]")
-    
-    pred_match = st.text_input("मैच का नाम:", placeholder="जैसे: PS-W vs MS-W", key="pred_m_input")
-    pred_question = st.text_input("प्रेडिक्शन सवाल:", value="क्या आज कोई बल्लेबाज 50 रन बनाएगा? (Any player score half-century?)")
+    pred_m = st.text_input("मैच का नाम:", value="PS-W vs MS-W", key="pred_m_input")
+    pred_q = st.text_input("प्रेडिक्शन सवाल:", value="क्या आज कोई बल्लेबाज 50 रन बनाएगा? (Any player score half-century?)")
     
     if st.button("🎯 प्रेडिक्शन का सटीक जवाब जानें"):
-        if pred_match:
-            with st.spinner("पिच और बल्लेबाजों का फॉर्म चेक हो रहा है..."):
-                pred_ans = run_fantasy_swarm(f"{pred_match} में सवाल है: {pred_question}। 3 बुलेट पॉइंट्स में सिर्फ यह बताओ कि YES लगाना चाहिए या NO, और कितने प्रतिशत संभावना है।")
-                st.markdown("### 🎯 प्रेडिक्शन नतीजा:")
-                st.markdown(pred_ans)
-                p_spk = speak_button_html(pred_ans)
-                components.html(p_spk, height=65)
-        else:
-            st.warning("कृपया मैच का नाम डालें।")
+        with st.spinner("पिच और बल्लेबाजों का फॉर्म चेक हो रहा है..."):
+            pred_ans = run_fantasy_swarm(f"{pred_m} में सवाल है: {pred_q}। 3 बुलेट पॉइंट्स में सिर्फ यह बताओ कि YES लगाना चाहिए या NO, और कितने प्रतिशत संभावना है।")
+            st.markdown("### 🎯 प्रेडिक्शन नतीजा:")
+            st.markdown(pred_ans)
+            p_spk = speak_button_html(pred_ans)
+            components.html(p_spk, height=65)
 
-# TAB 3: पिछले 7 दिनों का मैच इतिहास (ऑटो-डिलीट सहित)
 with tab3:
     st.markdown("### 📜 पिछले 7 दिनों का मैच इतिहास")
     st.caption("पिछले 7 दिनों में बनाई गई सभी टीमें यहाँ सुरक्षित हैं। 7 दिन बाद पुराना रिकॉर्ड अपने आप साफ हो जाता है।")
-    
     history_records = get_history_records()
     if history_records:
         for rec in history_records:
             with st.expander(f"🏏 {rec.get('title', 'मैच')} — {rec.get('date', '')}"):
-                if rec.get("image_url"):
-                    st.image(rec["image_url"], caption="3D पिच कार्ड", use_container_width=True)
                 st.markdown(rec.get("analysis", ""))
                 h_spk = speak_button_html(rec.get("analysis", ""))
                 components.html(h_spk, height=65)
