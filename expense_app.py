@@ -1,6 +1,3 @@
-Here is the complete, bug-free, single-file production code for the Daily Expense & Budget Tracker app using Python Streamlit:
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
