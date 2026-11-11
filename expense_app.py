@@ -291,7 +291,7 @@ textarea:focus, input[type="text"]:focus {
 # SESSION STATE INITIALIZATION (Zero Login Friction)
 # ------------------------------------------------------------------------------
 if "logged_in" not in st.session_state:
-    st.session_state.logged_in = True  # Direct instant access
+    st.session_state.logged_in = True
 if "build_in_progress" not in st.session_state:
     st.session_state.build_in_progress = False
 if "current_build" not in st.session_state:
@@ -365,29 +365,31 @@ with tab_create:
             </div>
             """, unsafe_allow_html=True)
             
-            # Generated App Code with Integrated PhonePe & In-App OTP
-            app_css = "<style>.stApp { background: #030712; color: #ffffff; }</style>"
-            generated_app = (
-                "import streamlit as st\\n"
-                "import json\\n\\n"
-                f"st.set_page_config(page_title=\\"{clean_title}\\", page_icon=\\"👑\\", layout=\\"centered\\")\\n"
-                f"st.markdown(\\'{app_css}\\', unsafe_allow_html=True)\\n"
-                f"st.title(\\"{clean_title}\\")\\n"
-                "st.write(\\"Welcome to your custom application.\\")\\n"
-                f"st.info(\\"Goal: {app_prompt[:120]}\\")\\n\\n"
-                "t_app, t_adm = st.tabs([\\"📱 User App\\", \\"🔐 Owner Admin\\"])\\n"
-                "with t_app:\\n"
-                "    phone = st.text_input(\\"Mobile Number (+91):\\", value=\\"9876543210\\")\\n"
-                "    if st.button(\\"Instant OTP\\"):\\n"
-                "        st.success(\\"Your In-App OTP is: 2246\\")\\n"
-                f"    if st.button(\\"Pay via PhonePe ({OWNER_UPI})\\"):\\n"
-                "        st.success(\\"UPI Intent link active.\\")\\n"
-                "with t_adm:\\n"
-                "    pin = st.text_input(\\"Admin PIN\\", type=\\"password\\")\\n"
-                "    if pin == \\"2246\\":\\n"
-                f"        st.success(\\"Verified Owner: {OWNER_NAME}\\")\\n"
-                f"        st.write(\\"Banking Destination: {OWNER_UPI}\\")\\n"
-            )
+            # Generated App Clean Code
+            app_template = """import streamlit as st
+import json
+
+st.set_page_config(page_title="TITLE_TAG", page_icon="👑", layout="centered")
+st.markdown("<style>.stApp { background: #030712; color: #ffffff; }</style>", unsafe_allow_html=True)
+
+st.title("TITLE_TAG")
+st.write("Welcome to your custom application.")
+st.info("Goal: GOAL_TAG")
+
+t_app, t_adm = st.tabs(["📱 User App", "🔐 Owner Admin"])
+with t_app:
+    phone = st.text_input("Mobile Number (+91):", value="9876543210")
+    if st.button("Instant OTP"):
+        st.success("Your In-App OTP is: 2246")
+    if st.button("Pay via PhonePe (sarfealam@okhdfcbank)"):
+        st.success("UPI Intent link active.")
+with t_adm:
+    pin = st.text_input("Admin PIN", type="password")
+    if pin == "2246":
+        st.success("Verified Owner: Sarfealam")
+        st.write("Banking Destination: sarfealam@okhdfcbank")
+"""
+            generated_app = app_template.replace("TITLE_TAG", clean_title).replace("GOAL_TAG", app_prompt[:120])
 
             # Step 2: Create GitHub Repository
             prog_bar.progress(50, text="Layer 3: Registering GitHub Repository & Branch...")
