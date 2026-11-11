@@ -299,7 +299,7 @@ if {enable_otp}:
     st.subheader("📱 Phone Number Authentication")
     phone = st.text_input("Enter your 10-digit mobile number:", max_chars=10)
     if st.button("Request Verification OTP"):
-        st.success(f"OTP sent to +91-{phone}. Enter OTP to access account.")
+        st.success("OTP sent to your mobile. Enter OTP to access account.")
 
 # 2. Direct Zero-Fee UPI Payment Module
 if {enable_vip}:
