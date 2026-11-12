@@ -1934,7 +1934,7 @@ Mandatory rules:
 5. Define `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`.
 6. Define `window.onAppReady = async function() { await window.renderTabs(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
 7. All-Rounder Pro Engines available in shell: `FactorySound.tap()/.coin()/.win()`, `FactoryPro.claimDailyBonus()`, `FactoryPro.showProModal(title, price)`, `Phaser` (for 2D games), `Chart` (Chart.js), `FactoryEngine.openReferShare()`, `FactoryEngine.openTutorial()`. Use them naturally to match the prompt's category!
-8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences, and prefer simple single/double quoted strings over long multiline backtick templates. Output ONLY raw JavaScript."""
+8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences, NEVER put raw newlines inside single/double quotes (use backtick `...` or array .join() for multiline HTML like APP_TUTORIAL_HTML). Output ONLY raw JavaScript."""
 
     merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=6500)
     if not merged_js:
@@ -1966,7 +1966,7 @@ Mandatory rules:
             boss_log.append(f"[{sup_model}] Auto-Repair PASSED — ready for preview!")
         else:
             boss_log.append(f"[{sup_model}] 1st repair failed — running 2nd Boss Repair...")
-            rep2_js, _, _ = call_specialist_ai("supervisor", fix_sys, f"CRITICAL: Fix ALL JS syntax errors & ensure #view-1..#view-4 and window.onAppReady exist.\nIssues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js[:6000]}", max_tokens=6500)
+            rep2_js, _, _ = call_specialist_ai("supervisor", fix_sys, f"CRITICAL: Fix ALL JS syntax errors & ensure #view-1..#view-4 and window.onAppReady exist.\nIssues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=6500)
             rep2_ok, rep2_msg = validate_js_brackets(rep2_js) if rep2_js else (False, "Empty")
             if rep2_js and rep2_ok and "view-1" in rep2_js and "onAppReady" in rep2_js:
                 c_js = rep2_js
