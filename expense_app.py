@@ -1270,12 +1270,20 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
     bm = brand_meta or {}
     th = pick_unique_app_theme(safe_title, user_prompt, bm.get("theme_key", ""))
     safe_tagline = (bm.get("tagline") or "Smart Cloud Mobile Experience").replace("<", "").replace(">", "")
-    login_layout = bm.get("login_layout") or th["layout"]
     if custom_svg and "<svg" in custom_svg:
         b64_ic = base64.b64encode(custom_svg.encode("utf-8")).decode("utf-8")
         logo_html = f'<img src="data:image/svg+xml;base64,{b64_ic}" width="72" height="72" style="border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.5);margin:0 auto 12px auto;display:block;"/>'
     else:
         logo_html = f'<div class="splash-badge" style="margin:0 auto 14px auto;background:{th["btn"]};">{safe_title[:2].upper()}</div>'
+    login_layout = bm.get("login_layout") or th["layout"]
+    if login_layout == "split-banner":
+        login_header_block = f'<div style="background:{th["btn"]};padding:20px 18px;text-align:center;">{logo_html}<h2 style="margin:4px 0 2px 0;font-size:21px;font-weight:800;color:#fff;">{safe_title}</h2><div style="font-size:12px;color:#fef08a;font-weight:700;">{safe_tagline}</div></div>'
+    elif login_layout == "obsidian-gold":
+        login_header_block = f'<div style="padding:18px 18px 10px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid {th["accent"]}44;">{logo_html.replace("margin:0 auto 12px auto;display:block;","margin:0;flex-shrink:0;")}<div style="text-align:left;"><div style="font-size:10px;color:{th["accent"]};font-weight:800;letter-spacing:1px;">VERIFIED BUSINESS APP</div><h2 style="margin:2px 0;font-size:20px;font-weight:800;color:#fff;">{safe_title}</h2></div></div>'
+    elif login_layout == "neon-glow":
+        login_header_block = f'<div style="padding:20px 18px 8px 18px;text-align:center;border-bottom:1px dashed {th["accent"]}66;">{logo_html}<span style="background:{th["accent"]}33;color:{th["accent"]};border:1px solid {th["accent"]};padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;">CLOUD ARENA ACCESS</span><h2 style="margin:8px 0 0 0;font-size:21px;font-weight:800;color:#fff;">{safe_title}</h2></div>'
+    else:
+        login_header_block = f'<div style="padding:20px 18px 6px 18px;text-align:center;">{logo_html}<h2 style="margin:4px 0 4px 0;font-size:22px;font-weight:800;color:#fff;">Welcome to {safe_title}</h2><p style="margin:0;font-size:12px;color:#cbd5e1;">Step 1: Enter Gmail &rarr; Step 2: Verify OTP</p></div>'
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1368,29 +1376,29 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
     </div>
   </section>
 
-  <!-- 4. Login View ({login_layout}) -->
-  <section id="view-login">
-    <div class="login-card" style="background:{th['bg']};border:1px solid {th['accent']};">
-      {logo_html}
-      <h2 style="margin:0 0 6px 0;text-align:center;font-size:22px;font-weight:800;color:#ffffff;">Welcome to {safe_title}</h2>
-      <p style="margin:0 0 18px 0;text-align:center;font-size:13px;color:#cbd5e1;">Sign in to sync your account with cloud</p>
-      <label class="sf-label">Full Name / Business Name</label>
-      <input id="login-name" type="text" placeholder="Enter your name" style="width:100%;margin-bottom:12px;">
-      <label class="sf-label">10-Digit Mobile Number</label>
-      <input id="login-phone" type="tel" maxlength="10" placeholder="Enter 10-digit mobile" style="width:100%;margin-bottom:12px;">
-      <label class="sf-label">Gmail / Email (For Real OTP)</label>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <input id="login-email" type="email" placeholder="you@gmail.com" style="flex:1;">
-        <button id="send-otp-btn" type="button" onclick="FactoryNav.sendOtp()" style="white-space:nowrap;background:#2563eb !important;">Send Email OTP</button>
-      </div>
-      <div id="otp-verify-wrap" style="display:none;margin-bottom:12px;">
-        <label class="sf-label">Enter 6-Digit Email OTP</label>
-        <div style="display:flex;gap:8px;">
-          <input id="login-otp" type="text" maxlength="8" placeholder="Enter OTP" style="flex:1;">
-          <button type="button" onclick="FactoryNav.verifyAndLogin()" style="background:#10b981 !important;">Verify OTP</button>
+  <!-- 4. Distinct Per-App Login View ({login_layout}) -->
+  <section id="view-login" style="background:{th['full_bg']};">
+    <div class="login-card" style="background:{th['bg']};border:1.5px solid {th['accent']};padding:0;overflow:hidden;">
+      {login_header_block}
+      <div style="padding:18px;">
+        <label class="sf-label">Full Name / Business Name</label>
+        <input id="login-name" type="text" placeholder="Enter your name" style="width:100%;margin-bottom:10px;">
+        <label class="sf-label">10-Digit Mobile Number</label>
+        <input id="login-phone" type="tel" maxlength="10" placeholder="Enter 10-digit mobile" style="width:100%;margin-bottom:10px;">
+        <label class="sf-label">Gmail / Email (6-Digit Real OTP)</label>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <input id="login-email" type="email" placeholder="you@gmail.com" style="flex:1;">
+          <button id="send-otp-btn" type="button" onclick="FactoryNav.sendOtp()" style="white-space:nowrap;background:{th['btn']} !important;">Send OTP</button>
         </div>
+        <div id="otp-verify-wrap" style="display:none;margin-bottom:10px;">
+          <label class="sf-label">Enter 6-Digit Email OTP</label>
+          <div style="display:flex;gap:8px;">
+            <input id="login-otp" type="text" maxlength="8" placeholder="6-digit OTP" style="flex:1;">
+            <button type="button" onclick="FactoryNav.verifyAndLogin()" style="background:#10b981 !important;">Verify &amp; Enter</button>
+          </div>
+        </div>
+        <div style="font-size:11px;text-align:center;color:#cbd5e1;margin-top:4px;">Verified Cloud Access &bull; {safe_tagline}</div>
       </div>
-      <div style="font-size:11px;text-align:center;color:#94a3b8;margin-top:6px;">Strict Security: 6-Digit Gmail OTP is required to enter</div>
     </div>
   </section>
 
@@ -1674,13 +1682,19 @@ input::placeholder, textarea::placeholder { color: #94a3b8 !important; }
 """
     return (css_code or "") + "\n" + guard
 
+def _safe_inline_js(js_text):
+    return re.sub(r"</script", r"<\\/script", js_text or "", flags=re.IGNORECASE)
+
 def build_combined_preview_html(html_code, css_code, db_js, components_js, app_js):
-    """Inlines style.css, db.js, components.js, and app.js for instant Streamlit preview."""
+    """Inlines style.css, db.js, components.js, and app.js safely without </script> HTML leaks."""
     preview = html_code
-    preview = re.sub(r'<link[^>]*href=["\']style\.css["\'][^>]*>', f"<style>\n{css_code}\n</style>", preview, flags=re.IGNORECASE)
-    preview = re.sub(r'<script[^>]*src=["\']db\.js["\'][^>]*>\s*</script>', f"<script>\n{db_js}\n</script>", preview, flags=re.IGNORECASE)
-    preview = re.sub(r'<script[^>]*src=["\']components\.js["\'][^>]*>\s*</script>', f"<script>\n{components_js}\n</script>", preview, flags=re.IGNORECASE)
-    preview = re.sub(r'<script[^>]*src=["\']app\.js["\'][^>]*>\s*</script>', f"<script>\n{app_js}\n</script>", preview, flags=re.IGNORECASE)
+    s_db = _safe_inline_js(db_js)
+    s_comp = _safe_inline_js(components_js)
+    s_app = _safe_inline_js(app_js)
+    preview = re.sub(r'<link[^>]*href=.style\.css.[^>]*>', lambda m: "<style>\n" + (css_code or "") + "\n</style>", preview, flags=re.IGNORECASE)
+    preview = re.sub(r'<script[^>]*src=.db\.js.[^>]*>\s*</script>', lambda m: "<script>\n" + s_db + "\n</script>", preview, flags=re.IGNORECASE)
+    preview = re.sub(r'<script[^>]*src=.components\.js.[^>]*>\s*</script>', lambda m: "<script>\n" + s_comp + "\n</script>", preview, flags=re.IGNORECASE)
+    preview = re.sub(r'<script[^>]*src=.app\.js.[^>]*>\s*</script>', lambda m: "<script>\n" + s_app + "\n</script>", preview, flags=re.IGNORECASE)
     return preview
 
 def run_qa_sanitizer_bundle(html_code, css_code, db_js, app_js):
@@ -1920,9 +1934,9 @@ Mandatory rules:
 5. Define `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`.
 6. Define `window.onAppReady = async function() { await window.renderTabs(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
 7. All-Rounder Pro Engines available in shell: `FactorySound.tap()/.coin()/.win()`, `FactoryPro.claimDailyBonus()`, `FactoryPro.showProModal(title, price)`, `Phaser` (for 2D games), `Chart` (Chart.js), `FactoryEngine.openReferShare()`, `FactoryEngine.openTutorial()`. Use them naturally to match the prompt's category!
-8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences. Output ONLY raw JavaScript."""
+8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences, and prefer simple single/double quoted strings over long multiline backtick templates. Output ONLY raw JavaScript."""
 
-    merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=5500)
+    merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=6500)
     if not merged_js:
         return None, err_eng or "Single Full-Stack Coder failed"
     boss_log.append(f"[{eng_m}] Unified app.js generated ({len(merged_js)} chars) — passing to Grok Boss Audit...")
@@ -1944,15 +1958,29 @@ Mandatory rules:
         stages[4]["note"] = f"{sup_model} caught issues — auto-repairing app.js..."
         render_pipeline_board(progress_slot, stages, boss_log)
         fix_sys = "Fix ALL listed issues in this unified app.js while keeping window.renderTabs, window.onFloatingAction, window.onSearchInput, window.APP_TUTORIAL_HTML, and window.onAppReady intact. Output ONLY valid raw JavaScript."
-        rep_js, _, _ = call_specialist_ai("engineer_single", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=5500)
+        rep_js, _, _ = call_specialist_ai("engineer_single", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=6500)
         rep_ok, _ = validate_js_brackets(rep_js) if rep_js else (False, "")
         if rep_js and rep_ok and "view-1" in rep_js and "onAppReady" in rep_js:
             c_js = rep_js
             repair_log.append(f"{sup_model} verified auto-repaired app.js cleanly.")
             boss_log.append(f"[{sup_model}] Auto-Repair PASSED — ready for preview!")
         else:
-            repair_log.append("Kept primary verified app.js (repaired draft rejected by syntax gate).")
-            boss_log.append(f"[{sup_model}] Kept primary verified app.js.")
+            boss_log.append(f"[{sup_model}] 1st repair failed — running 2nd Boss Repair...")
+            rep2_js, _, _ = call_specialist_ai("supervisor", fix_sys, f"CRITICAL: Fix ALL JS syntax errors & ensure #view-1..#view-4 and window.onAppReady exist.\nIssues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js[:6000]}", max_tokens=6500)
+            rep2_ok, rep2_msg = validate_js_brackets(rep2_js) if rep2_js else (False, "Empty")
+            if rep2_js and rep2_ok and "view-1" in rep2_js and "onAppReady" in rep2_js:
+                c_js = rep2_js
+                repair_log.append(f"{sup_model} 2nd Boss Repair PASSED.")
+                boss_log.append(f"[{sup_model}] 2nd Boss Repair PASSED!")
+            else:
+                prim_ok, prim_msg = validate_js_brackets(c_js)
+                if not prim_ok:
+                    boss_log.append(f"[HARD STOP] Broken app.js blocked: {prim_msg}")
+                    stages[4]["status"] = "done"
+                    stages[4]["note"] = f"BLOCKED: {prim_msg}"
+                    render_pipeline_board(progress_slot, stages, boss_log)
+                    return None, f"STOPPED BY GROK BOSS: Generated app.js had a JS syntax error ({prim_msg}) and auto-repair did not pass. Please click Generate again."
+                repair_log.append("Kept primary syntax-valid app.js.")
     else:
         repair_log.append(f"{sup_model}: All 5 files, 14 IDs, and click handlers passed first inspection.")
         boss_log.append(f"[{sup_model}] ALL 5 FILES APPROVED ON FIRST CHECK!")
