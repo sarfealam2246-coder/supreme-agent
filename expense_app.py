@@ -810,7 +810,7 @@ def generate_components_js():
     currentTab: 1,
     switchTab: function(tabNum) {
       window.FactoryNav.currentTab = tabNum;
-      window.FactoryUI.vibrate(10);
+      window.FactoryUI.vibrate(10); if(window.FactorySound) window.FactorySound.tap();
       const detail = document.getElementById("view-detail");
       if (detail) detail.style.display = "none";
       for (let i = 1; i <= 4; i++) {
@@ -1049,6 +1049,84 @@ def generate_components_js():
     }
   };
 
+  window.FactorySound = {
+    ctx: null,
+    muted: localStorage.getItem("sf_muted") === "1",
+    _play: function(freq, dur, type, vol) {
+      if (window.FactorySound.muted) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!window.FactorySound.ctx) window.FactorySound.ctx = new AC();
+        const c = window.FactorySound.ctx;
+        if (c.state === "suspended") c.resume();
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = type || "sine";
+        o.frequency.setValueAtTime(freq, c.currentTime);
+        g.gain.setValueAtTime(vol || 0.08, c.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(); o.stop(c.currentTime + dur);
+      } catch (e) {}
+    },
+    tap: function() { window.FactorySound._play(520, 0.05, "triangle", 0.05); },
+    coin: function() {
+      window.FactorySound._play(880, 0.08, "sine", 0.08);
+      setTimeout(function() { window.FactorySound._play(1320, 0.14, "sine", 0.08); }, 70);
+    },
+    win: function() {
+      window.FactorySound._play(523, 0.09, "triangle", 0.09);
+      setTimeout(function() { window.FactorySound._play(659, 0.09, "triangle", 0.09); }, 85);
+      setTimeout(function() { window.FactorySound._play(784, 0.16, "triangle", 0.1); }, 170);
+    },
+    error: function() { window.FactorySound._play(190, 0.16, "sawtooth", 0.06); },
+    toggle: function() {
+      window.FactorySound.muted = !window.FactorySound.muted;
+      localStorage.setItem("sf_muted", window.FactorySound.muted ? "1" : "0");
+      window.FactoryUI.toast(window.FactorySound.muted ? "Sound Muted" : "Arcade Sound ON", "info");
+    }
+  };
+
+  window.FactoryPro = {
+    claimDailyBonus: async function() {
+      const today = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem("sf_daily_bonus") === today) {
+        window.FactoryUI.toast("Today's +50 Pts bonus already claimed!", "warn");
+        return false;
+      }
+      localStorage.setItem("sf_daily_bonus", today);
+      if (window.FactoryDB) await window.FactoryDB.recordTx("bonus", 50, "Daily Streak Bonus " + today);
+      window.FactorySound.win();
+      window.FactoryUI.confetti();
+      window.FactoryUI.toast("+50 Daily Bonus Points Added!", "success");
+      if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
+      return true;
+    },
+    scoreToken: function(pts) {
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const raw = (u ? u.phone : "0") + ":" + String(pts || 0) + ":SF";
+      let h = 0;
+      for (let i = 0; i < raw.length; i++) { h = ((h << 5) - h) + raw.charCodeAt(i); h |= 0; }
+      return "V1-" + Math.abs(h).toString(36).toUpperCase();
+    },
+    showProModal: function(planTitle, priceText) {
+      window.FactorySound.tap();
+      const body = '<div class="sf-hero-card" style="text-align:center;">' +
+        '<span class="sf-badge-live">PRO UPGRADE</span>' +
+        '<h3 style="margin:8px 0 4px 0;color:#fff;">' + (planTitle || "Pro Pass") + '</h3>' +
+        '<div style="font-size:24px;font-weight:800;color:#fde047;margin:6px 0;">' + (priceText || "Rs. 149 / mo") + '</div>' +
+        '<p style="font-size:12px;color:#e2e8f0;margin:0;">Ad-Free Experience, Unlimited Cloud Backup, Priority Sync &amp; Pro PDF Exports.</p></div>' +
+        '<button type="button" onclick="FactoryPro.activateTrial()" style="width:100%;margin-top:10px;background:#10b981 !important;">Activate Free Trial</button>';
+      window.FactoryNav.openDetail(planTitle || "Pro Membership", body);
+    },
+    activateTrial: function() {
+      if (window.FactorySound) window.FactorySound.win();
+      window.FactoryUI.confetti();
+      window.FactoryUI.toast("Pro Trial Request Logged!", "success");
+    }
+  };
+
   window.FactoryEngine = {
     rtSocket: null,
     copyUserId: function() {
@@ -1215,6 +1293,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
   <style>
     body, #app-shell {{ background: {th['full_bg']} !important; background-attachment: fixed !important; }}
     .sf-card, .sf-stat-box {{ border-color: {th['accent']}44 !important; }}
@@ -1840,7 +1919,8 @@ Mandatory rules:
 4. Define `window.onSearchInput = function(q) { ... }` filtering items/cards.
 5. Define `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`.
 6. Define `window.onAppReady = async function() { await window.renderTabs(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
-7. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences. Output ONLY raw JavaScript."""
+7. All-Rounder Pro Engines available in shell: `FactorySound.tap()/.coin()/.win()`, `FactoryPro.claimDailyBonus()`, `FactoryPro.showProModal(title, price)`, `Phaser` (for 2D games), `Chart` (Chart.js), `FactoryEngine.openReferShare()`, `FactoryEngine.openTutorial()`. Use them naturally to match the prompt's category!
+8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences. Output ONLY raw JavaScript."""
 
     merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=5500)
     if not merged_js:
