@@ -118,8 +118,16 @@ def load_json_file(path, default_val):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            return default_val
-    return default_val
+            pass
+    # Fallback: Recover permanently from GitHub supreme-agent/factory_state/
+    try:
+        raw = fetch_file_from_github("supreme-agent", f"factory_state/{path}")
+        data = json.loads(raw)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return data
+    except Exception:
+        return default_val
 
 def save_json_file(path, data):
     try:
@@ -127,11 +135,26 @@ def save_json_file(path, data):
             json.dump(data, f, indent=2)
     except Exception:
         pass
+    # Sync permanently to GitHub so Streamlit Cloud sleep never erases state
+    if path in (STAGED_APP_FILE, ACTIVE_BUILD_FILE):
+        try:
+            push_file_to_github("supreme-agent", f"factory_state/{path}", json.dumps(data, indent=2), f"Sync {path}")
+        except Exception:
+            pass
 
 def remove_json_file(path):
     if os.path.exists(path):
         try:
             os.remove(path)
+        except Exception:
+            pass
+    if path in (STAGED_APP_FILE, ACTIVE_BUILD_FILE):
+        try:
+            url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/supreme-agent/contents/factory_state/{path}"
+            existing = github_api_request(url, method="GET", timeout=8)
+            sha = existing.get("sha")
+            if sha:
+                github_api_request(url, method="DELETE", payload={"message": f"Clear {path}", "sha": sha}, timeout=8)
         except Exception:
             pass
 
@@ -286,7 +309,7 @@ def call_openrouter(model_id, system_prompt, user_prompt, max_tokens=2800, tempe
             "X-Title": "Sarfealam Enterprise Factory"
         }
     )
-    with urllib.request.urlopen(req, timeout=90) as resp:
+    with urllib.request.urlopen(req, timeout=45) as resp:
         res = json.loads(resp.read().decode("utf-8"))
         return res["choices"][0]["message"]["content"].strip()
 
@@ -393,10 +416,10 @@ STRICT ENGINEERING RULES:
     coder_usr = f"App Name: {app_title}\nUser Exact Prompt:\n{user_prompt}\n\nArchitecture Spec:\n{spec_doc}\n\nBuild the complete interactive mobile application now."
 
     coder_models = [
-        "anthropic/claude-3.5-sonnet",
+        "google/gemini-2.0-flash-001",
         "openai/gpt-4o-mini",
         "deepseek/deepseek-chat",
-        "google/gemini-2.0-flash-001",
+        "anthropic/claude-3.5-sonnet",
         "qwen/qwen-2.5-coder-32b-instruct",
         "meta-llama/llama-3.3-70b-instruct:free"
     ]
@@ -555,9 +578,10 @@ st.markdown(f"""
 if deep_admin_repo:
     st.warning(f"Private Admin Link Active for `{deep_admin_repo}` - Open the 'Private Admin' tab below and enter your Master Password.")
 
-tab_build, tab_vault, tab_admin = st.tabs([
-    "🚀 Build & Preview App",
-    "📦 Dual-Link Vault (Store)",
+tab_build, tab_tracker, tab_vault, tab_admin = st.tabs([
+    "🚀 Build & Preview",
+    "📡 Live Tracker",
+    "📦 Dual-Link Vault",
     "🔐 Private Admin"
 ])
 
@@ -744,6 +768,92 @@ with tab_build:
                         save_active_build(rec)
                         remove_json_file(STAGED_APP_FILE)
                         st.rerun()
+
+
+# ==============================================================================
+# TAB 2: DEDICATED PERSISTENT LIVE TRACKER (NEVER DISAPPEARS ON REFRESH)
+# ==============================================================================
+with tab_tracker:
+    st.subheader("Persistent GitHub Live Build Tracker")
+    st.caption("Tracks your live APK builds directly from GitHub servers. Never lost on refresh.")
+
+    if st.button("Refresh Live GitHub Status", use_container_width=True, key="tracker_refresh"):
+        st.rerun()
+
+    live_repos = fetch_github_user_repos()
+    tracked_active = recover_active_build_if_needed()
+
+    if not live_repos and not tracked_active:
+        st.info("No active or recent builds found on GitHub yet.")
+    else:
+        recent_list = live_repos[:3]
+        for idx, repo_obj in enumerate(recent_list):
+            r_name = repo_obj.get("name", "")
+            r_url = repo_obj.get("html_url", "")
+            tele = get_live_build_telemetry(r_name)
+            st_state = tele.get("status", "unknown")
+            st_conc = tele.get("conclusion")
+            st_steps = tele.get("steps", [])
+            act_url = tele.get("html_url", f"{r_url}/actions")
+            rel_url = f"{r_url}/releases"
+            adm_url = f"[https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app=](https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app=){r_name}"
+
+            if st_conc == "success":
+                badge = "✅ READY TO DOWNLOAD"
+                border_col = "#10b981"
+            elif st_conc == "failure":
+                badge = "❌ BUILD FAILED"
+                border_col = "#ef4444"
+            else:
+                badge = f"⏳ RUNNING ({st_state.upper()})"
+                border_col = "#f59e0b"
+
+            st.markdown(f"""
+            <div style="background: rgba(17, 24, 39, 0.9); border: 2px solid {border_col}; border-radius: 16px; padding: 14px; margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <b style="font-size: 16px; color: #ffffff;">{r_name}</b>
+                    <span style="font-size: 11px; font-weight: 800; color: {border_col};">{badge}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if idx == 0:
+                step_labels = [
+                    ("Checkout Code", "1. GitHub received app code and custom icon"),
+                    ("Set up Java 17", "2. Java 17 and Android Build Engine initialized"),
+                    ("Install ImageMagick for Custom App Icon", "3. Processing custom app-specific 3D icon"),
+                    ("Compile Universal High-Speed Android APK", "4. Compiling native Android APK package"),
+                    ("Publish Production APK to GitHub Releases", "5. Publishing public APK download release")
+                ]
+                step_map = {s.get("name"): (s.get("status"), s.get("conclusion")) for s in st_steps}
+                for raw_s, lbl_s in step_labels:
+                    s_st, s_co = step_map.get(raw_s, ("queued", None))
+                    if s_co == "success":
+                        ic, cl = "✅", "#34d399"
+                    elif s_st == "in_progress":
+                        ic, cl = "⏳", "#fbbf24"
+                    else:
+                        ic, cl = "⬜", "#9ca3af"
+                    st.markdown(f"""
+                    <div class="step-card">
+                        <div style="font-size: 18px;">{ic}</div>
+                        <div style="font-size: 13px; font-weight: 600; color: {cl};">{lbl_s}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            if st_conc == "success":
+                st.markdown(f"""
+                <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+                    <a href="{rel_url}" style="flex: 1; text-align: center; background: #059669; color: white; padding: 10px; border-radius: 10px; text-decoration: none; font-size: 13px; font-weight: 700;">
+                        Download Public APK
+                    </a>
+                    <a href="{adm_url}" style="flex: 1; text-align: center; background: #2563eb; color: white; padding: 10px; border-radius: 10px; text-decoration: none; font-size: 13px; font-weight: 700;">
+                        Private Admin Link
+                    </a>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"<a href='{act_url}' style='display: block; text-align: center; background: #334155; color: white; padding: 8px; border-radius: 8px; text-decoration: none; font-size: 12px; margin-bottom: 14px;'>View Live GitHub Actions Log</a>", unsafe_allow_html=True)
 
 # ==============================================================================
 # TAB 2: DUAL-LINK LIFETIME VAULT (STORE)
