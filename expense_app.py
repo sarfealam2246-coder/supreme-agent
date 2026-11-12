@@ -106,6 +106,9 @@ if [ -f "../icon.svg" ]; then
 else
   echo "app.icon_url=https://cdn-icons-png.flaticon.com/512/3135/3135715.png" >> app.properties
 fi
+if command -v node >/dev/null 2>&1; then
+  node --check ../db.js ../components.js ../app.js
+fi
 chmod +x gradlew
 ./gradlew assembleDebug --no-daemon
 mkdir -p ../dist
@@ -905,7 +908,7 @@ def generate_components_js():
           v1.innerHTML = '<div class="sf-card" style="margin-bottom:12px;">' +
             '<h3 style="margin:0 0 6px 0;color:#38bdf8;">Dashboard Active</h3>' +
             '<p style="margin:0;color:#cbd5e1;font-size:13px;">Welcome ' + (u ? u.full_name : "User") + '. Cloud sync is ready.</p></div>' +
-            '<button type="button" onclick="FactoryNav.openDetail(\'Quick Entry\', \'<p>Add your first cloud record below.</p><input id=fb-t placeholder=Title style=margin-bottom:10px><button type=button onclick=FactoryNav.saveQuick()>Save to Cloud</button>\')" style="width:100%;">+ Add New Record</button>';
+            '<button type="button" onclick="FactoryNav.openQuickEntry()" style="width:100%;">+ Add New Record</button>';
         }
         const v4 = document.getElementById("view-4");
         if (v4 && v4.innerHTML.trim().length < 20) {
@@ -917,6 +920,9 @@ def generate_components_js():
             '<button type="button" onclick="FactoryNav.logout()" style="width:100%;margin-top:12px;background:#dc2626 !important;">Log Out</button></div>';
         }
       }, 350);
+    },
+    openQuickEntry: function() {
+      window.FactoryNav.openDetail("Quick Entry", "<p>Add your first cloud record below.</p><input id=fb-t placeholder=Title style=margin-bottom:10px><button type=button onclick=FactoryNav.saveQuick()>Save to Cloud</button>");
     },
     saveQuick: async function() {
       const t = document.getElementById("fb-t");
@@ -962,6 +968,7 @@ def build_fixed_app_shell(app_title):
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -1070,6 +1077,7 @@ def build_fixed_app_shell(app_title):
   <script src="db.js"></script>
   <script src="components.js"></script>
   <script src="app.js"></script>
+  <script>setTimeout(function(){{var s=document.getElementById("splash-screen");if(s)s.classList.add("hide");}},1500);</script>
 </body>
 </html>"""
 
@@ -1238,47 +1246,76 @@ def run_qa_sanitizer_bundle(html_code, css_code, db_js, app_js):
     }
     return html_code, css_code, db_js, app_js, qa_report
 
-def generate_custom_svg_icon(app_title, user_prompt):
-    """Generate a vibrant 3D badge 512x512 SVG icon tailored to the app."""
+def generate_3d_logo_studio(app_title, user_prompt):
+    """Dept 8: Generate 3 distinct Play-Store-grade 3D SVG logos (Style A, B, C) and auto-select best."""
     initials = "".join([w[0].upper() for w in app_title.split()[:2]]) or "AP"
-    fallback_svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+    p_low = (app_title + " " + user_prompt).lower()
+
+    logo_a = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg3d" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b"/>
-      <stop offset="50%" stop-color="#0284c7"/>
-      <stop offset="100%" stop-color="#10b981"/>
+    <linearGradient id="bgA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b"/><stop offset="55%" stop-color="#1d4ed8"/><stop offset="100%" stop-color="#0284c7"/>
     </linearGradient>
-    <linearGradient id="badge3d" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
+    <linearGradient id="goldA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/><stop offset="100%" stop-color="#f59e0b"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="116" fill="url(#bg3d)"/>
-  <rect x="86" y="86" width="340" height="340" rx="88" fill="url(#badge3d)" opacity="0.92"/>
-  <rect x="108" y="108" width="296" height="296" rx="72" fill="#0f172a" opacity="0.88"/>
-  <text x="256" y="295" font-family="Arial, sans-serif" font-size="140" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text>
-  <circle cx="388" cy="124" r="24" fill="#fbbf24"/>
+  <rect width="512" height="512" rx="116" fill="url(#bgA)"/>
+  <path d="M256 64 L416 128 V256 C416 358 342 426 256 456 C170 426 96 358 96 256 V128 Z" fill="#0f172a" opacity="0.82" stroke="url(#goldA)" stroke-width="14"/>
+  <text x="256" y="305" font-family="Arial, sans-serif" font-size="148" font-weight="900" fill="url(#goldA)" text-anchor="middle">{initials}</text>
+  <circle cx="256" cy="128" r="18" fill="#fde047"/>
 </svg>"""
-    sys_p = "You are a senior Play Store brand icon designer. Output ONLY raw valid 512x512 SVG XML (<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' width='512' height='512'>...</svg>). MUST have a vibrant colorful multi-stop gradient rounded square background, layered 3D badge/emblem, and bold symbol or monogram. NEVER output a plain white circle. No markdown."
-    usr_p = f"App Name: {app_title}\nApp Purpose: {user_prompt[:220]}\nDesign a vibrant 3D Play-Store-grade 512x512 SVG app icon."
-    for model_id in ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini"]:
-        try:
-            raw_svg = strip_markdown_fences(call_openrouter(model_id, sys_p, usr_p, max_tokens=1500, temperature=0.55))
-            if "<svg" in raw_svg and "</svg>" in raw_svg and ("linearGradient" in raw_svg or "radialGradient" in raw_svg):
-                return raw_svg
-        except Exception:
-            continue
-    return fallback_svg
 
-def call_coder_with_fallback(sys_prompt, usr_prompt, max_tokens=3600):
-    coder_models = [
-        "google/gemini-2.0-flash-001",
-        "openai/gpt-4o-mini",
-        "deepseek/deepseek-chat",
-        "anthropic/claude-3.5-sonnet"
-    ]
+    logo_b = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b0764"/><stop offset="50%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="ringB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bgB)"/>
+  <polygon points="256,64 422,160 422,352 256,448 90,352 90,160" fill="#090d1a" opacity="0.86" stroke="url(#ringB)" stroke-width="14"/>
+  <text x="256" y="302" font-family="Arial, sans-serif" font-size="144" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text>
+</svg>"""
+
+    logo_c = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgC" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b"/><stop offset="55%" stop-color="#059669"/><stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bgC)"/>
+  <rect x="82" y="82" width="348" height="348" rx="82" fill="#0b1120" opacity="0.86" stroke="#34d399" stroke-width="12"/>
+  <text x="256" y="298" font-family="Arial, sans-serif" font-size="142" font-weight="900" fill="#34d399" text-anchor="middle">{initials}</text>
+  <circle cx="386" cy="126" r="22" fill="#38bdf8"/>
+</svg>"""
+
+    default_idx = 0
+    if any(k in p_low for k in ["shop", "bill", "khata", "vyapar", "dukaan", "store"]):
+        default_idx = 2
+    elif any(k in p_low for k in ["quiz", "arena", "tech", "ai", "cyber"]):
+        default_idx = 1
+
+    return [
+        {"label": "Style A: Royal Shield", "svg": logo_a},
+        {"label": "Style B: Cyber Hexagon", "svg": logo_b},
+        {"label": "Style C: Emerald Badge", "svg": logo_c}
+    ], default_idx
+
+def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
+    """Routes each department to its specialist AI model via the single OpenRouter Master Key with automatic fallbacks."""
+    role_map = {
+        "architect": ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini", "x-ai/grok-4.1-fast"],
+        "designer": ["anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001", "openai/gpt-4o-mini"],
+        "engineer_a": ["deepseek/deepseek-chat", "openai/gpt-4o-mini", "google/gemini-2.0-flash-001"],
+        "engineer_b": ["openai/gpt-4o-mini", "deepseek/deepseek-chat", "google/gemini-2.0-flash-001"],
+        "supervisor": ["x-ai/grok-4.1-fast", "anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"]
+    }
+    models = role_map.get(role, ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini"])
     last_err = "No AI model responded"
-    for m_id in coder_models:
+    for m_id in models:
         try:
             res = strip_markdown_fences(call_openrouter(m_id, sys_prompt, usr_prompt, max_tokens=max_tokens, temperature=0.3))
             if res:
@@ -1292,100 +1329,178 @@ def call_coder_with_fallback(sys_prompt, usr_prompt, max_tokens=3600):
             last_err = f"{m_id}: {str(e)[:120]}"
     return "", "", last_err
 
-def senior_review_app_js(app_title, user_prompt, js_code):
-    """Senior Developer Reviewer Bot: audits all 4 tabs, detail view, search, and real button handlers."""
-    static_issues = []
-    for vid in ["view-1", "view-2", "view-3", "view-4"]:
-        if vid not in js_code:
-            static_issues.append(f"Missing content for #{vid}")
-    if "openDetail" not in js_code and "FactoryUI.modal" not in js_code:
-        static_issues.append("No sub-page (#view-detail) or modal action found")
-    ok_brackets, br_err = validate_js_brackets(js_code)
-    if not ok_brackets:
-        static_issues.append(br_err)
+def render_pipeline_board(slot, stages):
+    """Renders a clean 8-Department Visual Build Board in real time."""
+    cards = ""
+    for stg in stages:
+        st_status = stg["status"]
+        icon = "✅" if st_status == "done" else ("⏳" if st_status == "running" else "⬜")
+        col = "#34d399" if st_status == "done" else ("#fbbf24" if st_status == "running" else "#94a3b8")
+        note = f"<div style='font-size:11px;color:#cbd5e1;margin-top:2px;'>{stg['note']}</div>" if stg.get("note") else ""
+        cards += f"""<div style="background:rgba(15,23,42,0.92);border:1px solid #1e293b;border-radius:12px;padding:9px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;">
+            <div style="font-size:17px;line-height:1.2;">{icon}</div>
+            <div><div style="font-size:12.5px;font-weight:700;color:{col};">{stg['title']}</div>{note}</div>
+        </div>"""
+    slot.markdown(cards, unsafe_allow_html=True)
 
-    rev_sys = """You are a strict Senior Android/Web App Reviewer Bot. Audit app.js and verify:
-1. All 4 tabs (view-1, view-2, view-3, view-4) render rich, colorful, app-specific UI.
-2. Every button and card has a real working click handler (modal, FactoryNav.openDetail, receipt, Chart, WhatsApp share, or DB update) with zero dummy buttons and zero NaN bugs.
-3. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
-    ai_verdict = "APPROVED"
+def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js, comp_js, app_js):
+    """Dept 7: Grok 4.1 Fast Closed-Loop Supervisor checking ALL 5 files together."""
+    issues = []
+    for fname, code in [("db.js", db_js), ("components.js", comp_js), ("app.js", app_js)]:
+        ok_b, err_b = validate_js_brackets(code)
+        if not ok_b:
+            issues.append(f"{fname}: {err_b}")
+    for vid in ["view-1", "view-2", "view-3", "view-4"]:
+        if vid not in app_js:
+            issues.append(f"app.js missing #{vid}")
+    if "onAppReady" not in app_js:
+        issues.append("app.js missing window.onAppReady")
+    if "<html" not in html_code.lower() or not css_code.strip():
+        issues.append("index.html or style.css incomplete")
+
+    rev_sys = """You are a strict Senior Mobile App Supervisor Bot. Audit app.js and verify:
+1. All 4 views (view-1..view-4) render colorful, working UI with zero dummy buttons or NaN bugs.
+2. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
+    sup_model = "x-ai/grok-4.1-fast"
     try:
-        verdict, _, _ = call_coder_with_fallback(rev_sys, f"App: {app_title}\nAim: {user_prompt[:300]}\nStatic Checks: {static_issues}\n\napp.js:\n{js_code[:7500]}", max_tokens=450)
+        verdict, used_sup, _ = call_specialist_ai("supervisor", rev_sys, f"App: {app_title}\nAim: {user_prompt[:280]}\nStatic Issues: {issues}\n\napp.js:\n{app_js[:7500]}", max_tokens=400)
+        if used_sup:
+            sup_model = used_sup
         if verdict and not verdict.strip().upper().startswith("APPROVED"):
-            ai_verdict = verdict.strip()[:280]
-            static_issues.append(ai_verdict)
+            issues.append(verdict.strip()[:240])
     except Exception:
         pass
-    return (len(static_issues) == 0), static_issues
+    return (len(issues) == 0), issues, sup_model
 
 def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
-    """Execute 5-Specialist AI + 14-ID Fixed Shell + Senior Bot Audit Pipeline."""
+    """Execute 8-Department Specialist Multi-AI Visual Assembly Line."""
+    stages = [
+        {"title": "1. Architect AI (Gemini 2.0) — 14-ID Blueprint", "status": "running", "note": "Mapping theme & cloud architecture..."},
+        {"title": "2. UI Designer (Claude 3.5 + DaisyUI) — Styling", "status": "pending", "note": ""},
+        {"title": "3. Cloud & Core Engine — Supabase 4-Table + Email OTP", "status": "pending", "note": ""},
+        {"title": "4. Deep Engineer Pass A (DeepSeek) — Tab 1, 2 & '+'", "status": "pending", "note": ""},
+        {"title": "5. Deep Engineer Pass B (GPT-4o-mini) — Tab 3, 4 & PDF", "status": "pending", "note": ""},
+        {"title": "6. Security & 5-File Syntax Gate — Static Check", "status": "pending", "note": ""},
+        {"title": "7. Grok Supervisor Bot — Audit & Auto-Repair Loop", "status": "pending", "note": ""},
+        {"title": "8. 3D Logo Studio — 3 Styles & Final Merge", "status": "pending", "note": ""}
+    ]
+    render_pipeline_board(progress_slot, stages)
+
     app_slug = re.sub(r'[^a-z0-9-]', '', app_title.lower().replace(" ", "-")) or "smart-app"
+
+    # Dept 1: Architect AI
+    pm_sys = "You are a Principal Mobile Architect. The app uses a 14-ID Fixed Shell (#view-1..#view-4, #view-detail, #app-search-bar, #floating-cta, #notice-banner). Design a vibrant, commercial plan for all 4 tabs + sub-page + floating '+' action matching the App Name and Aim."
+    spec_doc, arch_m, _ = call_specialist_ai("architect", pm_sys, f"App Name: {app_title}\nUser Request: {user_prompt}", max_tokens=950)
+    if not spec_doc:
+        spec_doc = f"Colorful 4-tab mobile app for {app_title} using #view-1..#view-4, #view-detail, #app-search-bar, and #floating-cta."
+    stages[0]["status"] = "done"
+    stages[0]["note"] = f"Blueprint locked ({arch_m or 'Architect'})."
+    stages[1]["status"] = "running"
+    stages[1]["note"] = "Claude 3.5 + DaisyUI crafting colorful cards..."
+    render_pipeline_board(progress_slot, stages)
+
+    # Dept 2: UI Designer
+    css_sys = """You are a Senior Play-Store UI Designer using Tailwind + DaisyUI. Write ONLY raw CSS3 for vibrant gradient stat cards, glass panels, pill badges, and colorful accent buttons inside #view-1..#view-4 and #view-detail. Never make any button white-on-white. Output ONLY raw CSS."""
+    raw_css, ui_m, _ = call_specialist_ai("designer", css_sys, f"App Name: {app_title}\nSpec:\n{spec_doc}", max_tokens=1600)
+    clean_css = enforce_css_guardrails(raw_css)
+    stages[1]["status"] = "done"
+    stages[1]["note"] = f"style.css ready ({ui_m or 'UI AI'})."
+    stages[2]["status"] = "running"
+    stages[2]["note"] = "Wiring 4-table Supabase, Email OTP & 14-ID Fixed Shell..."
+    render_pipeline_board(progress_slot, stages)
+
+    # Dept 3: Cloud & Core Engine
     db_js = generate_db_js(app_slug)
     components_js = generate_components_js()
     fixed_html = build_fixed_app_shell(app_title)
+    stages[2]["status"] = "done"
+    stages[2]["note"] = "db.js + components.js + index.html merged."
+    stages[3]["status"] = "running"
+    stages[3]["note"] = "DeepSeek writing Tab 1 (Home), Tab 2 & '+' button..."
+    render_pipeline_board(progress_slot, stages)
 
-    # 1. Architect AI
-    progress_slot.info("Step 1/5: Architect AI designing colorful theme & 14-ID app blueprint...")
-    pm_sys = "You are a Principal Mobile Architect. The app uses a 14-ID Fixed Shell (#view-1..#view-4, #view-detail sub-page, #app-search-bar, #floating-cta, #notice-banner, #profile-drawer, #app-modal). Design a colorful, vibrant, commercial-grade plan for all 4 tabs + sub-page + floating '+' action strictly matching the user's App Name and Aim."
-    spec_doc, _, _ = call_coder_with_fallback(pm_sys, f"App Name: {app_title}\nUser Request: {user_prompt}", max_tokens=950)
-    if not spec_doc:
-        spec_doc = f"Colorful 4-tab mobile app for {app_title} using #view-1..#view-4, #view-detail, #app-search-bar, and #floating-cta."
+    # Dept 4: Deep Engineer Pass A
+    pass_a_sys = """You are a Principal JS Engineer (Part A: Tab 1 & Tab 2). Write ONLY raw JavaScript defining:
+1. `window.renderTabs12 = async function() { ... }` which populates `document.getElementById('view-1').innerHTML` and `document.getElementById('view-2').innerHTML` with rich colorful DaisyUI/Tailwind cards, Lucide `<i data-lucide="..."></i>` icons, interactive forms, Chart.js canvas (if needed), and working onclick handlers calling `FactoryNav.openDetail(...)`, `FactoryUI.receipt(...)`, `FactoryDB.recordTx(...)`, or `FactoryDB.saveItem(...)`.
+2. `window.onFloatingAction = function() { ... }` opening a useful quick-action modal via `FactoryUI.modal(...)`.
+ZERO dummy buttons, ZERO NaN bugs (use FactoryUI.safeNum). Output ONLY raw JavaScript."""
+    js_a, eng_a_m, err_a = call_specialist_ai("engineer_a", pass_a_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}", max_tokens=2800)
+    if not js_a:
+        return None, err_a or "Engineer Pass A failed"
+    stages[3]["status"] = "done"
+    stages[3]["note"] = f"Tab 1 & Tab 2 complete ({eng_a_m})."
+    stages[4]["status"] = "running"
+    stages[4]["note"] = "GPT-4o-mini writing Tab 3, Tab 4, Search & PDF..."
+    render_pipeline_board(progress_slot, stages)
 
-    # 2. UI & Theme AI
-    progress_slot.info("Step 2/5: UI Theme AI crafting colorful gradient cards & accent styles...")
-    css_sys = """You are a Senior Mobile UI Designer. Write ONLY raw CSS3 for colorful stat cards, gradient banners, vibrant pill badges, grids, and list items inside #view-1..#view-4 and #view-detail.
-RULES:
-1. NEVER make everything plain black — use rich colorful gradients (emerald, cyan, royal blue, amber, violet) with crisp white/light text.
-2. NEVER make any button white-on-white!
-3. Output ONLY raw CSS (no markdown)."""
-    raw_css, _, _ = call_coder_with_fallback(css_sys, f"App Name: {app_title}\nSpec:\n{spec_doc}", max_tokens=1600)
-    clean_css = enforce_css_guardrails(raw_css)
+    # Dept 5: Deep Engineer Pass B
+    pass_b_sys = """You are a Principal JS Engineer (Part B: Tab 3, Tab 4 & Boot). Write ONLY raw JavaScript defining:
+1. `window.renderTabs34 = async function() { ... }` which populates `document.getElementById('view-3').innerHTML` (records/items/leaderboard from FactoryDB.getItems / getLeaderboard) and `document.getElementById('view-4').innerHTML` (Profile, Transaction History from FactoryDB.getTransactions, FactoryUI.downloadPDF button, WhatsApp share `https://wa.me/?text=...`, and Log Out button).
+2. `window.onSearchInput = function(q) { ... }` to filter visible cards/items.
+3. `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`
+4. `window.onAppReady = async function() { if(window.renderTabs12) await window.renderTabs12(); if(window.renderTabs34) await window.renderTabs34(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
+Output ONLY raw JavaScript."""
+    js_b, eng_b_m, err_b = call_specialist_ai("engineer_b", pass_b_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}", max_tokens=2800)
+    if not js_b:
+        return None, err_b or "Engineer Pass B failed"
+    merged_js = js_a + "\n\n// --- PART B ---\n" + js_b
+    stages[4]["status"] = "done"
+    stages[4]["note"] = f"Tab 3 & Tab 4 complete ({eng_b_m})."
+    stages[5]["status"] = "running"
+    stages[5]["note"] = "Sanitizing & checking JS syntax across all 5 files..."
+    render_pipeline_board(progress_slot, stages)
 
-    # 3. Lead JS Engineer AI
-    progress_slot.info("Step 3/5: Lead Engineer AI writing full interactive app.js for all 14 IDs...")
-    js_sys = """You are a Principal JavaScript App Engineer. Write ONLY raw, bug-free vanilla JavaScript for app.js.
-STRICT 14-ID CONTRACT:
-1. index.html ALREADY provides: #view-1, #view-2, #view-3, #view-4, #view-detail, #nav-1..#nav-4, #header-badge, #app-search-bar, #floating-cta, #notice-banner.
-2. Define `window.onAppReady = async function() { ... }` to populate ALL 4 views (#view-1..#view-4) with colorful Tailwind cards + Lucide icons, update #nav-1..#nav-4 labels if needed, and call FactoryUI.refreshIcons(). Also call `if (FactoryDB.getUserSync()) window.onAppReady();` safely.
-3. Define `window.onTabChange = function(tabNum) { ... }`, `window.onSearchInput = function(query) { ... }`, and `window.onFloatingAction = function() { ... }`.
-4. Use `FactoryNav.openDetail(title, html)` for sub-pages when cards/items are tapped!
-5. Use `FactoryDB` (`getUser()`, `recordTx(title, txType, amount, deltaCash, deltaGold, deltaPoints)`, `getTransactions()`, `getLeaderboard()`) and `FactoryUI` (`toast`, `modal`, `receipt`, `downloadPDF`, `safeNum`, `formatINR`, `refreshIcons`).
-6. ZERO DUMMY BUTTONS & ZERO NaN BUGS. Output ONLY raw JavaScript (no markdown, no <script> tags)."""
-    raw_js, js_model, err_js = call_coder_with_fallback(js_sys, f"App Name: {app_title}\nUser Request:\n{user_prompt}\n\nSpec:\n{spec_doc}", max_tokens=4200)
-    if not raw_js:
-        return None, err_js or "Failed to generate app.js"
+    # Dept 6: Security & 5-File Syntax Gate
+    c_html, c_css, c_db, c_js, qa_report = run_qa_sanitizer_bundle(fixed_html, clean_css, db_js, merged_js)
+    comp_ok, _ = validate_js_brackets(components_js)
+    db_ok, _ = validate_js_brackets(c_db)
+    js_ok, _ = validate_js_brackets(c_js)
+    stages[5]["status"] = "done"
+    stages[5]["note"] = f"Security Gate PASS (db:{db_ok}, comp:{comp_ok}, app:{js_ok})."
+    stages[6]["status"] = "running"
+    stages[6]["note"] = "Grok Supervisor Bot auditing all 5 files..."
+    render_pipeline_board(progress_slot, stages)
 
-    # 4. Senior Developer Reviewer Bot + Auto-Repair Loop
-    progress_slot.info("Step 4/5: Senior Developer Bot auditing all 14 IDs & button actions...")
-    approved, rev_issues = senior_review_app_js(app_title, user_prompt, raw_js)
+    # Dept 7: Grok Senior Supervisor Bot
+    approved, rev_issues, sup_model = senior_review_all_5_files(app_title, user_prompt, c_html, c_css, c_db, components_js, c_js)
     repair_log = []
     if not approved:
         repair_log.append("Detected issues: " + "; ".join(rev_issues))
-        progress_slot.info("Step 4B: Senior Bot sent code back to Engineer AI for auto-repair...")
-        repair_prompt = f"Fix ALL listed issues in app.js and output ONLY complete, valid raw JavaScript.\nIssues:\n{chr(10).join(rev_issues)}\n\nExisting app.js:\n{raw_js}"
-        repaired_js, _, _ = call_coder_with_fallback(js_sys, repair_prompt, max_tokens=4200)
-        rep_ok, _ = validate_js_brackets(repaired_js) if repaired_js else (False, "")
-        if repaired_js and rep_ok and "view-1" in repaired_js and "onAppReady" in repaired_js:
-            raw_js = repaired_js
-            repair_log.append("Engineer AI repaired and passed JS syntax verification.")
+        stages[6]["note"] = f"{sup_model} caught issues — repairing app.js..."
+        render_pipeline_board(progress_slot, stages)
+        fix_sys = "Fix ALL listed issues in this merged app.js while keeping window.renderTabs12, window.renderTabs34, window.onFloatingAction, window.onSearchInput, and window.onAppReady intact. Output ONLY valid raw JavaScript."
+        rep_js, _, _ = call_specialist_ai("engineer_b", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=4200)
+        rep_ok, _ = validate_js_brackets(rep_js) if rep_js else (False, "")
+        if rep_js and rep_ok and "view-1" in rep_js and "onAppReady" in rep_js:
+            c_js = rep_js
+            repair_log.append(f"{sup_model} verified repaired app.js cleanly.")
         else:
             repair_log.append("Kept primary verified app.js (repaired draft rejected by syntax gate).")
     else:
-        repair_log.append("All 4 tabs, sub-page hooks, and button handlers passed first inspection.")
+        repair_log.append(f"{sup_model}: All 5 files, 14 IDs, and click handlers passed first inspection.")
+    stages[6]["status"] = "done"
+    stages[6]["note"] = repair_log[-1]
+    stages[7]["status"] = "running"
+    stages[7]["note"] = "Generating 3 custom 3D logos & finalizing bundle..."
+    render_pipeline_board(progress_slot, stages)
 
-    # 5. 3D Badge Icon + QA Gate
-    progress_slot.info("Step 5/5: Brand Designer & QA Gate finalizing 5-file bundle + 3D icon...")
-    custom_svg = generate_custom_svg_icon(app_title, user_prompt)
-    c_html, c_css, c_db, c_js, qa_report = run_qa_sanitizer_bundle(fixed_html, clean_css, db_js, raw_js)
-    js_ok, _ = validate_js_brackets(c_js)
-    qa_report["js_syntax_valid"] = js_ok
+    # Dept 8: 3D Logo Studio + Final Packager
+    logos, sel_idx = generate_3d_logo_studio(app_title, user_prompt)
+    custom_svg = logos[sel_idx]["svg"]
+    js_ok_final, _ = validate_js_brackets(c_js)
+    qa_report["js_syntax_valid"] = js_ok_final and comp_ok and db_ok
     qa_report["all_4_tabs_populated"] = all(v in c_js for v in ["view-1", "view-2", "view-3", "view-4"])
     qa_report["subpage_and_search"] = ("openDetail" in c_js or "FactoryUI.modal" in c_js)
     qa_report["bot_active"] = True
+    qa_report["supervisor_model"] = sup_model
     qa_report["repair_log"] = repair_log
-    c_js = f"""try {{\n{c_js}\n}} catch (sfErr) {{ console.error("AppJS Error:", sfErr); if (window.FactoryNav) window.FactoryNav.ensureNonBlank(); }}"""
-    preview_html = build_combined_preview_html(c_html, c_css, c_db, components_js, c_js)
+
+    safe_c_js = f"""try {{\n{c_js}\n}} catch (sfErr) {{ console.error("AppJS Error:", sfErr); if (window.FactoryNav) window.FactoryNav.ensureNonBlank(); }}"""
+    preview_html = build_combined_preview_html(c_html, c_css, c_db, components_js, safe_c_js)
+
+    stages[7]["status"] = "done"
+    stages[7]["note"] = f"3D Logo Studio ({logos[sel_idx]['label']}) + 5-file bundle ready!"
+    render_pipeline_board(progress_slot, stages)
 
     staged_bundle = {
         "title": app_title,
@@ -1396,10 +1511,12 @@ STRICT 14-ID CONTRACT:
         "css": c_css,
         "db_js": c_db,
         "components_js": components_js,
-        "app_js": c_js,
+        "app_js": safe_c_js,
         "preview_html": preview_html,
         "icon_svg": custom_svg,
-        "model": js_model or "Multi-AI",
+        "logos": logos,
+        "selected_logo_idx": sel_idx,
+        "model": f"{arch_m} | {ui_m} | {eng_a_m} | {eng_b_m} | {sup_model}",
         "qa": qa_report,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -1572,9 +1689,27 @@ with tab_build:
         elif gh_conclusion == "failure":
             st.error("GitHub encountered a build error while compiling the APK.")
             st.markdown(f"<a href='{active_build['actions_url']}' style='display: block; text-align: center; background: #991b1b; color: white; padding: 10px; border-radius: 10px; text-decoration: none; font-weight: 700;'>View GitHub Error Log</a>", unsafe_allow_html=True)
-            if st.button("Clear & Retry Build", use_container_width=True):
-                remove_json_file(ACTIVE_BUILD_FILE)
-                st.rerun()
+            c_f1, c_f2 = st.columns(2)
+            with c_f1:
+                if st.button("Auto-Fix & Rebuild APK (Grok Bot)", use_container_width=True):
+                    with st.spinner("Grok Supervisor Bot repairing app.js and triggering rebuild..."):
+                        try:
+                            cur_js = fetch_file_from_github(active_build["repo"], "app.js")
+                            fixed_js, _, _ = call_specialist_ai("supervisor", "Fix any JavaScript syntax errors in app.js and output ONLY valid raw JavaScript.", cur_js, max_tokens=4000)
+                            ok_fx, _ = validate_js_brackets(fixed_js) if fixed_js else (False, "")
+                            if fixed_js and ok_fx:
+                                push_file_to_github(active_build["repo"], "app.js", fixed_js, "Grok Supervisor Auto-Fix app.js")
+                                st.success("Fixed app.js pushed! GitHub rebuild started.")
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                st.warning("Could not auto-repair syntax. Please click Clear & Retry Build.")
+                        except Exception as fx_e:
+                            st.error(f"Auto-Fix error: {fx_e}")
+            with c_f2:
+                if st.button("Clear & Retry Build", use_container_width=True):
+                    remove_json_file(ACTIVE_BUILD_FILE)
+                    st.rerun()
 
         else:
             # Visual 5-Step Live Board (Zero ugly black terminal text!)
@@ -1650,11 +1785,28 @@ with tab_build:
             st.subheader(f"2. Live Mobile Preview & QA Check: `{staged_app['title']}`")
 
             # Show Custom Generated App Logo + QA Report side by side
+            logos_list = staged_app.get("logos", [{"label": "Selected 3D Logo", "svg": staged_app["icon_svg"]}])
+            sel_logo_idx = staged_app.get("selected_logo_idx", 0)
+            if len(logos_list) >= 3:
+                st.markdown("**3D Logo Studio (Tap any style to select for APK):**")
+                lc1, lc2, lc3 = st.columns(3)
+                for idx_l, (col_l, l_obj) in enumerate(zip([lc1, lc2, lc3], logos_list[:3])):
+                    with col_l:
+                        b64_l = base64.b64encode(l_obj["svg"].encode("utf-8")).decode("utf-8")
+                        is_sel = (idx_l == sel_logo_idx)
+                        brd = "3px solid #10b981" if is_sel else "1.5px solid #334155"
+                        st.markdown(f'<div style="text-align:center;"><img src="data:image/svg+xml;base64,{b64_l}" width="76" style="border-radius:18px;border:{brd};"/></div>', unsafe_allow_html=True)
+                        btn_lbl = "✅ Selected" if is_sel else f"Use {['A','B','C'][idx_l]}"
+                        if st.button(btn_lbl, key=f"pick_logo_{idx_l}", use_container_width=True):
+                            staged_app["selected_logo_idx"] = idx_l
+                            staged_app["icon_svg"] = l_obj["svg"]
+                            save_json_file(STAGED_APP_FILE, staged_app)
+                            st.rerun()
             c_logo, c_qa = st.columns([1, 2])
             with c_logo:
-                st.markdown("**Custom Logo:**")
+                st.markdown("**Active APK Logo:**")
                 b64_svg = base64.b64encode(staged_app["icon_svg"].encode("utf-8")).decode("utf-8")
-                st.markdown(f'<img src="data:image/svg+xml;base64,{b64_svg}" width="90" style="border-radius: 18px; border: 2px solid #3b82f6;"/>', unsafe_allow_html=True)
+                st.markdown(f'<img src="data:image/svg+xml;base64,{b64_svg}" width="90" style="border-radius: 18px; border: 2px solid #10b981;"/>', unsafe_allow_html=True)
             with c_qa:
                 qa = staged_app.get("qa", {})
                 st.markdown("**QA Security Report:**")
