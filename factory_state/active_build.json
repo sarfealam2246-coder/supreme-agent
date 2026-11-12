@@ -1,0 +1,12 @@
+{
+  "id": "BUILD-1794501375",
+  "name": "SkillQuiz Arena",
+  "prompt": "Build a vibrant, colorful, Play-Store-grade Quiz & Daily Challenge app named SkillQuiz Arena using royal blue, violet, gold and emerald gradients. Keep it 100% legal with free virtual points (zero real-money betting).\n1. TAB 1 (#view-1 Home): Colorful greeting with user's Points & Rank, a Daily Challenge banner, 4 Quiz Category cards (Tech, Cricket, GK, Math) where tapping any card opens a full interactive 5-question Quiz inside #view-detail via FactoryNav.openDetail() with timer, score calculation, Confetti on win, and points saved via FactoryDB.recordTx().\n2. TAB 2 (#view-2 Arena & Custom): Create & save custom Quiz Flashcards/Notes to the 4th cloud table using FactoryDB.saveItem('quiz_note', title, data) and list them via FactoryDB.getItems('quiz_note'), filterable by #app-search-bar. Tapping #floating-cta (+) opens a modal to quickly add a new custom question or claim Daily Check-in +50 Points.\n3. TAB 3 (#view-3 Leaderboard & Chart): Live Top Players Leaderboard fetched from FactoryDB.getLeaderboard(), plus a colorful weekly Points Chart using Chart.js.\n4. TAB 4 (#view-4 Profile & Certificate): Show saved Name, Mobile, Points, Transaction History from FactoryDB.getTransactions(), a \"Download Winner Certificate PDF\" button using FactoryUI.downloadPDF(), a \"Share Score on WhatsApp\" button (https://wa.me/?text=...), and Log Out.",
+  "model": "openai/gpt-4o-mini",
+  "repo": "skillquiz-arena-1361",
+  "repo_url": "https://github.com/sarfealam2246-coder/skillquiz-arena-1361",
+  "actions_url": "https://github.com/sarfealam2246-coder/skillquiz-arena-1361/actions",
+  "releases_url": "https://github.com/sarfealam2246-coder/skillquiz-arena-1361/releases",
+  "admin_url": "https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app=skillquiz-arena-1361",
+  "time": "2026-11-12 16:36:15"
+}
