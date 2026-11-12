@@ -1,0 +1,12 @@
+{
+  "id": "BUILD-1794495763",
+  "name": "VyaparSetu Pro",
+  "prompt": "Build a vibrant, colorful, Play-Store-grade commercial Shop Billing, Udhar Khata, QR Scanner & PDF Invoice app named VyaparSetu Pro. Use rich emerald, royal blue, amber and violet gradient cards (never plain black).\n1. TAB 1 (#view-1 Home): Colorful Today's Sales Rs., Pending Udhar Rs., Total Bills cards, a live 7-day Sales Chart (Chart.js), and Quick Action cards that open #view-detail sub-pages via FactoryNav.openDetail().\n2. TAB 2 (#view-2 Billing): Add item name, qty, price & discount (zero NaN), a button to Scan Product QR using Html5Qrcode camera, Generate Bill button that saves via FactoryDB.recordTx(), opens FactoryUI.receipt() with PDF Download + Confetti, and a \"Send Bill on WhatsApp\" button (https://wa.me/?text=...).\n3. TAB 3 (#view-3 Khata & Stock): Customer Udhar/Jama list filterable by #app-search-bar, tapping any customer opens #view-detail with full ledger & \"Add Payment\" button; plus #floating-cta (+) opens Add New Customer modal.\n4. TAB 4 (#view-4 Profile & History): Shopkeeper Name & Mobile saved in Supabase, live Transaction History from FactoryDB.getTransactions(), Download Monthly PDF Report button, and Log Out.",
+  "model": "openai/gpt-4o-mini",
+  "repo": "vyaparsetu-pro-95750",
+  "repo_url": "https://github.com/sarfealam2246-coder/vyaparsetu-pro-95750",
+  "actions_url": "https://github.com/sarfealam2246-coder/vyaparsetu-pro-95750/actions",
+  "releases_url": "https://github.com/sarfealam2246-coder/vyaparsetu-pro-95750/releases",
+  "admin_url": "https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app=vyaparsetu-pro-95750",
+  "time": "2026-11-12 15:02:43"
+}
