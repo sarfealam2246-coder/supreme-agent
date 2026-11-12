@@ -983,12 +983,14 @@ def generate_components_js():
         '<div style="font-size:12px;color:#cbd5e1;">YOUR UNIQUE REFERRAL CODE</div>' +
         '<div style="font-size:24px;font-weight:800;color:#34d399;letter-spacing:2px;margin:8px 0;">' + code + '</div>' +
         '<p style="font-size:12px;color:#e2e8f0;margin:0;">Share with friends to earn +25 bonus points on every invite.</p></div>' +
-        '<button type="button" onclick="FactoryEngine.triggerShare(\'' + code + '\')" style="width:100%;margin-bottom:10px;background:#10b981 !important;">Share via App / Copy</button>' +
+        '<button type="button" onclick="FactoryEngine.triggerShare()" style="width:100%;margin-bottom:10px;background:#10b981 !important;">Share via App / Copy</button>' +
         '<a href="' + waUrl + '" target="_blank" style="display:block;text-align:center;padding:12px;border-radius:12px;background:#16a34a;color:#fff;font-weight:700;text-decoration:none;">Share on WhatsApp</a>';
       window.FactoryNav.openDetail("Refer & Share", body);
     },
     triggerShare: async function(code) {
-      const msg = "Join me on " + document.title + "! Referral Code: " + code;
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const finalCode = code || ("SF" + String((u && u.phone) ? u.phone : "100001").slice(-6));
+      const msg = "Join me on " + document.title + "! Referral Code: " + finalCode;
       if (navigator.share) {
         try { await navigator.share({ title: document.title, text: msg }); } catch (e) {}
       } else {
@@ -1061,9 +1063,26 @@ def generate_components_js():
 })();
 """
 
-def build_fixed_app_shell(app_title):
+def pick_unique_app_theme(app_title, user_prompt=""):
+    """Selects a unique gradient & accent palette per app so every app looks distinct."""
+    p = (app_title + " " + user_prompt).lower()
+    if any(k in p for k in ["task", "pulse", "habit", "fitness", "health", "gym"]):
+        return {"bg": "linear-gradient(135deg,#064e3b,#0f172a)", "accent": "#10b981", "accent2": "#06b6d4", "btn": "linear-gradient(135deg,#10b981,#06b6d4)"}
+    if any(k in p for k in ["shop", "khata", "bill", "vyapar", "store", "seva", "book"]):
+        return {"bg": "linear-gradient(135deg,#1e1b4b,#0f172a)", "accent": "#f59e0b", "accent2": "#3b82f6", "btn": "linear-gradient(135deg,#f59e0b,#ea580c)"}
+    if any(k in p for k in ["quiz", "edu", "study", "learn", "game", "arena"]):
+        return {"bg": "linear-gradient(135deg,#3b0764,#0f172a)", "accent": "#a855f7", "accent2": "#ec4899", "btn": "linear-gradient(135deg,#8b5cf6,#ec4899)"}
+    return {"bg": "linear-gradient(135deg,#0c4a6e,#090d1a)", "accent": "#38bdf8", "accent2": "#6366f1", "btn": "linear-gradient(135deg,#0284c7,#6366f1)"}
+
+def build_fixed_app_shell(app_title, custom_svg="", user_prompt=""):
     """Guaranteed 14-ID Colorful Fixed App Shell (index.html) with Tailwind, Fonts, Lucide, Chart.js, jsPDF, Confetti."""
     safe_title = app_title.replace("<", "").replace(">", "")
+    th = pick_unique_app_theme(safe_title, user_prompt)
+    if custom_svg and "<svg" in custom_svg:
+        b64_ic = base64.b64encode(custom_svg.encode("utf-8")).decode("utf-8")
+        logo_html = f'<img src="data:image/svg+xml;base64,{b64_ic}" width="72" height="72" style="border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.5);margin:0 auto 12px auto;display:block;"/>'
+    else:
+        logo_html = f'<div class="splash-badge" style="margin:0 auto 14px auto;background:{th["btn"]};">{safe_title[:2].upper()}</div>'
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1085,7 +1104,7 @@ def build_fixed_app_shell(app_title):
 <body>
   <!-- 1. Splash Screen -->
   <div id="splash-screen">
-    <div class="splash-badge">{safe_title[:2].upper()}</div>
+    {logo_html}
     <h1 style="margin:14px 0 4px 0;font-size:24px;font-weight:800;color:#ffffff;">{safe_title}</h1>
     <p style="margin:0;font-size:12px;color:#38bdf8;letter-spacing:1.2px;">VERSION 1.0 • CLOUD READY</p>
   </div>
@@ -1134,8 +1153,8 @@ def build_fixed_app_shell(app_title):
 
   <!-- 4. Login View -->
   <section id="view-login">
-    <div class="login-card">
-      <div class="splash-badge" style="margin:0 auto 14px auto;">{safe_title[:2].upper()}</div>
+    <div class="login-card" style="background:{th['bg']};border:1px solid {th['accent']};">
+      {logo_html}
       <h2 style="margin:0 0 6px 0;text-align:center;font-size:22px;font-weight:800;color:#ffffff;">Welcome to {safe_title}</h2>
       <p style="margin:0 0 18px 0;text-align:center;font-size:13px;color:#cbd5e1;">Sign in to sync your account with cloud</p>
       <label class="sf-label">Full Name / Business Name</label>
@@ -1210,39 +1229,111 @@ def build_fixed_app_shell(app_title):
   <script src="db.js"></script>
   <script src="components.js"></script>
   <script src="app.js"></script>
-  <script>setTimeout(function(){{var s=document.getElementById("splash-screen");if(s)s.classList.add("hide");}},1500);</script>
+  <div id="sf-error-bar" style="display:none;position:fixed;top:8px;left:10px;right:10px;z-index:99999;background:#7f1d1d;color:#fecaca;border:1px solid #f87171;border-radius:12px;padding:10px 12px;font-size:12px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,0.7);"></div>
+  <script>
+    window.onerror = function(msg, url, line) {{
+      var eb = document.getElementById("sf-error-bar");
+      if (eb) {{ eb.style.display = "block"; eb.textContent = "Runtime Guard: " + msg + " (Line " + line + ")"; }}
+    }};
+    setTimeout(function() {{
+      var s = document.getElementById("splash-screen");
+      if (s) s.classList.add("hide");
+      if (!window.FactoryNav || !window.FactoryDB || !window.FactoryEngine) {{
+        var eb = document.getElementById("sf-error-bar");
+        if (eb) {{ eb.style.display = "block"; eb.textContent = "Engine Check Failed: Core JS module did not load cleanly."; }}
+      }}
+    }}, 1500);
+  </script>
 </body>
 </html>"""
 
 def validate_js_brackets(js_code):
+    """Strict JS Syntax Gate: runs node --check if available AND strict string/comment/bracket lexer."""
+    if not js_code or not js_code.strip():
+        return False, "Empty JS code"
+    # 1. Try native node --check if node binary is installed
+    try:
+        import subprocess, tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tf:
+            tf.write(js_code)
+            tf_path = tf.name
+        proc = subprocess.run(["node", "--check", tf_path], capture_output=True, text=True, timeout=6)
+        try:
+            os.remove(tf_path)
+        except Exception:
+            pass
+        if proc.returncode != 0:
+            err_txt = (proc.stderr or proc.stdout or "JS SyntaxError").strip().splitlines()[:3]
+            return False, "NodeJS SyntaxError: " + " | ".join(err_txt)
+        return True, "OK (node --check)"
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    # 2. Strict Python JS Lexer fallback (catches unclosed strings, comments, & mismatched brackets)
     stack = []
     pairs = {"{": "}", "(": ")", "[": "]"}
-    closing = set(pairs.values())
+    closing = {"}": "{", ")": "(", "]": "["}
+    i, n = 0, len(js_code)
     in_str = None
-    escaped = False
-    for ch in js_code:
-        if escaped:
-            escaped = False
+    in_line_comment = False
+    in_block_comment = False
+    line_no = 1
+    while i < n:
+        c = js_code[i]
+        nxt = js_code[i + 1] if i + 1 < n else ""
+        if c == "\n":
+            line_no += 1
+            in_line_comment = False
+            if in_str in ("'", '"'):
+                return False, f"Unclosed string literal at line {line_no - 1}"
+            i += 1
             continue
-        if ch == "\\":
-            escaped = True
+        if in_line_comment:
+            i += 1
+            continue
+        if in_block_comment:
+            if c == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
             continue
         if in_str:
-            if ch == in_str:
+            if c == "\\":
+                i += 2
+                continue
+            if c == in_str:
                 in_str = None
+            i += 1
             continue
-        if ch in ('"', "'", "`"):
-            in_str = ch
+        if c == "/" and nxt == "/":
+            in_line_comment = True
+            i += 2
             continue
-        if ch in pairs:
-            stack.append(pairs[ch])
-        elif ch in closing:
-            if not stack or stack[-1] != ch:
-                return False, f"Unmatched closing bracket: {ch}"
+        if c == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+        if c in ("'", '"', "`"):
+            in_str = c
+            i += 1
+            continue
+        if c in pairs:
+            stack.append((c, line_no))
+        elif c in closing:
+            if not stack or stack[-1][0] != closing[c]:
+                return False, f"Unexpected '{c}' at line {line_no}"
             stack.pop()
+        i += 1
+    if in_str:
+        return False, f"Unclosed {in_str} string at EOF"
+    if in_block_comment:
+        return False, "Unclosed /* comment */ at EOF"
     if stack:
-        return False, f"Unclosed brackets remaining: {''.join(stack)}"
-    return True, "OK"
+        return False, f"Unclosed '{stack[-1][0]}' from line {stack[-1][1]}"
+    return True, "OK (Strict Lexer)"
 
 def enforce_css_guardrails(css_code):
     """Colorful Mesh Gradient Theme + 14-ID Fixed Shell Layout + Zero White-on-White Lock."""
@@ -1582,10 +1673,12 @@ def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     stages[2]["note"] = "Injecting Sarfealam Realtime Engine, Supabase 4-Table, Email OTP & Refer/Share..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 3: Sarfealam Core & Supabase Realtime Engine
+    # Dept 3: Sarfealam Core & Supabase Realtime Engine + Selected 3D Logo for Unique Login/Splash
+    logos, sel_idx = generate_3d_logo_studio(app_title, user_prompt)
+    custom_svg = logos[sel_idx]["svg"]
     db_js = generate_db_js(app_slug)
     components_js = generate_components_js()
-    fixed_html = build_fixed_app_shell(app_title)
+    fixed_html = build_fixed_app_shell(app_title, custom_svg, user_prompt)
     boss_log.append("[Grok Boss] Dept 3 Sarfealam Realtime Engine + Floating Glass Shell wired.")
     stages[2]["status"] = "done"
     stages[2]["note"] = "Sarfealam Core + Supabase Realtime + Floating Glass Shell ready."
@@ -1648,10 +1741,10 @@ Mandatory rules:
     stages[5]["note"] = "Generating 6 custom 3D logos & finalizing bundle..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 8: 3D Logo Studio + Final Packager
-    logos, sel_idx = generate_3d_logo_studio(app_title, user_prompt)
-    custom_svg = logos[sel_idx]["svg"]
-    js_ok_final, _ = validate_js_brackets(c_js)
+    # Dept 6: Final 5-File Bundle & Strict Syntax Verification
+    js_ok_final, js_diag = validate_js_brackets(c_js)
+    if not comp_ok or not db_ok or not js_ok_final:
+        boss_log.append(f"[CRITICAL GATE FAIL] db:{db_ok} comp:{comp_ok} app:{js_ok_final} ({js_diag})")
     qa_report["js_syntax_valid"] = js_ok_final and comp_ok and db_ok
     qa_report["all_4_tabs_populated"] = all(v in c_js for v in ["view-1", "view-2", "view-3", "view-4"])
     qa_report["subpage_and_search"] = ("openDetail" in c_js or "FactoryUI.modal" in c_js)
@@ -1986,6 +2079,8 @@ with tab_build:
                             if st.button(btn_lbl, key=f"pick_logo_{idx_l}", use_container_width=True):
                                 staged_app["selected_logo_idx"] = idx_l
                                 staged_app["icon_svg"] = l_obj["svg"]
+                                staged_app["html"] = build_fixed_app_shell(staged_app["title"], l_obj["svg"], staged_app.get("prompt", ""))
+                                staged_app["preview_html"] = build_combined_preview_html(staged_app["html"], staged_app["css"], staged_app["db_js"], staged_app["components_js"], staged_app["app_js"])
                                 save_json_file(STAGED_APP_FILE, staged_app)
                                 st.rerun()
             c_logo, c_qa = st.columns([1, 2])
