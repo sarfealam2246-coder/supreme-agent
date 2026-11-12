@@ -1680,7 +1680,7 @@ Mandatory rules:
         "icon_svg": custom_svg,
         "logos": logos,
         "selected_logo_idx": sel_idx,
-        "model": f"{arch_m} | {ui_m} | {eng_a_m} | {eng_b_m} | {sup_model}",
+        "model": f"{arch_m} | {ui_m} | {eng_m} | {sup_model}",
         "qa": qa_report,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
