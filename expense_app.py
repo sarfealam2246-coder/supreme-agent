@@ -62,39 +62,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
 
       - name: Compile Universal High-Speed Android APK
-        run: |
-          git clone --depth 1 https://github.com/xchacha20-poly1305/webview-apk-template.git android-shell
-          cd android-shell
-
-          # Extract Dynamic App Title and Package from Repository Name
-          RAW_NAME="${{ github.event.repository.name }}"
-          CLEAN_NAME=$(echo "$RAW_NAME" \vert{} sed 's/-[0-9]*$//')
-          APP_TITLE=$(echo "$CLEAN_NAME" | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++)sub(/./,toupper(substr($i,1,1)),$i)}1')
-          PKG_NAME=$(echo "$CLEAN_NAME" | tr -d '-' | tr '[:upper:]' '[:lower:]')
-
-          # Package Standalone Local App Assets (Zero External URLs, Zero Watermarks)
-          mkdir -p app/src/main/assets
-          cp ../index.html app/src/main/assets/index.html
-          echo "app.url=file:///android_asset/index.html" > app.properties
-          echo "app.package=com.sarfealam.$PKG_NAME" >> app.properties
-          echo "app.name=$APP_TITLE" >> app.properties
-
-          # Apply Custom App-Specific SVG Icon
-          if [ -f "../icon.svg" ]; then
-            cp ../icon.svg icon.svg
-            echo "app.icon_url=icon.svg" >> app.properties
-          else
-            echo "app.icon_url=https://cdn-icons-png.flaticon.com/512/3135/3135715.png" >> app.properties
-          fi
-
-          # Compile Native Android APK (Unrestricted Size)
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-
-          # Export Signed APK Output
-          mkdir -p ../dist
-          cp app/build/outputs/apk/debug/*.apk ../dist/${PKG_NAME}_signed.apk
-          ls -lh ../dist/
+        run: bash build.sh
 
       - name: Publish Production APK to GitHub Releases
         uses: softprops/action-gh-release@v1
@@ -108,6 +76,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 """
 
+def make_build_script(app_title, pkg_slug):
+    return f"""#!/bin/bash
+set -e
+git clone --depth 1 https://github.com/xchacha20-poly1305/webview-apk-template.git android-shell
+cd android-shell
+mkdir -p app/src/main/assets
+cp ../index.html app/src/main/assets/index.html
+echo "app.url=file:///android_asset/index.html" > app.properties
+echo "app.package=com.sarfealam.{pkg_slug}" >> app.properties
+echo "app.name={app_title}" >> app.properties
+if [ -f "../icon.svg" ]; then
+  cp ../icon.svg icon.svg
+  echo "app.icon_url=icon.svg" >> app.properties
+else
+  echo "app.icon_url=https://cdn-icons-png.flaticon.com/512/3135/3135715.png" >> app.properties
+fi
+chmod +x gradlew
+./gradlew assembleDebug --no-daemon
+mkdir -p ../dist
+cp app/build/outputs/apk/debug/*.apk ../dist/{pkg_slug}_signed.apk
+ls -lh ../dist/
+"""
+
 # ==============================================================================
 # PERSISTENT STORAGE & CLOUD SYNC HELPERS
 # ==============================================================================
@@ -119,7 +110,6 @@ def load_json_file(path, default_val):
                 return json.load(f)
         except Exception:
             pass
-    # Fallback: Recover permanently from GitHub supreme-agent/factory_state/
     try:
         raw = fetch_file_from_github("supreme-agent", f"factory_state/{path}")
         data = json.loads(raw)
@@ -135,7 +125,6 @@ def save_json_file(path, data):
             json.dump(data, f, indent=2)
     except Exception:
         pass
-    # Sync permanently to GitHub so Streamlit Cloud sleep never erases state
     if path in (STAGED_APP_FILE, ACTIVE_BUILD_FILE):
         try:
             push_file_to_github("supreme-agent", f"factory_state/{path}", json.dumps(data, indent=2), f"Sync {path}")
@@ -335,12 +324,10 @@ def run_qa_sanitizer(html_code):
             issues_fixed.append(f"Removed sensitive reference: {forbidden}")
             cleaned = cleaned.replace(forbidden, "User")
 
-    # Neutralize broken upi:// links that crash Android WebView
     if "upi://" in cleaned:
         cleaned = re.sub(r"upi://[^\s>]+", "#payment-modal", cleaned)
         issues_fixed.append("Converted external upi:// links to safe in-app actions")
 
-    # Ensure mobile viewport meta tag exists
     if "viewport" not in cleaned.lower():
         cleaned = cleaned.replace("<head>", '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">')
         issues_fixed.append("Added mobile responsive viewport")
@@ -748,8 +735,11 @@ with tab_build:
                         except Exception:
                             repo_url = f"[https://github.com/](https://github.com/){DEFAULT_GITHUB_USERNAME}/{safe_repo}"
 
+                        pkg_slug = re.sub(r'[^a-z0-9]', '', staged_app["title"].lower()) or "smartapp"
+                        build_sh = make_build_script(staged_app["title"], pkg_slug)
                         push_file_to_github(safe_repo, "index.html", staged_app["html"], "Deploy QA-Verified Public App")
                         push_file_to_github(safe_repo, "icon.svg", staged_app["icon_svg"], "Add Custom App-Specific SVG Icon")
+                        push_file_to_github(safe_repo, "build.sh", build_sh, "Add Clean APK Build Script")
                         push_file_to_github(safe_repo, ".github/workflows/build_apk.yml", AUTOMATED_APK_WORKFLOW, "Launch Standalone APK Engine")
 
                         rec = {
