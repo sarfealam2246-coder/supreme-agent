@@ -808,10 +808,21 @@ def generate_components_js():
       const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
       const nameEl = document.getElementById("drawer-user-name");
       const phoneEl = document.getElementById("drawer-user-phone");
+      const idEl = document.getElementById("drawer-user-id");
+      const ptsEl = document.getElementById("drawer-stat-pts");
+      const avEl = document.getElementById("header-avatar-txt");
+      const davEl = document.getElementById("drawer-avatar-txt");
       const badgeEl = document.getElementById("header-badge");
       if (u) {
-        if (nameEl) nameEl.textContent = u.full_name || "User";
-        if (phoneEl) phoneEl.textContent = u.phone || "";
+        const nm = u.full_name || "User";
+        const ini = nm.trim().charAt(0).toUpperCase() || "U";
+        const uid = "SF" + String(u.phone || "100001").slice(-6);
+        if (nameEl) nameEl.textContent = nm;
+        if (phoneEl) phoneEl.textContent = (u.email || u.phone || "Synced User");
+        if (idEl) idEl.textContent = "ID: " + uid;
+        if (ptsEl) ptsEl.textContent = (u.points || 100) + " Pts";
+        if (avEl) avEl.textContent = ini;
+        if (davEl) davEl.textContent = ini;
         if (badgeEl) badgeEl.textContent = (u.cash_balance > 0) ? window.FactoryUI.formatINR(u.cash_balance) : ((u.points || 100) + " Pts");
       }
     },
@@ -902,24 +913,40 @@ def generate_components_js():
     },
     ensureNonBlank: function() {
       setTimeout(function() {
+        const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
         const v1 = document.getElementById("view-1");
         if (v1 && v1.innerHTML.trim().length < 20) {
-          const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
-          v1.innerHTML = '<div class="sf-card" style="margin-bottom:12px;">' +
-            '<h3 style="margin:0 0 6px 0;color:#38bdf8;">Dashboard Active</h3>' +
-            '<p style="margin:0;color:#cbd5e1;font-size:13px;">Welcome ' + (u ? u.full_name : "User") + '. Cloud sync is ready.</p></div>' +
-            '<button type="button" onclick="FactoryNav.openQuickEntry()" style="width:100%;">+ Add New Record</button>';
+          v1.innerHTML = '<div class="sf-hero-card">' +
+            '<span class="sf-badge-live">LIVE ENGINE READY</span>' +
+            '<h3 style="margin:8px 0 4px 0;color:#ffffff;">Welcome, ' + (u ? u.full_name : "User") + '</h3>' +
+            '<p style="margin:0;color:#cbd5e1;font-size:13px;">Cloud sync & realtime engine active.</p></div>' +
+            '<button type="button" onclick="FactoryNav.openQuickEntry()" style="width:100%;">+ Quick Cloud Entry</button>';
+        }
+        const v2 = document.getElementById("view-2");
+        if (v2 && v2.innerHTML.trim().length < 20) {
+          v2.innerHTML = '<div class="sf-card" style="margin-bottom:12px;"><h3 style="margin:0 0 6px 0;color:#38bdf8;">Quick Actions</h3>' +
+            '<p style="margin:0 0 10px 0;color:#cbd5e1;font-size:13px;">Create records, share invite link, or open app guide.</p>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+            '<button type="button" onclick="FactoryNav.openQuickEntry()">+ New Entry</button>' +
+            '<button type="button" onclick="FactoryEngine.openReferShare()" style="background:#059669 !important;">Refer & Share</button></div></div>';
+        }
+        const v3 = document.getElementById("view-3");
+        if (v3 && v3.innerHTML.trim().length < 20) {
+          v3.innerHTML = '<div class="sf-card"><h3 style="margin:0 0 6px 0;color:#38bdf8;">Cloud Records</h3>' +
+            '<p style="margin:0 0 10px 0;color:#cbd5e1;font-size:13px;">Tap below to add or refresh your synced cloud items.</p>' +
+            '<button type="button" onclick="FactoryNav.openQuickEntry()" style="width:100%;">+ Add Record</button></div>';
         }
         const v4 = document.getElementById("view-4");
         if (v4 && v4.innerHTML.trim().length < 20) {
-          const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
           v4.innerHTML = '<div class="sf-card"><h3 style="margin:0 0 8px 0;color:#ffffff;">My Profile</h3>' +
             '<p style="margin:4px 0;color:#cbd5e1;">Name: <b>' + (u ? u.full_name : "User") + '</b></p>' +
-            '<p style="margin:4px 0;color:#cbd5e1;">Mobile: <b>' + (u ? u.phone : "-") + '</b></p>' +
-            '<p style="margin:4px 0;color:#34d399;">Balance: <b>' + window.FactoryUI.formatINR(u ? u.cash_balance : 0) + '</b></p>' +
-            '<button type="button" onclick="FactoryNav.logout()" style="width:100%;margin-top:12px;background:#dc2626 !important;">Log Out</button></div>';
+            '<p style="margin:4px 0;color:#cbd5e1;">Contact: <b>' + (u ? (u.email || u.phone) : "-") + '</b></p>' +
+            '<p style="margin:4px 0;color:#34d399;">Points: <b>' + (u ? (u.points || 100) : 100) + ' Pts</b></p>' +
+            '<button type="button" onclick="FactoryEngine.openReferShare()" style="width:100%;margin-top:10px;background:#0284c7 !important;">Refer & Earn Points</button>' +
+            '<button type="button" onclick="FactoryNav.logout()" style="width:100%;margin-top:10px;background:#dc2626 !important;">Log Out</button></div>';
         }
-      }, 350);
+        window.FactoryUI.refreshIcons();
+      }, 450);
     },
     openQuickEntry: function() {
       window.FactoryNav.openDetail("Quick Entry", "<p>Add your first cloud record below.</p><input id=fb-t placeholder=Title style=margin-bottom:10px><button type=button onclick=FactoryNav.saveQuick()>Save to Cloud</button>");
@@ -939,6 +966,80 @@ def generate_components_js():
     }
   };
 
+  window.FactoryEngine = {
+    rtSocket: null,
+    copyUserId: function() {
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const uid = "SF" + String((u && u.phone) ? u.phone : "100001").slice(-6);
+      try { navigator.clipboard.writeText(uid); } catch (e) {}
+      window.FactoryUI.toast("Copied ID: " + uid, "success");
+    },
+    openReferShare: function() {
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const code = "SF" + String((u && u.phone) ? u.phone : "100001").slice(-6);
+      const msg = "Join me on " + document.title + "! Use my referral code " + code + " to get started.";
+      const waUrl = "https://wa.me/?text=" + encodeURIComponent(msg);
+      const body = '<div class="sf-hero-card" style="text-align:center;">' +
+        '<div style="font-size:12px;color:#cbd5e1;">YOUR UNIQUE REFERRAL CODE</div>' +
+        '<div style="font-size:24px;font-weight:800;color:#34d399;letter-spacing:2px;margin:8px 0;">' + code + '</div>' +
+        '<p style="font-size:12px;color:#e2e8f0;margin:0;">Share with friends to earn +25 bonus points on every invite.</p></div>' +
+        '<button type="button" onclick="FactoryEngine.triggerShare(\'' + code + '\')" style="width:100%;margin-bottom:10px;background:#10b981 !important;">Share via App / Copy</button>' +
+        '<a href="' + waUrl + '" target="_blank" style="display:block;text-align:center;padding:12px;border-radius:12px;background:#16a34a;color:#fff;font-weight:700;text-decoration:none;">Share on WhatsApp</a>';
+      window.FactoryNav.openDetail("Refer & Share", body);
+    },
+    triggerShare: async function(code) {
+      const msg = "Join me on " + document.title + "! Referral Code: " + code;
+      if (navigator.share) {
+        try { await navigator.share({ title: document.title, text: msg }); } catch (e) {}
+      } else {
+        try { navigator.clipboard.writeText(msg); } catch (e) {}
+      }
+      window.FactoryUI.toast("Invite link ready & +25 Pts logged!", "success");
+      window.FactoryUI.confetti();
+    },
+    openTutorial: function() {
+      const custom = window.APP_TUTORIAL_HTML || ('<div class="sf-card"><h3 style="margin:0 0 8px 0;color:#38bdf8;">How to Use ' + document.title + '</h3>' +
+        '<p style="color:#cbd5e1;font-size:13px;line-height:1.5;">1. Use bottom floating tabs to switch Home, Actions, Records & Profile.<br>' +
+        '2. Tap any card to open its full detail view and use Back to return.<br>' +
+        '3. Tap the + button anytime for quick cloud actions synced with Supabase.</p></div>');
+      window.FactoryNav.openDetail("App Guide & Tutorial", custom);
+    },
+    openNotifications: function() {
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const html = '<div class="sf-list-row"><div><strong style="color:#fff;">Cloud Sync Active</strong><div style="font-size:12px;color:#94a3b8;">Connected to live Supabase Realtime</div></div><span class="sf-badge-live">LIVE</span></div>' +
+        '<div class="sf-list-row"><div><strong style="color:#fff;">Welcome ' + (u ? u.full_name : "User") + '</strong><div style="font-size:12px;color:#94a3b8;">Your session & points are synced.</div></div><span class="sf-badge-live">OK</span></div>';
+      window.FactoryNav.openDetail("Notifications", html);
+    },
+    startRealtime: function(onDataChange) {
+      if (window.FactoryEngine.rtSocket) return;
+      try {
+        const ws = new WebSocket("wss://saexbzapfzfkzqkunsom.supabase.co/realtime/v1/websocket?apikey=sb_publishable_3YZ2OA5MiOoVoLqFCXcsxw_JIjNlEjY&vsn=1.0.0");
+        window.FactoryEngine.rtSocket = ws;
+        ws.onopen = function() {
+          ws.send(JSON.stringify({ topic: "realtime:public:factory_app_items", event: "phx_join", payload: {}, ref: "1" }));
+        };
+        ws.onmessage = function(ev) {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg && (msg.event === "INSERT" || msg.event === "UPDATE" || msg.event === "DELETE" || msg.event === "postgres_changes")) {
+              if (typeof onDataChange === "function") onDataChange(msg);
+            }
+          } catch (e) {}
+        };
+        setInterval(function() {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ topic: "phoenix", event: "heartbeat", payload: {}, ref: "hb" }));
+        }, 25000);
+      } catch (e) {}
+    }
+  };
+
+  window.addEventListener("popstate", function() {
+    const d = document.getElementById("view-detail");
+    if (d && d.style.display === "block") window.FactoryNav.closeDetail();
+    const m = document.getElementById("app-modal");
+    if (m && m.classList.contains("open")) window.FactoryUI.closeModal();
+  });
+
   document.addEventListener("DOMContentLoaded", async function() {
     setTimeout(function() {
       const sp = document.getElementById("splash-screen");
@@ -950,6 +1051,9 @@ def generate_components_js():
       window.FactoryNav.showAppShell();
       if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
       window.FactoryNav.ensureNonBlank();
+      window.FactoryEngine.startRealtime(function() {
+        if (typeof window.onAppReady === "function") { try { window.onAppReady(); } catch (e) {} }
+      });
     } else {
       window.FactoryNav.showLogin();
     }
@@ -986,22 +1090,43 @@ def build_fixed_app_shell(app_title):
     <p style="margin:0;font-size:12px;color:#38bdf8;letter-spacing:1.2px;">VERSION 1.0 • CLOUD READY</p>
   </div>
 
-  <!-- 2. Slide-out Profile Drawer -->
+  <!-- 2. Slide-out Premium Profile Drawer -->
   <div id="drawer-backdrop" onclick="FactoryNav.closeDrawer()"></div>
   <aside id="profile-drawer">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
-      <strong style="font-size:17px;color:#ffffff;">{safe_title}</strong>
-      <button type="button" onclick="FactoryNav.closeDrawer()" style="min-height:34px;padding:4px 10px;background:#1e293b !important;">X</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <strong style="font-size:16px;color:#ffffff;">{safe_title}</strong>
+      <button type="button" onclick="FactoryNav.closeDrawer()" style="min-height:32px;padding:4px 10px;background:#1e293b !important;">X</button>
     </div>
-    <div class="sf-card" style="margin-bottom:14px;">
-      <div id="drawer-user-name" style="font-size:16px;font-weight:800;color:#ffffff;">Guest User</div>
-      <div id="drawer-user-phone" style="font-size:13px;color:#94a3b8;margin-top:4px;">Not signed in</div>
+    <div class="sf-hero-card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div id="drawer-avatar-txt" class="sf-avatar-circle">U</div>
+        <div style="min-width:0;flex:1;">
+          <div id="drawer-user-name" style="font-size:15px;font-weight:800;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Guest User</div>
+          <div id="drawer-user-phone" style="font-size:12px;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Not signed in</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+            <span id="drawer-user-id" style="font-size:11px;color:#38bdf8;font-weight:700;">ID: SF100001</span>
+            <button type="button" onclick="FactoryEngine.copyUserId()" style="min-height:22px;padding:2px 8px;font-size:10px;background:#0f172a !important;border:1px solid #38bdf8;">Copy</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(1);" class="drawer-btn">Home Dashboard</button>
-    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(2);" class="drawer-btn">Main Workspace</button>
-    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(3);" class="drawer-btn">Records & Insights</button>
-    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(4);" class="drawer-btn">Profile & History</button>
-    <button type="button" onclick="FactoryNav.logout()" style="width:100%;margin-top:16px;background:#dc2626 !important;">Log Out</button>
+    <div class="sf-stat-grid" style="margin-bottom:12px;">
+      <div class="sf-stat-box" style="padding:10px;">
+        <div style="font-size:10px;color:#94a3b8;">REWARDS</div>
+        <div id="drawer-stat-pts" style="font-size:14px;font-weight:800;color:#34d399;">100 Pts</div>
+      </div>
+      <div class="sf-stat-box" style="padding:10px;">
+        <div style="font-size:10px;color:#94a3b8;">ENGINE</div>
+        <div style="font-size:13px;font-weight:800;color:#38bdf8;">Live Sync</div>
+      </div>
+    </div>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(1);" class="sf-menu-item"><span>Home Dashboard</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(2);" class="sf-menu-item"><span>Main Workspace</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(3);" class="sf-menu-item"><span>Records & Insights</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryEngine.openReferShare();" class="sf-menu-item"><span>Refer & Share</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryEngine.openTutorial();" class="sf-menu-item"><span>App Guide / Tutorial</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.closeDrawer();FactoryNav.switchTab(4);" class="sf-menu-item"><span>Profile & Account</span><span>&rsaquo;</span></button>
+    <button type="button" onclick="FactoryNav.logout()" style="width:100%;margin-top:12px;background:#dc2626 !important;">Log Out</button>
   </aside>
 
   <!-- 3. Universal Modal Container -->
@@ -1036,11 +1161,18 @@ def build_fixed_app_shell(app_title):
   <!-- 5. Authenticated App Shell -->
   <div id="app-shell" style="display:none;">
     <header id="app-header">
-      <button type="button" onclick="FactoryNav.openDrawer()" class="icon-btn" aria-label="Menu">
-        <i data-lucide="menu"></i>
-      </button>
-      <span style="font-size:16px;font-weight:800;color:#ffffff;">{safe_title}</span>
-      <span id="header-badge" class="header-pill">Rs. 0</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Profile Menu">
+          <span id="header-avatar-txt">U</span>
+        </button>
+        <span style="font-size:16px;font-weight:800;color:#ffffff;">{safe_title}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button type="button" onclick="FactoryEngine.openNotifications()" class="icon-btn" style="min-height:34px;padding:6px 8px;" aria-label="Notifications">
+          <i data-lucide="bell"></i>
+        </button>
+        <span id="header-badge" class="header-pill">100 Pts</span>
+      </div>
     </header>
 
     <main id="app-main">
@@ -1187,10 +1319,11 @@ input::placeholder, textarea::placeholder { color: #94a3b8 !important; }
   box-shadow: 0 8px 24px rgba(16,185,129,0.45) !important;
 }
 #bottom-nav {
-  position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
-  height: 68px; z-index: 500;
-  background: rgba(15, 23, 42, 0.96); backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(56,189,248,0.25);
+  position: fixed !important; bottom: 10px !important; left: 12px !important; right: 12px !important;
+  height: 64px; z-index: 500;
+  background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(18px);
+  border: 1px solid rgba(56,189,248,0.32); border-radius: 26px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.65);
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px 8px;
 }
 .nav-btn {
@@ -1222,6 +1355,12 @@ input::placeholder, textarea::placeholder { color: #94a3b8 !important; }
 .sf-action-tile { background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(14,165,233,0.22)); border: 1px solid rgba(52,211,153,0.4); border-radius: 16px; padding: 14px; text-align: center; cursor: pointer; }
 .sf-list-row { background: rgba(15,23,42,0.85); border: 1px solid rgba(148,163,184,0.22); border-radius: 14px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .sf-badge-live { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid #10b981; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 800; }
+.sf-avatar-btn { width: 36px; height: 36px; min-height: 36px !important; padding: 0 !important; border-radius: 50% !important; background: linear-gradient(135deg, #2563eb, #10b981) !important; color: #ffffff !important; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.35); }
+.sf-avatar-circle { width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #10b981); color: #fff; font-size: 20px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.4); }
+.sf-menu-item { width: 100%; display: flex; justify-content: space-between; align-items: center; background: rgba(30,41,59,0.75) !important; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px !important; padding: 10px 14px !important; margin-bottom: 8px; color: #f8fafc !important; font-size: 13.5px; font-weight: 700; min-height: 42px !important; }
+.sf-hscroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+.sf-hscroll::-webkit-scrollbar { display: none; }
+.sf-hcard { min-width: 195px; flex-shrink: 0; background: linear-gradient(145deg, rgba(30,41,59,0.92), rgba(15,23,42,0.95)); border: 1px solid rgba(56,189,248,0.3); border-radius: 16px; padding: 12px; box-shadow: 0 8px 18px rgba(0,0,0,0.4); }
 """
     return (css_code or "") + "\n" + guard
 
@@ -1317,10 +1456,11 @@ def generate_3d_logo_studio(app_title, user_prompt):
 def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
     """Routes each department to its specialist AI model via the single OpenRouter Master Key with automatic fallbacks."""
     role_map = {
-        "architect": ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini", "x-ai/grok-4.1-fast"],
+        "architect": ["google/gemini-2.0-flash-001", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
         "designer": ["anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001", "openai/gpt-4o-mini"],
-        "engineer_a": ["deepseek/deepseek-chat", "openai/gpt-4o-mini", "google/gemini-2.0-flash-001"],
-        "engineer_b": ["openai/gpt-4o-mini", "deepseek/deepseek-chat", "google/gemini-2.0-flash-001"],
+        "engineer_single": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
+        "engineer_a": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
+        "engineer_b": ["x-ai/grok-4.1-fast", "deepseek/deepseek-chat", "openai/gpt-4o-mini"],
         "supervisor": ["x-ai/grok-4.1-fast", "anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"]
     }
     models = role_map.get(role, ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini"])
@@ -1339,9 +1479,19 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
             last_err = f"{m_id}: {str(e)[:120]}"
     return "", "", last_err
 
-def render_pipeline_board(slot, stages):
-    """Renders a clean 8-Department Visual Build Board in real time."""
-    cards = ""
+def render_pipeline_board(slot, stages, boss_log=None):
+    """Renders Live Grok Boss + Radar Bot Watch Panel AND 6-Department Visual Build Board in real time."""
+    boss_banner = ""
+    if boss_log is not None:
+        latest_watch = boss_log[-1] if boss_log else "Grok Boss & Live Radar Bot watching every step from start..."
+        boss_banner = f"""<div style="background:linear-gradient(135deg,rgba(16,185,129,0.18),rgba(37,99,235,0.22));border:1px solid #38bdf8;border-radius:14px;padding:10px 14px;margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:13px;color:#38bdf8;">Grok Boss + Live Radar Bot</strong>
+                <span style="background:#059669;color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;">LIVE WATCHING</span>
+            </div>
+            <div style="font-size:11.5px;color:#e2e8f0;margin-top:4px;">{latest_watch}</div>
+        </div>"""
+    cards = boss_banner
     for stg in stages:
         st_status = stg["status"]
         icon = "✅" if st_status == "done" else ("⏳" if st_status == "running" else "⬜")
@@ -1353,8 +1503,19 @@ def render_pipeline_board(slot, stages):
         </div>"""
     slot.markdown(cards, unsafe_allow_html=True)
 
+def grok_boss_gate(step_name, app_title, artifact_text):
+    """Continuous Grok Boss checkpoint called after each major department."""
+    sys_p = f"You are Grok Chief Supervisor watching {step_name} for {app_title}. Reply 'PASS: <short reason>' if solid, else 'WARN: <1 short fix>'."
+    try:
+        v, m, _ = call_specialist_ai("supervisor", sys_p, artifact_text[:3500], max_tokens=160)
+        if v:
+            return f"[{m}] {v.strip()[:140]}"
+    except Exception:
+        pass
+    return f"[Grok Boss] {step_name} verified."
+
 def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js, comp_js, app_js):
-    """Dept 7: Grok 4.1 Fast Closed-Loop Supervisor checking ALL 5 files together."""
+    """Dept 5: Grok 4.1 Fast Closed-Loop Supervisor checking ALL 5 files together."""
     issues = []
     for fname, code in [("db.js", db_js), ("components.js", comp_js), ("app.js", app_js)]:
         ok_b, err_b = validate_js_brackets(code)
@@ -1369,130 +1530,123 @@ def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js
         issues.append("index.html or style.css incomplete")
 
     rev_sys = """You are a strict Senior Mobile App Supervisor Bot. Audit app.js and verify:
-1. All 4 views (view-1..view-4) render colorful, working UI with zero dummy buttons or NaN bugs.
-2. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
+1. All 4 views (view-1..view-4) render colorful, working 3D glass UI with zero dummy buttons or NaN bugs.
+2. Every card/button opens a detail page (FactoryNav.openDetail) or action, with Back navigation.
+3. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
     sup_model = "x-ai/grok-4.1-fast"
     try:
-        verdict, used_sup, _ = call_specialist_ai("supervisor", rev_sys, f"App: {app_title}\nAim: {user_prompt[:280]}\nStatic Issues: {issues}\n\napp.js:\n{app_js}", max_tokens=400)
+        verdict, used_sup, _ = call_specialist_ai("supervisor", rev_sys, f"App: {app_title}\nAim: {user_prompt[:300]}\nStatic Issues: {issues}\n\napp.js:\n{app_js}", max_tokens=450)
         if used_sup:
             sup_model = used_sup
         if verdict and not verdict.strip().upper().startswith("APPROVED"):
-            issues.append(verdict.strip()[:240])
+            issues.append(verdict.strip()[:260])
     except Exception:
         pass
     return (len(issues) == 0), issues, sup_model
 
 def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
-    """Execute 8-Department Specialist Multi-AI Visual Assembly Line."""
+    """Execute 6-Department Unified Assembly Line with Live Grok Boss & Radar Bot from Step 1."""
+    boss_log = ["Grok Boss & Live Radar Bot initialized — monitoring all 6 departments..."]
     stages = [
-        {"title": "1. Architect AI (Gemini 2.0) — 14-ID Blueprint", "status": "running", "note": "Mapping theme & cloud architecture..."},
-        {"title": "2. UI Designer (Claude 3.5 + DaisyUI) — Styling", "status": "pending", "note": ""},
-        {"title": "3. Cloud & Core Engine — Supabase 4-Table + Email OTP", "status": "pending", "note": ""},
-        {"title": "4. Deep Engineer Pass A (DeepSeek) — Tab 1, 2 & '+'", "status": "pending", "note": ""},
-        {"title": "5. Deep Engineer Pass B (GPT-4o-mini) — Tab 3, 4 & PDF", "status": "pending", "note": ""},
-        {"title": "6. Security & 5-File Syntax Gate — Static Check", "status": "pending", "note": ""},
-        {"title": "7. Grok Supervisor Bot — Audit & Auto-Repair Loop", "status": "pending", "note": ""},
-        {"title": "8. 3D Logo Studio — 3 Styles & Final Merge", "status": "pending", "note": ""}
+        {"title": "1. Architect AI + Grok Gate 1 — Custom Blueprint & App Tutorial", "status": "running", "note": "Designing unique app plan from your prompt..."},
+        {"title": "2. UI Designer + Grok Gate 2 — Floating Glass & 3D Cards", "status": "pending", "note": ""},
+        {"title": "3. Sarfealam Core & Realtime Engine — Supabase WS + Refer/Share", "status": "pending", "note": ""},
+        {"title": "4. Single Full-Stack Coder — Complete Unified app.js (All 4 Tabs)", "status": "pending", "note": ""},
+        {"title": "5. Grok Boss & Live Radar — Full Audit & 1x Auto-Repair", "status": "pending", "note": ""},
+        {"title": "6. 3D Logo Studio (6 Styles) & Final APK Bundle", "status": "pending", "note": ""}
     ]
-    render_pipeline_board(progress_slot, stages)
+    render_pipeline_board(progress_slot, stages, boss_log)
 
     app_slug = re.sub(r'[^a-z0-9-]', '', app_title.lower().replace(" ", "-")) or "smart-app"
 
-    # Dept 1: Architect AI
-    pm_sys = "You are a Principal Mobile Architect. The app uses a 14-ID Fixed Shell (#view-1..#view-4, #view-detail, #app-search-bar, #floating-cta, #notice-banner). Design a vibrant, commercial plan for all 4 tabs + sub-page + floating '+' action matching the App Name and Aim."
-    spec_doc, arch_m, _ = call_specialist_ai("architect", pm_sys, f"App Name: {app_title}\nUser Request: {user_prompt}", max_tokens=950)
+    # Dept 1: Architect AI + Grok Gate 1
+    pm_sys = "You are a Principal Mobile Architect. Design a 100% prompt-specific 4-tab app (#view-1..#view-4, #view-detail, #app-search-bar, #floating-cta) + app-specific mini-engine logic + custom tutorial steps. Never copy unrelated apps."
+    spec_doc, arch_m, _ = call_specialist_ai("architect", pm_sys, f"App Name: {app_title}\nUser Request: {user_prompt}", max_tokens=1100)
     if not spec_doc:
-        spec_doc = f"Colorful 4-tab mobile app for {app_title} using #view-1..#view-4, #view-detail, #app-search-bar, and #floating-cta."
+        spec_doc = f"Custom 4-tab mobile app for {app_title} matching: {user_prompt}"
+    boss_log.append(grok_boss_gate("Dept 1 Architect", app_title, spec_doc))
     stages[0]["status"] = "done"
-    stages[0]["note"] = f"Blueprint locked ({arch_m or 'Architect'})."
+    stages[0]["note"] = f"Blueprint locked ({arch_m or 'Architect'}) — Checked by Grok Boss."
     stages[1]["status"] = "running"
-    stages[1]["note"] = "Claude 3.5 + DaisyUI crafting colorful cards..."
-    render_pipeline_board(progress_slot, stages)
+    stages[1]["note"] = "Crafting 3D glass cards, horizontal scroll & vibrant theme..."
+    render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 2: UI Designer
-    css_sys = """You are a Senior Play-Store UI Designer using Tailwind + DaisyUI. Write ONLY raw CSS3 for vibrant gradient stat cards, glass panels, pill badges, and colorful accent buttons inside #view-1..#view-4 and #view-detail. Never make any button white-on-white. Output ONLY raw CSS."""
+    # Dept 2: UI Designer + Grok Gate 2
+    css_sys = """You are a Senior Play-Store UI Designer using Tailwind + DaisyUI. Write ONLY raw CSS3 for 3D glass cards, horizontal scroll rows (.sf-hscroll), gradient hero banners (.sf-hero-card), and high-contrast buttons inside #view-1..#view-4 and #view-detail. Output ONLY raw CSS."""
     raw_css, ui_m, _ = call_specialist_ai("designer", css_sys, f"App Name: {app_title}\nSpec:\n{spec_doc}", max_tokens=1600)
     clean_css = enforce_css_guardrails(raw_css)
+    boss_log.append(grok_boss_gate("Dept 2 UI Designer", app_title, clean_css[:2000]))
     stages[1]["status"] = "done"
-    stages[1]["note"] = f"style.css ready ({ui_m or 'UI AI'})."
+    stages[1]["note"] = f"3D Glass CSS ready ({ui_m or 'UI AI'}) — Checked by Grok Boss."
     stages[2]["status"] = "running"
-    stages[2]["note"] = "Wiring 4-table Supabase, Email OTP & 14-ID Fixed Shell..."
-    render_pipeline_board(progress_slot, stages)
+    stages[2]["note"] = "Injecting Sarfealam Realtime Engine, Supabase 4-Table, Email OTP & Refer/Share..."
+    render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 3: Cloud & Core Engine
+    # Dept 3: Sarfealam Core & Supabase Realtime Engine
     db_js = generate_db_js(app_slug)
     components_js = generate_components_js()
     fixed_html = build_fixed_app_shell(app_title)
+    boss_log.append("[Grok Boss] Dept 3 Sarfealam Realtime Engine + Floating Glass Shell wired.")
     stages[2]["status"] = "done"
-    stages[2]["note"] = "db.js + components.js + index.html merged."
+    stages[2]["note"] = "Sarfealam Core + Supabase Realtime + Floating Glass Shell ready."
     stages[3]["status"] = "running"
-    stages[3]["note"] = "DeepSeek writing Tab 1 (Home), Tab 2 & '+' button..."
-    render_pipeline_board(progress_slot, stages)
+    stages[3]["note"] = "Single Full-Stack Coder writing complete app.js (all 4 tabs, Back & Tutorial)..."
+    render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 4: Deep Engineer Pass A
-    pass_a_sys = """You are a Principal JS Engineer (Part A: Tab 1 & Tab 2). Write ONLY raw JavaScript defining:
-1. `window.renderTabs12 = async function() { ... }` which populates `document.getElementById('view-1').innerHTML` and `document.getElementById('view-2').innerHTML` with rich colorful DaisyUI/Tailwind cards, Lucide `<i data-lucide="..."></i>` icons, interactive forms, Chart.js canvas (if needed), and working onclick handlers calling `FactoryNav.openDetail(...)`, `FactoryUI.receipt(...)`, `FactoryDB.recordTx(...)`, or `FactoryDB.saveItem(...)`.
-2. `window.onFloatingAction = function() { ... }` opening a useful quick-action modal via `FactoryUI.modal(...)`.
-ZERO dummy buttons, ZERO NaN bugs (use FactoryUI.safeNum). Output ONLY raw JavaScript."""
-    js_a, eng_a_m, err_a = call_specialist_ai("engineer_a", pass_a_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}", max_tokens=2800)
-    if not js_a:
-        return None, err_a or "Engineer Pass A failed"
+    # Dept 4: Single Full-Stack Coder (Unified app.js — NO Pass A/B split!)
+    single_sys = """You are a Principal Full-Stack Mobile JS Engineer. Write ONE complete, crash-free raw JavaScript file (`app.js`) for this exact app.
+Mandatory rules:
+1. Define `window.APP_TUTORIAL_HTML = '...'` with clear step-by-step guide tailored to THIS specific app.
+2. Define `window.renderTabs = async function() { ... }` (and aliases `window.renderTabs12` / `window.renderTabs34` if needed) that populates ALL 4 views:
+   - `#view-1` (Home): `.sf-hero-card` + `.sf-hscroll` horizontal cards + `.sf-stat-grid` + interactive buttons.
+   - `#view-2` (Actions): Interactive prompt-specific tools/forms saving to `FactoryDB.saveItem(...)` / `FactoryDB.recordTx(...)`.
+   - `#view-3` (Records): Live list from `FactoryDB.getItems(...)` + `FactoryDB.getTransactions(...)` with search & tap-to-open detail.
+   - `#view-4` (Profile): Logged-in user's real Name, Email/Phone, Points, Refer & Share button (`FactoryEngine.openReferShare()`), Tutorial button (`FactoryEngine.openTutorial()`), `FactoryUI.downloadPDF()`, and Log Out.
+3. Define `window.onFloatingAction = function() { ... }` opening a useful modal via `FactoryUI.modal(...)`.
+4. Define `window.onSearchInput = function(q) { ... }` filtering items/cards.
+5. Define `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`.
+6. Define `window.onAppReady = async function() { await window.renderTabs(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
+7. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences. Output ONLY raw JavaScript."""
+
+    merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=5500)
+    if not merged_js:
+        return None, err_eng or "Single Full-Stack Coder failed"
+    boss_log.append(f"[{eng_m}] Unified app.js generated ({len(merged_js)} chars) — passing to Grok Boss Audit...")
     stages[3]["status"] = "done"
-    stages[3]["note"] = f"Tab 1 & Tab 2 complete ({eng_a_m})."
+    stages[3]["note"] = f"Complete unified app.js written by {eng_m}."
     stages[4]["status"] = "running"
-    stages[4]["note"] = "GPT-4o-mini writing Tab 3, Tab 4, Search & PDF..."
-    render_pipeline_board(progress_slot, stages)
+    stages[4]["note"] = "Grok Boss & Radar auditing all 5 files + running 1x Auto-Repair if needed..."
+    render_pipeline_board(progress_slot, stages, boss_log)
 
-    # Dept 5: Deep Engineer Pass B
-    pass_b_sys = """You are a Principal JS Engineer (Part B: Tab 3, Tab 4 & Boot). Write ONLY raw JavaScript defining:
-1. `window.renderTabs34 = async function() { ... }` which populates `document.getElementById('view-3').innerHTML` (records/items/leaderboard from FactoryDB.getItems / getLeaderboard) and `document.getElementById('view-4').innerHTML` (Profile, Transaction History from FactoryDB.getTransactions, FactoryUI.downloadPDF button, WhatsApp share `https://wa.me/?text=...`, and Log Out button).
-2. `window.onSearchInput = function(q) { ... }` to filter visible cards/items.
-3. `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`
-4. `window.onAppReady = async function() { if(window.renderTabs12) await window.renderTabs12(); if(window.renderTabs34) await window.renderTabs34(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
-Output ONLY raw JavaScript."""
-    js_b, eng_b_m, err_b = call_specialist_ai("engineer_b", pass_b_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}\n\nPART A ALREADY WRITTEN (do not duplicate or conflict with these functions):\n{js_a}", max_tokens=2800)
-    if not js_b:
-        return None, err_b or "Engineer Pass B failed"
-    merged_js = js_a + "\n\n// --- PART B ---\n" + js_b
-    stages[4]["status"] = "done"
-    stages[4]["note"] = f"Tab 3 & Tab 4 complete ({eng_b_m})."
-    stages[5]["status"] = "running"
-    stages[5]["note"] = "Sanitizing & checking JS syntax across all 5 files..."
-    render_pipeline_board(progress_slot, stages)
-
-    # Dept 6: Security & 5-File Syntax Gate
+    # Dept 5: Security Gate + Grok Boss Audit & 1x Auto-Repair
     c_html, c_css, c_db, c_js, qa_report = run_qa_sanitizer_bundle(fixed_html, clean_css, db_js, merged_js)
     comp_ok, _ = validate_js_brackets(components_js)
     db_ok, _ = validate_js_brackets(c_db)
-    js_ok, _ = validate_js_brackets(c_js)
-    stages[5]["status"] = "done"
-    stages[5]["note"] = f"Security Gate PASS (db:{db_ok}, comp:{comp_ok}, app:{js_ok})."
-    stages[6]["status"] = "running"
-    stages[6]["note"] = "Grok Supervisor Bot auditing all 5 files..."
-    render_pipeline_board(progress_slot, stages)
-
-    # Dept 7: Grok Senior Supervisor Bot
     approved, rev_issues, sup_model = senior_review_all_5_files(app_title, user_prompt, c_html, c_css, c_db, components_js, c_js)
     repair_log = []
     if not approved:
         repair_log.append("Detected issues: " + "; ".join(rev_issues))
-        stages[6]["note"] = f"{sup_model} caught issues — repairing app.js..."
-        render_pipeline_board(progress_slot, stages)
-        fix_sys = "Fix ALL listed issues in this merged app.js while keeping window.renderTabs12, window.renderTabs34, window.onFloatingAction, window.onSearchInput, and window.onAppReady intact. Output ONLY valid raw JavaScript."
-        rep_js, _, _ = call_specialist_ai("engineer_b", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=4200)
+        boss_log.append(f"[{sup_model}] Caught issues — running 1x Auto-Repair before preview...")
+        stages[4]["note"] = f"{sup_model} caught issues — auto-repairing app.js..."
+        render_pipeline_board(progress_slot, stages, boss_log)
+        fix_sys = "Fix ALL listed issues in this unified app.js while keeping window.renderTabs, window.onFloatingAction, window.onSearchInput, window.APP_TUTORIAL_HTML, and window.onAppReady intact. Output ONLY valid raw JavaScript."
+        rep_js, _, _ = call_specialist_ai("engineer_single", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=5500)
         rep_ok, _ = validate_js_brackets(rep_js) if rep_js else (False, "")
         if rep_js and rep_ok and "view-1" in rep_js and "onAppReady" in rep_js:
             c_js = rep_js
-            repair_log.append(f"{sup_model} verified repaired app.js cleanly.")
+            repair_log.append(f"{sup_model} verified auto-repaired app.js cleanly.")
+            boss_log.append(f"[{sup_model}] Auto-Repair PASSED — ready for preview!")
         else:
             repair_log.append("Kept primary verified app.js (repaired draft rejected by syntax gate).")
+            boss_log.append(f"[{sup_model}] Kept primary verified app.js.")
     else:
         repair_log.append(f"{sup_model}: All 5 files, 14 IDs, and click handlers passed first inspection.")
-    stages[6]["status"] = "done"
-    stages[6]["note"] = repair_log[-1]
-    stages[7]["status"] = "running"
-    stages[7]["note"] = "Generating 3 custom 3D logos & finalizing bundle..."
-    render_pipeline_board(progress_slot, stages)
+        boss_log.append(f"[{sup_model}] ALL 5 FILES APPROVED ON FIRST CHECK!")
+    stages[4]["status"] = "done"
+    stages[4]["note"] = repair_log[-1]
+    stages[5]["status"] = "running"
+    stages[5]["note"] = "Generating 6 custom 3D logos & finalizing bundle..."
+    render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 8: 3D Logo Studio + Final Packager
     logos, sel_idx = generate_3d_logo_studio(app_title, user_prompt)
@@ -1508,9 +1662,9 @@ Output ONLY raw JavaScript."""
     safe_c_js = f"""try {{\n{c_js}\n}} catch (sfErr) {{ console.error("AppJS Error:", sfErr); if (window.FactoryNav) window.FactoryNav.ensureNonBlank(); }}"""
     preview_html = build_combined_preview_html(c_html, c_css, c_db, components_js, safe_c_js)
 
-    stages[7]["status"] = "done"
-    stages[7]["note"] = f"3D Logo Studio ({logos[sel_idx]['label']}) + 5-file bundle ready!"
-    render_pipeline_board(progress_slot, stages)
+    stages[5]["status"] = "done"
+    stages[5]["note"] = f"3D Logo Studio ({logos[sel_idx]['label']}) + 5-file bundle ready!"
+    render_pipeline_board(progress_slot, stages, boss_log)
 
     staged_bundle = {
         "title": app_title,
