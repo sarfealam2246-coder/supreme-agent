@@ -420,7 +420,7 @@ def generate_db_js(app_slug):
       const cleanPhone = (phone || "0000000000").trim();
       let user = {{
         app_id: APP_ID, phone: cleanPhone, full_name: cleanName,
-        cash_balance: 25000, gold_grams: 0, points: 100, kyc_verified: true,
+        cash_balance: 0, gold_grams: 0, points: 100, kyc_verified: true,
         created_at: new Date().toISOString()
       }};
       try {{
@@ -444,7 +444,7 @@ def generate_db_js(app_slug):
               method: "POST", headers: headers({{ "Prefer": "return=representation" }}),
               body: JSON.stringify({{
                 app_id: APP_ID, phone: cleanPhone, full_name: cleanName,
-                cash_balance: 25000, gold_grams: 0, points: 100, kyc_verified: true
+                cash_balance: 0, gold_grams: 0, points: 100, kyc_verified: true
               }})
             }});
             if (insRes.ok) {{
@@ -812,7 +812,7 @@ def generate_components_js():
       if (u) {
         if (nameEl) nameEl.textContent = u.full_name || "User";
         if (phoneEl) phoneEl.textContent = u.phone || "";
-        if (badgeEl) badgeEl.textContent = window.FactoryUI.formatINR(u.cash_balance || 0);
+        if (badgeEl) badgeEl.textContent = (u.cash_balance > 0) ? window.FactoryUI.formatINR(u.cash_balance) : ((u.points || 100) + " Pts");
       }
     },
     loadNoticeBanner: async function() {
@@ -949,6 +949,7 @@ def generate_components_js():
     if (existing) {
       window.FactoryNav.showAppShell();
       if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
+      window.FactoryNav.ensureNonBlank();
     } else {
       window.FactoryNav.showLogin();
     }
@@ -1215,6 +1216,12 @@ input::placeholder, textarea::placeholder { color: #94a3b8 !important; }
 #app-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9500; display: none; align-items: center; justify-content: center; padding: 16px; }
 #app-modal.open { display: flex; }
 .modal-card { width: 100%; max-width: 380px; background: #111827; border: 1px solid #38bdf8; border-radius: 18px; padding: 20px; color: #f8fafc; }
+.sf-hero-card { background: linear-gradient(135deg, rgba(37,99,235,0.38), rgba(139,92,246,0.32)); border: 1px solid rgba(56,189,248,0.45); border-radius: 20px; padding: 16px; margin-bottom: 14px; box-shadow: 0 10px 26px rgba(15,23,42,0.55); }
+.sf-stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+.sf-stat-box { background: rgba(30,41,59,0.78); border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; padding: 12px; }
+.sf-action-tile { background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(14,165,233,0.22)); border: 1px solid rgba(52,211,153,0.4); border-radius: 16px; padding: 14px; text-align: center; cursor: pointer; }
+.sf-list-row { background: rgba(15,23,42,0.85); border: 1px solid rgba(148,163,184,0.22); border-radius: 14px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sf-badge-live { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid #10b981; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 800; }
 """
     return (css_code or "") + "\n" + guard
 
@@ -1247,61 +1254,64 @@ def run_qa_sanitizer_bundle(html_code, css_code, db_js, app_js):
     return html_code, css_code, db_js, app_js, qa_report
 
 def generate_3d_logo_studio(app_title, user_prompt):
-    """Dept 8: Generate 3 distinct Play-Store-grade 3D SVG logos (Style A, B, C) and auto-select best."""
+    """Dept 8: Generate 6 distinct Play-Store-grade 3D SVG logos (2x3 Studio) and auto-select best."""
     initials = "".join([w[0].upper() for w in app_title.split()[:2]]) or "AP"
     p_low = (app_title + " " + user_prompt).lower()
 
     logo_a = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bgA" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b"/><stop offset="55%" stop-color="#1d4ed8"/><stop offset="100%" stop-color="#0284c7"/>
-    </linearGradient>
-    <linearGradient id="goldA" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fde047"/><stop offset="100%" stop-color="#f59e0b"/>
-    </linearGradient>
-  </defs>
+  <defs><linearGradient id="bgA" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1e1b4b"/><stop offset="55%" stop-color="#1d4ed8"/><stop offset="100%" stop-color="#0284c7"/></linearGradient>
+  <linearGradient id="goldA" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fde047"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient></defs>
   <rect width="512" height="512" rx="116" fill="url(#bgA)"/>
-  <path d="M256 64 L416 128 V256 C416 358 342 426 256 456 C170 426 96 358 96 256 V128 Z" fill="#0f172a" opacity="0.82" stroke="url(#goldA)" stroke-width="14"/>
-  <text x="256" y="305" font-family="Arial, sans-serif" font-size="148" font-weight="900" fill="url(#goldA)" text-anchor="middle">{initials}</text>
-  <circle cx="256" cy="128" r="18" fill="#fde047"/>
-</svg>"""
+  <path d="M256 64 L416 128 V256 C416 358 342 426 256 456 C170 426 96 358 96 256 V128 Z" fill="#0f172a" opacity="0.84" stroke="url(#goldA)" stroke-width="14"/>
+  <text x="256" y="305" font-family="Arial, sans-serif" font-size="146" font-weight="900" fill="url(#goldA)" text-anchor="middle">{initials}</text>
+  <circle cx="256" cy="128" r="18" fill="#fde047"/></svg>"""
 
     logo_b = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bgB" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b0764"/><stop offset="50%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#06b6d4"/>
-    </linearGradient>
-    <linearGradient id="ringB" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#f472b6"/>
-    </linearGradient>
-  </defs>
+  <defs><linearGradient id="bgB" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3b0764"/><stop offset="50%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient>
+  <linearGradient id="ringB" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#f472b6"/></linearGradient></defs>
   <rect width="512" height="512" rx="116" fill="url(#bgB)"/>
   <polygon points="256,64 422,160 422,352 256,448 90,352 90,160" fill="#090d1a" opacity="0.86" stroke="url(#ringB)" stroke-width="14"/>
-  <text x="256" y="302" font-family="Arial, sans-serif" font-size="144" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text>
-</svg>"""
+  <text x="256" y="302" font-family="Arial, sans-serif" font-size="142" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text></svg>"""
 
     logo_c = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bgC" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#064e3b"/><stop offset="55%" stop-color="#059669"/><stop offset="100%" stop-color="#0ea5e9"/>
-    </linearGradient>
-  </defs>
+  <defs><linearGradient id="bgC" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#064e3b"/><stop offset="55%" stop-color="#059669"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs>
   <rect width="512" height="512" rx="116" fill="url(#bgC)"/>
   <rect x="82" y="82" width="348" height="348" rx="82" fill="#0b1120" opacity="0.86" stroke="#34d399" stroke-width="12"/>
   <text x="256" y="298" font-family="Arial, sans-serif" font-size="142" font-weight="900" fill="#34d399" text-anchor="middle">{initials}</text>
-  <circle cx="386" cy="126" r="22" fill="#38bdf8"/>
-</svg>"""
+  <circle cx="386" cy="126" r="22" fill="#38bdf8"/></svg>"""
+
+    logo_d = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs><linearGradient id="bgD" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#7c2d12"/><stop offset="50%" stop-color="#ea580c"/><stop offset="100%" stop-color="#facc15"/></linearGradient></defs>
+  <rect width="512" height="512" rx="116" fill="url(#bgD)"/>
+  <circle cx="256" cy="256" r="165" fill="#18181b" opacity="0.85" stroke="#fde047" stroke-width="14"/>
+  <text x="256" y="302" font-family="Arial, sans-serif" font-size="142" font-weight="900" fill="#fde047" text-anchor="middle">{initials}</text></svg>"""
+
+    logo_e = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs><linearGradient id="bgE" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0f172a"/><stop offset="50%" stop-color="#0284c7"/><stop offset="100%" stop-color="#22d3ee"/></linearGradient></defs>
+  <rect width="512" height="512" rx="116" fill="url(#bgE)"/>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#38bdf8" stroke-width="10" opacity="0.5"/>
+  <circle cx="256" cy="256" r="136" fill="#090d1a" opacity="0.9" stroke="#22d3ee" stroke-width="12"/>
+  <text x="256" y="298" font-family="Arial, sans-serif" font-size="134" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text></svg>"""
+
+    logo_f = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs><linearGradient id="bgF" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#881337"/><stop offset="50%" stop-color="#e11d48"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient></defs>
+  <rect width="512" height="512" rx="116" fill="url(#bgF)"/>
+  <polygon points="256,68 444,256 256,444 68,256" fill="#111827" opacity="0.88" stroke="#fda4af" stroke-width="12"/>
+  <text x="256" y="300" font-family="Arial, sans-serif" font-size="136" font-weight="900" fill="#ffffff" text-anchor="middle">{initials}</text></svg>"""
 
     default_idx = 0
-    if any(k in p_low for k in ["shop", "bill", "khata", "vyapar", "dukaan", "store"]):
+    if any(k in p_low for k in ["shop", "bill", "khata", "vyapar", "dukaan", "store", "seva"]):
         default_idx = 2
     elif any(k in p_low for k in ["quiz", "arena", "tech", "ai", "cyber"]):
         default_idx = 1
 
     return [
-        {"label": "Style A: Royal Shield", "svg": logo_a},
-        {"label": "Style B: Cyber Hexagon", "svg": logo_b},
-        {"label": "Style C: Emerald Badge", "svg": logo_c}
+        {"label": "A: Royal Shield", "svg": logo_a},
+        {"label": "B: Cyber Hex", "svg": logo_b},
+        {"label": "C: Emerald", "svg": logo_c},
+        {"label": "D: Sunset Gold", "svg": logo_d},
+        {"label": "E: Neon Pulse", "svg": logo_e},
+        {"label": "F: Ruby Gem", "svg": logo_f}
     ], default_idx
 
 def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
@@ -1363,7 +1373,7 @@ def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js
 2. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
     sup_model = "x-ai/grok-4.1-fast"
     try:
-        verdict, used_sup, _ = call_specialist_ai("supervisor", rev_sys, f"App: {app_title}\nAim: {user_prompt[:280]}\nStatic Issues: {issues}\n\napp.js:\n{app_js[:7500]}", max_tokens=400)
+        verdict, used_sup, _ = call_specialist_ai("supervisor", rev_sys, f"App: {app_title}\nAim: {user_prompt[:280]}\nStatic Issues: {issues}\n\napp.js:\n{app_js}", max_tokens=400)
         if used_sup:
             sup_model = used_sup
         if verdict and not verdict.strip().upper().startswith("APPROVED"):
@@ -1440,7 +1450,7 @@ ZERO dummy buttons, ZERO NaN bugs (use FactoryUI.safeNum). Output ONLY raw JavaS
 3. `window.onTabChange = function(tabNum) { FactoryUI.refreshIcons(); }`
 4. `window.onAppReady = async function() { if(window.renderTabs12) await window.renderTabs12(); if(window.renderTabs34) await window.renderTabs34(); FactoryUI.refreshIcons(); }; if (window.FactoryDB && FactoryDB.getUserSync()) { window.onAppReady(); }`
 Output ONLY raw JavaScript."""
-    js_b, eng_b_m, err_b = call_specialist_ai("engineer_b", pass_b_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}", max_tokens=2800)
+    js_b, eng_b_m, err_b = call_specialist_ai("engineer_b", pass_b_sys, f"App Name: {app_title}\nPrompt:\n{user_prompt}\n\nSpec:\n{spec_doc}\n\nPART A ALREADY WRITTEN (do not duplicate or conflict with these functions):\n{js_a}", max_tokens=2800)
     if not js_b:
         return None, err_b or "Engineer Pass B failed"
     merged_js = js_a + "\n\n// --- PART B ---\n" + js_b
@@ -1611,6 +1621,23 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus {
     box-shadow: 0 12px 35px rgba(0, 0, 0, 0.7);
     background: #000000;
     margin: 12px 0;
+}
+.stButton > button,
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="baseButton-secondary"],
+button[kind="secondary"] {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+    color: #f8fafc !important;
+    border: 1px solid #38bdf8 !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+}
+.stButton > button:hover,
+button[data-testid="stBaseButton-secondary"]:hover,
+button[kind="secondary"]:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border-color: #60a5fa !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1788,20 +1815,25 @@ with tab_build:
             logos_list = staged_app.get("logos", [{"label": "Selected 3D Logo", "svg": staged_app["icon_svg"]}])
             sel_logo_idx = staged_app.get("selected_logo_idx", 0)
             if len(logos_list) >= 3:
-                st.markdown("**3D Logo Studio (Tap any style to select for APK):**")
-                lc1, lc2, lc3 = st.columns(3)
-                for idx_l, (col_l, l_obj) in enumerate(zip([lc1, lc2, lc3], logos_list[:3])):
-                    with col_l:
-                        b64_l = base64.b64encode(l_obj["svg"].encode("utf-8")).decode("utf-8")
-                        is_sel = (idx_l == sel_logo_idx)
-                        brd = "3px solid #10b981" if is_sel else "1.5px solid #334155"
-                        st.markdown(f'<div style="text-align:center;"><img src="data:image/svg+xml;base64,{b64_l}" width="76" style="border-radius:18px;border:{brd};"/></div>', unsafe_allow_html=True)
-                        btn_lbl = "✅ Selected" if is_sel else f"Use {['A','B','C'][idx_l]}"
-                        if st.button(btn_lbl, key=f"pick_logo_{idx_l}", use_container_width=True):
-                            staged_app["selected_logo_idx"] = idx_l
-                            staged_app["icon_svg"] = l_obj["svg"]
-                            save_json_file(STAGED_APP_FILE, staged_app)
-                            st.rerun()
+                st.markdown("**3D Logo Studio (Tap any of the 6 styles to select for APK):**")
+                for row_start in range(0, min(len(logos_list), 6), 3):
+                    row_cols = st.columns(3)
+                    for offset, col_l in enumerate(row_cols):
+                        idx_l = row_start + offset
+                        if idx_l >= len(logos_list):
+                            break
+                        l_obj = logos_list[idx_l]
+                        with col_l:
+                            b64_l = base64.b64encode(l_obj["svg"].encode("utf-8")).decode("utf-8")
+                            is_sel = (idx_l == sel_logo_idx)
+                            brd = "3px solid #10b981" if is_sel else "1.5px solid #334155"
+                            st.markdown(f'<div style="text-align:center;"><img src="data:image/svg+xml;base64,{b64_l}" width="70" style="border-radius:16px;border:{brd};"/></div>', unsafe_allow_html=True)
+                            btn_lbl = "✅ Active" if is_sel else f"Use {['A','B','C','D','E','F'][idx_l]}"
+                            if st.button(btn_lbl, key=f"pick_logo_{idx_l}", use_container_width=True):
+                                staged_app["selected_logo_idx"] = idx_l
+                                staged_app["icon_svg"] = l_obj["svg"]
+                                save_json_file(STAGED_APP_FILE, staged_app)
+                                st.rerun()
             c_logo, c_qa = st.columns([1, 2])
             with c_logo:
                 st.markdown("**Active APK Logo:**")
