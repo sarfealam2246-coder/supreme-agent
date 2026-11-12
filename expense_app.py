@@ -11,7 +11,7 @@ from datetime import datetime
 # SARFEALAM MASTER AUTONOMOUS APP FACTORY - LIVE AI GENERATOR CORE
 # ==============================================================================
 # Sole Owner & Digital Copyright: Sarfealam (Package: com.sarfealam.app)
-# Architecture: 100% Live OpenRouter AI Generation (Zero Hardcoded Templates)
+# Architecture: 100% Live OpenRouter AI Generation (Auto Multi-AI Fallback)
 # Strict Security: Zero Visible Admin Blocks, Zero Visible PINs, Stealth Access
 # 100% Pure English Standalone Python Codebase | Optimized for Mobile Touchscreens
 # ==============================================================================
@@ -185,10 +185,19 @@ def generate_live_html_app(user_prompt, app_title, model_choice):
         "Claude 3.5 Sonnet": "anthropic/claude-3.5-sonnet",
         "DeepSeek R1": "deepseek/deepseek-r1",
         "GPT-4o": "openai/gpt-4o",
-        "Llama 3.3 70B": "meta-llama/llama-3.3-70b-instruct",
-        "Gemini 2.0 Flash": "google/gemini-2.0-flash-exp:free"
+        "Llama 3.3 70B": "meta-llama/llama-3.3-70b-instruct:free",
+        "Gemini 2.0 Flash": "google/gemini-2.0-flash-001"
     }
-    selected_model = model_map.get(model_choice, "anthropic/claude-3.5-sonnet")
+    primary = model_map.get(model_choice, "openai/gpt-4o-mini")
+    fallback_chain = [
+        primary,
+        "openai/gpt-4o-mini",
+        "google/gemini-2.0-flash-001",
+        "deepseek/deepseek-chat",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen-2.5-coder-32b-instruct"
+    ]
+    models_to_try = list(dict.fromkeys(fallback_chain))
 
     system_rules = """You are an elite mobile app architect. Generate a COMPLETE, 100% standalone single-file HTML5/CSS3/JS mobile application that matches the user's exact request.
 STRICT MANDATORY RULES:
@@ -200,45 +209,52 @@ STRICT MANDATORY RULES:
 6. DESIGN: Ultra-premium 3D Velvet Dark / Glassmorphic mobile design, mobile-first touch buttons, zero horizontal scroll, smooth animations, 100% self-contained (all CSS and JS inline).
 7. OUTPUT FORMAT: Return ONLY the raw valid HTML code starting with <!DOCTYPE html> and ending with </html>. Do NOT wrap in markdown code fences."""
 
-    user_message = f"App Name: {app_title}\\nUser Exact Requirements:\\n{user_prompt}\\n\\nGenerate the complete standalone HTML5 mobile application now."
+    user_message = f"App Name: {app_title}\nUser Exact Requirements:\n{user_prompt}\n\nGenerate the complete standalone HTML5 mobile application now."
+    last_err = "Unknown error"
 
-    try:
-        req_data = {
-            "model": selected_model,
-            "messages": [
-                {"role": "system", "content": system_rules},
-                {"role": "user", "content": user_message}
-            ],
-            "max_tokens": 4000,
-            "temperature": 0.4
-        }
-        req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            data=json.dumps(req_data).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {DEFAULT_OPENROUTER_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://supreme-agent.streamlit.app",
-                "X-Title": "Sarfealam Master Factory"
+    for m_id in models_to_try:
+        try:
+            req_data = {
+                "model": m_id,
+                "messages": [
+                    {"role": "system", "content": system_rules},
+                    {"role": "user", "content": user_message}
+                ],
+                "max_tokens": 2800,
+                "temperature": 0.4
             }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            res_body = json.loads(resp.read().decode("utf-8"))
-            raw_html = res_body["choices"][0]["message"]["content"].strip()
-            
-            if raw_html.startswith("```html"):
-                raw_html = raw_html[7:]
-            elif raw_html.startswith("```"):
-                raw_html = raw_html[3:]
-            if raw_html.endswith("```"):
-                raw_html = raw_html[:-3]
-            raw_html = raw_html.strip()
-            
-            if "<html" in raw_html.lower() and "</html>" in raw_html.lower():
-                return raw_html, True
-    except Exception:
-        pass
-    return "", False
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=json.dumps(req_data).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {DEFAULT_OPENROUTER_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://supreme-agent.streamlit.app",
+                    "X-Title": "Sarfealam Master Factory"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                res_body = json.loads(resp.read().decode("utf-8"))
+                raw_html = res_body["choices"][0]["message"]["content"].strip()
+                
+                if raw_html.startswith("```html"):
+                    raw_html = raw_html[7:]
+                elif raw_html.startswith("```"):
+                    raw_html = raw_html[3:]
+                if raw_html.endswith("```"):
+                    raw_html = raw_html[:-3]
+                raw_html = raw_html.strip()
+                
+                if "<html" in raw_html.lower() and "</html>" in raw_html.lower():
+                    return raw_html, m_id
+        except urllib.error.HTTPError as he:
+            try:
+                last_err = f"{m_id}: HTTP {he.code} - {he.read().decode('utf-8')[:150]}"
+            except Exception:
+                last_err = f"{m_id}: HTTP {he.code}"
+        except Exception as e:
+            last_err = f"{m_id}: {str(e)[:120]}"
+    return last_err, False
 
 # ==============================================================================
 # UI STREAMLIT DASHBOARD & HIGH-CONTRAST CSS
@@ -387,10 +403,10 @@ with tab_create:
             </div>
             """, unsafe_allow_html=True)
             
-            generated_html, ai_success = generate_live_html_app(app_prompt, clean_title, model_pick)
+            generated_html, used_model = generate_live_html_app(app_prompt, clean_title, model_pick)
             
-            if not ai_success:
-                st.error("⚠️ AI Engine is busy or timed out. Please try clicking Build again or switch AI Engine to GPT-4o.")
+            if not used_model:
+                st.error(f"⚠️ AI Error Details: {generated_html}")
                 st.stop()
 
             prog_bar.progress(50, text="Layer 3: Custom AI App verified! Creating GitHub Repository...")
@@ -426,7 +442,7 @@ with tab_create:
             save_to_vault(build_record)
             st.session_state.current_build = build_record
             
-            st.success(f"🎉 **{clean_title}** has been custom-written by {model_pick} and sent to APK Compiler!")
+            st.success(f"🎉 **{clean_title}** has been custom-written by {used_model} and sent to APK Compiler!")
 
     if st.session_state.current_build:
         b_info = st.session_state.current_build
