@@ -38,6 +38,7 @@ VAULT_FILE = "apps_vault.json"
 ACTIVE_BUILD_FILE = "active_build.json"
 DESIGN_LOCK_FILE = "design_lock_bus.json"
 CODED_APP_FILE = "coded_flutter_bundle.json"
+REJECTED_REPOS_FILE = "rejected_repos.json"
 
 # ==============================================================================
 # GITHUB ACTIONS NATIVE FLUTTER APK COMPILER WORKFLOW
@@ -101,7 +102,7 @@ cp -r lib pubspec.yaml assets _src_backup/
 
 flutter create . --org com.sarfealam --project-name {safe_pkg} --platforms=android
 
-rm -rf lib pubspec.yaml assets
+rm -rf test lib pubspec.yaml assets
 cp -r _src_backup/lib _src_backup/pubspec.yaml _src_backup/assets .
 rm -rf _src_backup
 
@@ -157,6 +158,16 @@ def remove_json_file(path):
             os.remove(path)
     except Exception:
         pass
+
+def reject_and_clear_project(repo_name=None):
+    if repo_name:
+        rej = load_json_file(REJECTED_REPOS_FILE, [])
+        if repo_name not in rej:
+            rej.append(repo_name)
+            save_json_file(REJECTED_REPOS_FILE, rej[-50:])
+    remove_json_file(ACTIVE_BUILD_FILE)
+    remove_json_file(DESIGN_LOCK_FILE)
+    remove_json_file(CODED_APP_FILE)
 
 def save_to_vault(record):
     vault = load_json_file(VAULT_FILE, [])
@@ -245,7 +256,8 @@ def recover_active_build_if_needed():
     active = load_json_file(ACTIVE_BUILD_FILE, None)
     if active:
         return active
-    repos = fetch_github_user_repos()
+    rejected = set(load_json_file(REJECTED_REPOS_FILE, []))
+    repos = [r for r in fetch_github_user_repos() if r.get("name") not in rejected]
     if repos:
         newest = repos[0]
         repo_name = newest.get("name")
@@ -464,6 +476,39 @@ flutter:
     - assets/icon.svg
 """
 
+def apply_flutter3_deterministic_fixes(dart_code):
+    """Deterministic Flutter 3.50+ auto-fixer for deprecated Theme/TextTheme/const issues."""
+    if not dart_code:
+        return dart_code, []
+    fixes = []
+    out = dart_code
+    if re.search(r"\bCardTheme\s*\(", out):
+        out = re.sub(r"\bCardTheme\s*\(", "CardThemeData(", out)
+        fixes.append("CardTheme -> CardThemeData")
+    m2_to_m3 = {
+        "headline1": "displayLarge",
+        "headline2": "displayMedium",
+        "headline3": "displaySmall",
+        "headline4": "headlineMedium",
+        "headline5": "headlineSmall",
+        "headline6": "titleLarge",
+        "subtitle1": "titleMedium",
+        "subtitle2": "titleSmall",
+        "bodyText1": "bodyLarge",
+        "bodyText2": "bodyMedium",
+        "caption": "bodySmall",
+        "button": "labelLarge",
+        "overline": "labelSmall",
+    }
+    for old_k, new_k in m2_to_m3.items():
+        if re.search(rf"\b{old_k}\b", out):
+            out = re.sub(rf"\b{old_k}\b", new_k, out)
+            fixes.append(f"{old_k} -> {new_k}")
+    if re.search(r"\bconst\s+[A-Z][A-Za-z0-9_]*(?:Screen|Page|Shell|Tab)\s*\(", out):
+        out = re.sub(r"\bconst\s+([A-Z][A-Za-z0-9_]*(?:Screen|Page|Shell|Tab)\s*\()", r"\1", out)
+        fixes.append("Stripped invalid const on Screen widget")
+    return out, fixes
+
 def auto_detect_and_repair_bundle(project_bus):
     """Step 11: Self-Repair & Auto-Module Builder Center checking all Dart files, pubspec deps, and routes."""
     repairs = []
@@ -488,9 +533,12 @@ def auto_detect_and_repair_bundle(project_bus):
             pub_extra[pkg] = ver
             repairs.append(f"Auto-added missing package '{pkg}: {ver}' to pubspec.yaml")
 
-    # Repair any Dart file failing syntax check
+    # Apply deterministic Flutter 3.50+ fixes and repair any Dart file failing syntax check
     for key, label in [("backend_dart", "lib/services/supabase_api.dart"), ("screens_dart", "lib/screens/app_screens.dart"), ("main_dart", "lib/main.dart")]:
-        code = project_bus.get(key, "")
+        code, det_fixes = apply_flutter3_deterministic_fixes(project_bus.get(key, ""))
+        project_bus[key] = code
+        if det_fixes:
+            repairs.append(f"Flutter 3.50 auto-fix in {label}: {', '.join(det_fixes)}")
         ok, msg = validate_dart_code(code)
         if not ok:
             repairs.append(f"Detected issue in {label}: {msg} — repairing...")
@@ -712,7 +760,7 @@ def run_phase2_flutter_coding(project_bus, cmd_slot, sync_slot):
     backend_sys = """You are Step 8 Backend Coder (Flutter/Dart). Write `lib/services/supabase_api.dart` defining class `SupabaseApi` with:
 - Static const `url` and `anonKey` provided in prompt.
 - `sendEmailOtp(String email)`, `verifyEmailOtp(String email, String otp)`, `saveLocalSession(Map<String,dynamic> user)`, `getLocalSession()`, `logout()`.
-- `saveItem(String type, String title, Map<String,dynamic> data)`, `getItems(String type)`, `recordTx(String type, num amount, String title)`, `getTransactions()`.
+- `saveItem(String type, [dynamic titleOrData = '', Map<String,dynamic>? data])` (supports both 2-arg and 3-arg calls safely!), `getItems([String type = 'all'])`, `recordTx([String type = 'entry', num amount = 0, String title = 'Action'])` (supports 0 to 3 args safely!), `getTransactions()`.
 Use `package:http/http.dart` and `package:shared_preferences/shared_preferences.dart` with clean try/catch offline fallback. Output ONLY raw Dart code."""
     backend_dart, be_m, err_be = call_specialist_ai(
         "backend_coder", backend_sys,
@@ -733,7 +781,7 @@ Define clean StatefulWidget screen classes:
 - `RecordsOrRankScreen` (live list + search bar + tap-to-open detail page).
 - `ProfileOrSettingsScreen` (user details, logout).
 If GAMING, include a playable `CustomPainter` interactive mini-game screen (`PlayGameScreen`)!
-Every button must have a real working `onPressed` (ZERO empty `() {{}}`!). Output ONLY raw Dart code."""
+Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`bodyText2`; ALWAYS use `CardThemeData` (not `CardTheme`); do NOT mark Screen constructors `const`; pass 3 args to `SupabaseApi.saveItem(type, title, map)` and `SupabaseApi.recordTx(type, amount, title)`. Every button must have a real working `onPressed` (ZERO empty `() {{}}`!). Output ONLY raw Dart code."""
     screens_dart, fe_m, err_fe = call_specialist_ai(
         "frontend_coder", fe_sys,
         f"App: {app_title} ({app_type})\nPrompt: {user_prompt}\nLocked Design:\n{json.dumps(design_doc)}\nBackend API signatures:\n{backend_dart[:1800]}",
@@ -752,7 +800,7 @@ Every button must have a real working `onPressed` (ZERO empty `() {{}}`!). Outpu
     nav_rule = "NO BottomNavigationBar (use clean Gaming Lobby header + action buttons + Navigator routes)" if app_type == "GAMING" else "Use sleek Material 3 Bottom Navigation matching nav_items in Design Doc"
     nav_sys = f"""You are Step 7 Navigation Specialist (Flutter/Dart). Write `lib/main.dart` importing `package:flutter/material.dart`, `screens/app_screens.dart`, and `services/supabase_api.dart`.
 Rule: {nav_rule}.
-Define `void main() => runApp(const SarfealamApp());` with MaterialApp theme matching Design Doc palette, checking `SupabaseApi.getLocalSession()` on boot to show `LoginOrEntryScreen` or Main Shell cleanly. Output ONLY raw Dart code."""
+Define `void main() => runApp(const SarfealamApp());` with `const SarfealamApp({{super.key}});`. Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Material 3 `TextTheme` (`headlineMedium`, `titleLarge`, `bodyMedium`, NEVER `headline4`/`headline6`), and NEVER put `const ` before any `*Screen()` constructor! Check `SupabaseApi.getLocalSession()` on boot to show `LoginOrEntryScreen` or Main Shell cleanly. Output ONLY raw Dart code."""
     main_dart, nav_m, err_nav = call_specialist_ai(
         "nav_specialist", nav_sys,
         f"App: {app_title} ({app_type})\nDesign Palette & Nav:\n{json.dumps(design_doc)}\nFrontend Classes Defined:\n{screens_dart[:2500]}",
@@ -884,20 +932,37 @@ with tab_build:
             c_f1, c_f2 = st.columns(2)
             with c_f1:
                 if st.button("Step 11 Auto-Fix & Rebuild", use_container_width=True):
-                    with st.spinner("Step 11 Repair Center fixing Dart code & re-triggering build..."):
+                    with st.spinner("Step 11 Repair Center fixing all Dart files & build.sh for Flutter 3.50..."):
                         try:
-                            cur_main = fetch_file_from_github(active_build["repo"], "lib/main.dart")
-                            fx_main, _, _ = call_specialist_ai("repair_center", "Fix any Flutter/Dart syntax or missing import errors in main.dart. Output ONLY raw Dart.", cur_main, max_tokens=3000)
-                            if fx_main:
-                                push_file_to_github(active_build["repo"], "lib/main.dart", fx_main, "Step 11 Repair Center Auto-Fix")
-                                st.success("Repaired main.dart pushed! Rebuild triggered.")
-                                time.sleep(1.5)
-                                st.rerun()
+                            repo_n = active_build["repo"]
+                            cur_be = fetch_file_from_github(repo_n, "lib/services/supabase_api.dart")
+                            cur_scr = fetch_file_from_github(repo_n, "lib/screens/app_screens.dart")
+                            cur_main = fetch_file_from_github(repo_n, "lib/main.dart")
+                            cur_be, _ = apply_flutter3_deterministic_fixes(cur_be)
+                            cur_scr, _ = apply_flutter3_deterministic_fixes(cur_scr)
+                            cur_main, _ = apply_flutter3_deterministic_fixes(cur_main)
+                            rep_sys = "You are Step 11 Flutter 3.50 Repair Center. Fix ALL Dart compile errors (use CardThemeData, headlineMedium/titleLarge, no const before non-const Screens, matching SupabaseApi args). Output ONLY raw Dart code."
+                            fx_scr, _, _ = call_specialist_ai("repair_center", rep_sys, f"supabase_api.dart signatures:\n{cur_be[:1500]}\n\nFix lib/screens/app_screens.dart:\n{cur_scr}", max_tokens=4500)
+                            fx_main, _, _ = call_specialist_ai("repair_center", rep_sys, f"app_screens.dart classes:\n{(fx_scr or cur_scr)[:1800]}\n\nFix lib/main.dart:\n{cur_main}", max_tokens=3000)
+                            if fx_scr and validate_dart_code(fx_scr)[0]:
+                                fx_scr, _ = apply_flutter3_deterministic_fixes(fx_scr)
+                                push_file_to_github(repo_n, "lib/screens/app_screens.dart", fx_scr, "Step 11 Flutter 3.50 Auto-Fix Screens")
+                            else:
+                                push_file_to_github(repo_n, "lib/screens/app_screens.dart", cur_scr, "Step 11 Deterministic Fix Screens")
+                            if fx_main and validate_dart_code(fx_main)[0]:
+                                fx_main, _ = apply_flutter3_deterministic_fixes(fx_main)
+                                push_file_to_github(repo_n, "lib/main.dart", fx_main, "Step 11 Flutter 3.50 Auto-Fix Main")
+                            else:
+                                push_file_to_github(repo_n, "lib/main.dart", cur_main, "Step 11 Deterministic Fix Main")
+                            push_file_to_github(repo_n, "build.sh", make_flutter_build_script(active_build["name"], repo_n.replace("-", "_")), "Step 11 Clean Test Dir & Rebuild")
+                            st.success("All Dart files & build.sh repaired and pushed! Fresh APK build started.")
+                            time.sleep(1.5)
+                            st.rerun()
                         except Exception as fx_e:
                             st.error(f"Repair failed: {fx_e}")
             with c_f2:
-                if st.button("Clear & Start Fresh", use_container_width=True):
-                    remove_json_file(ACTIVE_BUILD_FILE)
+                if st.button("Reject & Start Fresh", use_container_width=True):
+                    reject_and_clear_project(active_build.get("repo"))
                     st.rerun()
         else:
             step_map = {s.get("name"): (s.get("status"), s.get("conclusion")) for s in gh_steps}
@@ -912,8 +977,14 @@ with tab_build:
                 ic = "✅" if conc == "success" else ("⏳" if stt == "in_progress" else "⬜")
                 col = "#34d399" if conc == "success" else ("#fbbf24" if stt == "in_progress" else "#9ca3af")
                 st.markdown(f"<div class='step-card'><div style='font-size:18px;'>{ic}</div><div style='font-size:12.5px;font-weight:700;color:{col};'>{lbl}</div></div>", unsafe_allow_html=True)
-            if st.button("Refresh Live Status", use_container_width=True):
-                st.rerun()
+            c_r1, c_r2 = st.columns(2)
+            with c_r1:
+                if st.button("Refresh Live Status", use_container_width=True):
+                    st.rerun()
+            with c_r2:
+                if st.button("Reject & Start Fresh", use_container_width=True, key="reject_running_build"):
+                    reject_and_clear_project(active_build.get("repo"))
+                    st.rerun()
             time.sleep(10)
             st.rerun()
     else:
@@ -977,6 +1048,9 @@ with tab_build:
                         st.error(err_p2)
                     else:
                         st.rerun()
+            if st.button("Reject Project & Start Fresh", use_container_width=True, key="reject_design_studio"):
+                reject_and_clear_project()
+                st.rerun()
 
         # PANEL 4: CODED FLUTTER BUNDLE READY FOR GITHUB APK COMPILER
         coded_bundle = load_json_file(CODED_APP_FILE, None)
