@@ -328,6 +328,24 @@ def strip_markdown_fences(raw_text):
     cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
     return cleaned.strip()
 
+def extract_json_object(raw_text):
+    """Robustly extracts and parses a JSON object even if surrounded by prose or markdown."""
+    cleaned = strip_markdown_fences(raw_text or "")
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end > start:
+        sub = cleaned[start:end + 1]
+        sub = re.sub(r",\s*([}\]])", r"\1", sub)
+        try:
+            return json.loads(sub)
+        except Exception:
+            pass
+    return None
+
 def _call_openai_compat(base_url, api_key, model_id, system_prompt, user_prompt, max_tokens=2800, temperature=0.3, extra_headers=None):
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -800,48 +818,11 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
         <span style="color:#38bdf8;font-size:11.5px;font-weight:800;">LIVE ANIMATED PIPELINE &amp; CROSS-CHECK RADAR</span>
         <span style="background:#0f766e;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700;">5-ENGINE SYNC</span>
       </div>
-      <svg viewBox="0 0 500 92" width="100%" style="display:block;margin-bottom:6px;">
-        <defs>
-          <marker id="ah" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 Z" fill="#38bdf8"/>
-          </marker>
-        </defs>
-        <rect x="6" y="18" width="76" height="36" rx="8" fill="{n1b}" stroke="{n1c}" stroke-width="2"/>
-        <text x="44" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">1. PM</text>
-        <text x="44" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Mistral/Ultra</text>
-
-        <line x1="82" y1="36" x2="106" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>
-
-        <rect x="108" y="18" width="84" height="36" rx="8" fill="{n2b}" stroke="{n2c}" stroke-width="2"/>
-        <text x="150" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">2. Brain/UI</text>
-        <text x="150" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Gemini+VL</text>
-
-        <line x1="192" y1="36" x2="216" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>
-
-        <rect x="218" y="18" width="82" height="36" rx="8" fill="{n3b}" stroke="{n3c}" stroke-width="2"/>
-        <text x="259" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">3. Coders</text>
-        <text x="259" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">DeepSeek/Kimi</text>
-
-        <line x1="300" y1="36" x2="324" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>
-
-        <rect x="326" y="18" width="78" height="36" rx="8" fill="{n4b}" stroke="{n4c}" stroke-width="2"/>
-        <text x="365" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">4. Boss</text>
-        <text x="365" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Nemotron 550B</text>
-
-        <line x1="404" y1="36" x2="424" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>
-
-        <rect x="426" y="18" width="68" height="36" rx="8" fill="{n5b}" stroke="{n5c}" stroke-width="2"/>
-        <text x="460" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">5. Repair</text>
-        <text x="460" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Kimi+APK</text>
-
-        <path d="M 365 54 Q 259 84 150 56" fill="none" stroke="#10b981" stroke-width="1.5" class="flow-arrow" marker-end="url(#ah)"/>
-        <text x="259" y="84" fill="#34d399" font-size="8" font-weight="bold" text-anchor="middle">Cross-Sync &amp; Radar Verification Loop</text>
-      </svg>
+      <svg viewBox="0 0 500 92" width="100%" style="display:block;margin-bottom:6px;"><defs><marker id="ah" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#38bdf8"/></marker></defs><rect x="6" y="18" width="76" height="36" rx="8" fill="{n1b}" stroke="{n1c}" stroke-width="2"/><text x="44" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">1. PM</text><text x="44" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Mistral/Ultra</text><line x1="82" y1="36" x2="106" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/><rect x="108" y="18" width="84" height="36" rx="8" fill="{n2b}" stroke="{n2c}" stroke-width="2"/><text x="150" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">2. Brain/UI</text><text x="150" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Gemini+VL</text><line x1="192" y1="36" x2="216" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/><rect x="218" y="18" width="82" height="36" rx="8" fill="{n3b}" stroke="{n3c}" stroke-width="2"/><text x="259" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">3. Coders</text><text x="259" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">DeepSeek/Kimi</text><line x1="300" y1="36" x2="324" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/><rect x="326" y="18" width="78" height="36" rx="8" fill="{n4b}" stroke="{n4c}" stroke-width="2"/><text x="365" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">4. Boss</text><text x="365" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Nemotron 550B</text><line x1="404" y1="36" x2="424" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/><rect x="426" y="18" width="68" height="36" rx="8" fill="{n5b}" stroke="{n5c}" stroke-width="2"/><text x="460" y="34" fill="#f8fafc" font-size="9" font-weight="bold" text-anchor="middle">5. Repair</text><text x="460" y="46" fill="#94a3b8" font-size="7.5" text-anchor="middle">Kimi+APK</text><path d="M 365 54 Q 259 84 150 56" fill="none" stroke="#10b981" stroke-width="1.5" class="flow-arrow" marker-end="url(#ah)"/><text x="259" y="84" fill="#34d399" font-size="8" font-weight="bold" text-anchor="middle">Cross-Sync &amp; Radar Verification Loop</text></svg>
       <div style="background:rgba(30,41,59,0.85);border-left:3px solid #f59e0b;border-radius:6px;padding:6px 8px;font-size:11px;color:#fde68a;">
         <b>Corner Cross-Check Board:</b> {cross_check}
       </div>
     </div>
-
     <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px;">
       <div style="background:linear-gradient(135deg,rgba(37,99,235,0.22),rgba(15,23,42,0.95));border:1px solid #38bdf8;border-radius:12px;padding:9px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -880,8 +861,31 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
         </div>"""
     sync_slot.markdown(rows, unsafe_allow_html=True)
 
+def generate_rich_live_preview_html(app_title, app_type, user_prompt, design_doc, icon_svg):
+    """Uses AI (Nemotron VL / Gemini / DeepSeek) to build a Dream11/PhonePe-grade interactive HTML mobile simulator."""
+    b64_ic = base64.b64encode(icon_svg.encode("utf-8")).decode("utf-8")
+    pal = design_doc.get("palette", {})
+    prev_sys = (
+        "You are a Top-Tier Mobile UI/UX Prototyper building an interactive Dream11 / PhonePe / Cred-grade HTML5+CSS3+JS mobile app preview inside a 290px wide dark phone screen.\n"
+        "Rules:\n"
+        "1. Output ONLY raw HTML+CSS+JS (NO markdown fences, NO <html>/<body> wrapper needed, just a self-contained <div style=\"width:290px;height:520px;...\">...</div> + <script>...</script>).\n"
+        "2. MUST look like a real commercial 3D/glassmorphic Play-Store app (rich gradients, box-shadows, pill badges, live counters, realistic match/wallet/action cards, clickable tabs & buttons that switch real views and update state!).\n"
+        "3. If GAMING: include Live XP Wallet pill, Upcoming Match Cards (e.g. IND vs AUS with countdown & team badges), interactive 11-player credit/squad toggle, and a working mini-game tapper!\n"
+        "4. If NORMAL: include Hero Balance Card, 4x2 Quick Action icon grid, live records list with search/filter, and working Bottom Tab switching!\n"
+        "5. ZERO generic placeholder text like 'Action -> Detail'."
+    )
+    usr_p = f"App: {app_title} ({app_type})\nPrompt: {user_prompt[:900]}\nDesign Palette: {json.dumps(pal)}\nScreens: {json.dumps(design_doc.get('screens', []))[:1200]}\nLogo img src: data:image/svg+xml;base64,{b64_ic}"
+    raw_html, _, _ = call_specialist_ai("live_preview", prev_sys, usr_p, max_tokens=2800)
+    if raw_html and "<div" in raw_html.lower() and ("<script" in raw_html.lower() or "onclick" in raw_html.lower()):
+        return raw_html
+    return ""
+
 def render_live_mobile_preview(locked_bus):
-    """Renders an interactive touch-and-feel mobile phone simulator directly in Step 4."""
+    """Renders the AI-generated Dream11/PhonePe-grade interactive mobile phone simulator in Step 4."""
+    ai_html = locked_bus.get("preview_html", "")
+    if ai_html:
+        components.html(f"<div style='display:flex;justify-content:center;background:transparent;'>{ai_html}</div>", height=550, scrolling=True)
+        return
     dd = locked_bus.get("design_doc", {})
     pal = dd.get("palette", {})
     bg = pal.get("bg", "#0B1120")
@@ -982,9 +986,8 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, design
     raw_orch, orch_m, err_o = call_specialist_ai("orchestrator", orch_sys, f"Title: {app_title}\nPrompt: {user_prompt}", max_tokens=500)
     if not raw_orch:
         return None, err_o or "Orchestrator failed"
-    try:
-        orch_json = json.loads(raw_orch)
-    except Exception:
+    orch_json = extract_json_object(raw_orch)
+    if not orch_json:
         is_g = any(k in (app_title + " " + user_prompt).lower() for k in ["game", "racing", "arcade", "drift", "runner", "spin", "11", "3d", "fantasy"])
         orch_json = {"app_type": "GAMING" if is_g else "NORMAL", "category": "Mobile App", "goals": ["Fast UI", "Working Actions", "Cloud Sync"], "acceptance_criteria": ["All buttons work"]}
 
@@ -1011,8 +1014,11 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, design
     project_bus["cross_check_msg"] = f"Market Brain ({project_bus['brain_model']}) -> Art Director (Nemotron VL / Mistral 4)"
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
-    des_sys = """You are Step 2B Top-Level UI/UX Art Director. Produce ONLY a clean JSON Design Document (NO Dart code!).
-Rule: If app_type is GAMING, set bottom_nav_enabled=false and design a Fullscreen Game Lobby + Play Canvas + Leaderboard/Wallet. If NORMAL, design a crisp 3-4 tab Bottom Navigation structure.
+    des_sys = """You are Step 2B Strict Real-Market UI/UX Art Director (Dream11, My11Circle, PhonePe, Cred level). Produce ONLY a clean JSON Design Document (NO Dart code, NO prose!).
+STRICT MARKET LAW:
+- NEVER output generic names like 'Next-Gen Smart Mobile Experience' or generic buttons like 'Action -> Detail'.
+- If app_type is GAMING: set bottom_nav_enabled=false and design a real Dream11/3D-stadium grade Fullscreen Lobby (XP Wallet, Live Match Cards with countdowns, 11-Player Credit Squad Builder, C/VC 2x/1.5x, Playable Mini-Game, Leaderboard).
+- If app_type is NORMAL: design a real PhonePe/Cred-grade Hero Balance Card, Quick Action Grid, Live Searchable Records, and 4-tab Bottom Navigation.
 JSON format:
 {
   "tagline": "4-6 word brand tagline",
@@ -1025,9 +1031,11 @@ JSON format:
   "screens": [{"name": "Home", "layout": "Hero card + quick actions + list", "buttons": ["Action -> Detail"]}]
 }"""
     raw_des, des_m, _ = call_specialist_ai("designer", des_sys, f"Title: {app_title}\nOrchestrator: {json.dumps(orch_json)}\nMarket Brain:\n{project_bus['market_brain']}\nOwner Changes: {design_feedback}", max_tokens=1500)
-    try:
-        design_doc = json.loads(raw_des)
-    except Exception:
+    design_doc = extract_json_object(raw_des)
+    if not design_doc:
+        fix_des, _, _ = call_specialist_ai("repair_center", "Convert this into valid JSON only matching the design schema. No prose.", raw_des[:2200], max_tokens=1400)
+        design_doc = extract_json_object(fix_des)
+    if not design_doc:
         design_doc = {
             "tagline": "Next-Gen Smart Mobile Experience",
             "palette": {"bg": "#0B1120", "surface": "#162032", "primary": "#F59E0B" if app_type == "GAMING" else "#2563EB", "accent": "#EF4444" if app_type == "GAMING" else "#10B981", "text": "#F8FAFC"},
@@ -1066,6 +1074,10 @@ Use rich layered linearGradient/radialGradient ({c1} to {c2}), rounded rect rx="
     project_bus["icon_model"] = ic_m or "Icon AI"
     stages[3]["status"] = "done"
     stages[3]["note"] = f"[{project_bus['icon_model']}] Top-Level Brand Symbol Icon ready."
+    stages[4]["status"] = "running"
+    project_bus["radar_status"] = "Building Rich Interactive Phone Preview (Dream11/PhonePe style)..."
+    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+    project_bus["preview_html"] = generate_rich_live_preview_html(app_title, app_type, user_prompt, design_doc, raw_svg)
     stages[4]["status"] = "done"
     stages[4]["note"] = "Test the Live Mobile Preview below and click 'Lock Design & Start Coding'."
     project_bus["boss_status"] = "Design, Icon & Live Phone Preview ready! Waiting for Owner to Lock Design."
@@ -1124,7 +1136,7 @@ Define clean StatefulWidget screen classes:
 - `WorkspaceOrActionScreen` (interactive form / custom room or record creator calling `SupabaseApi.saveItem` + `recordTx`).
 - `RecordsOrRankScreen` (live list + search bar + tap-to-open detail page).
 - `ProfileOrSettingsScreen` (user details, logout).
-If GAMING, include a playable `CustomPainter` interactive mini-game screen (`PlayGameScreen`)!
+STRICT REAL-MARKET UI LAW: Build Dream11/PhonePe-grade 3D-elevated Gradient Cards (`BoxShadow` glow, `LinearGradient`, rounded 18px corners, circular team/avatar badges, live countdown chips, zero plain text-only screens). If GAMING, include a playable `CustomPainter` interactive mini-game screen (`PlayGameScreen`) + 11-player credit selector + Captain(2x)/VC(1.5x)!
 Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`bodyText2`; ALWAYS use `CardThemeData` (not `CardTheme`); do NOT mark Screen constructors `const`; pass 3 args to `SupabaseApi.saveItem(type, title, map)` and `SupabaseApi.recordTx(type, amount, title)`. Every button must have a real working `onPressed` (ZERO empty `() {{}}`!). Output ONLY raw Dart code."""
     screens_dart, fe_m, err_fe = call_specialist_ai(
         "frontend_coder", fe_sys,
@@ -1163,7 +1175,7 @@ Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Mater
     project_bus["cross_check_msg"] = f"Boss Reviewer auditing Frontend ({fe_m}) + Nav ({nav_m}) + Backend ({be_m})"
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
-    rev_sys = "You are Step 9 Independent Boss Reviewer. Audit main.dart, app_screens.dart, and supabase_api.dart against the Design Doc. Reply ONLY 'APPROVED' if solid, else list concise exact fixes."
+    rev_sys = "You are Step 9 Independent Boss Reviewer. Audit main.dart, app_screens.dart, and supabase_api.dart for: (1) Real-market Dream11/PhonePe visual polish (gradients, shadows, working buttons), (2) Flutter 3.50 safety (no CardTheme, no headline4, no const on Screens). Reply ONLY 'APPROVED' if solid, else list concise exact fixes."
     rev_txt, rev_m, _ = call_specialist_ai(
         "reviewer", rev_sys,
         f"Type: {app_type}\nDesign: {json.dumps(design_doc)[:1200]}\nmain.dart:\n{main_dart[:2200]}\napp_screens.dart:\n{screens_dart[:2800]}",
