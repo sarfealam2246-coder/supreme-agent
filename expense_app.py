@@ -40,6 +40,8 @@ SUPABASE_KEY = _get_secret("SUPABASE_KEY", "sb_publishable_" + "3YZ2OA5MiOoVoLqF
 VAULT_FILE = "apps_vault.json"
 ACTIVE_BUILD_FILE = "active_build.json"
 STAGED_APP_FILE = "staged_preview.json"
+GAMING_MEM_FILE = "staged_gaming_preview.json"
+COMMERCE_MEM_FILE = "staged_commerce_preview.json"
 
 # ==============================================================================
 # GITHUB ACTIONS ANDROID APK COMPILER WORKFLOW (Java 17 + Custom SVG Icon)
@@ -415,7 +417,11 @@ def generate_db_js(app_slug):
 
   window.FactoryDB = {{
     appId: APP_ID,
-    getUserSync: function() {{ return getLocalUser(); }},
+    getUserSync: function() {{
+      const u = getLocalUser();
+      if (u && !u.name) u.name = u.full_name || "User";
+      return u;
+    }},
     login: async function(fullName, phone) {{
       const cleanName = (fullName || "User").trim();
       const cleanPhone = (phone || "0000000000").trim();
@@ -714,6 +720,7 @@ def generate_components_js():
 
   window.FactoryUI = {
     vibrate: function(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 18); } catch (e) {} },
+    confetti: function() { try { if (typeof window.confetti === "function") window.confetti({ particleCount: 55, spread: 65, origin: { y: 0.7 } }); } catch (e) {} },
     beep: function(kind) {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1130,6 +1137,7 @@ def generate_components_js():
 
   window.FactoryGame = {
     _raf: null,
+    _threeCleanup: null,
     isUnlocked: function(vId, freeByDefault) {
       if (freeByDefault) return true;
       try {
@@ -1158,8 +1166,38 @@ def generate_components_js():
       if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
       return true;
     },
+    openGmailSync: function() {
+      const body = '<div class="sf-card"><h3 style="margin:0 0 6px 0;color:#fde047;">Sync Game Coins with Gmail</h3>' +
+        '<p style="font-size:12px;color:#cbd5e1;margin:0 0 10px 0;">Optional: Link your Gmail to backup coins &amp; leaderboard rank.</p>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px;"><input id="gm-email" type="email" placeholder="you@gmail.com" style="flex:1;">' +
+        '<button type="button" onclick="FactoryGame.sendGmOtp()" style="background:#2563eb !important;">Send OTP</button></div>' +
+        '<div id="gm-otp-box" style="display:none;gap:8px;"><input id="gm-otp" type="text" placeholder="6-digit OTP" style="flex:1;margin-bottom:8px;">' +
+        '<button type="button" onclick="FactoryGame.verifyGmOtp()" style="width:100%;background:#10b981 !important;">Verify &amp; Sync</button></div></div>';
+      window.FactoryNav.openDetail("Gmail Cloud Sync", body);
+    },
+    sendGmOtp: async function() {
+      const em = document.getElementById("gm-email");
+      const val = em ? em.value.trim() : "";
+      if (!val || !val.includes("@")) { window.FactoryUI.toast("Enter valid Gmail", "error"); return; }
+      const r = await window.FactoryDB.sendEmailOtp(val);
+      if (r.ok) {
+        const b = document.getElementById("gm-otp-box");
+        if (b) b.style.display = "block";
+        window.FactoryUI.toast("OTP sent to " + val, "success");
+      } else { window.FactoryUI.toast("Could not send OTP", "error"); }
+    },
+    verifyGmOtp: async function() {
+      const em = document.getElementById("gm-email");
+      const ot = document.getElementById("gm-otp");
+      const r = await window.FactoryDB.verifyEmailOtp(em ? em.value.trim() : "", ot ? ot.value.trim() : "");
+      if (r.ok) {
+        window.FactoryUI.toast("Gmail Synced!", "success");
+        window.FactoryNav.closeDetail();
+      } else { window.FactoryUI.toast("Invalid OTP", "error"); }
+    },
     exitRace: function() {
       if (window.FactoryGame._raf) { cancelAnimationFrame(window.FactoryGame._raf); window.FactoryGame._raf = null; }
+      if (window.FactoryGame._threeCleanup) { try { window.FactoryGame._threeCleanup(); } catch (e) {} window.FactoryGame._threeCleanup = null; }
       const ov = document.getElementById("sf-game-overlay");
       if (ov) ov.remove();
       try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
@@ -1171,107 +1209,268 @@ def generate_components_js():
       ov.id = "sf-game-overlay";
       ov.style.cssText = "position:fixed;inset:0;z-index:99990;background:#090d1a;display:flex;flex-direction:column;justify-content:space-between;padding:8px;";
       ov.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:rgba(15,23,42,0.9);border-radius:12px;border:1px solid #38bdf8;">' +
-          '<div style="color:#fff;font-weight:800;font-size:13px;">' + (vehicleName || "Turbo Racer") + '</div>' +
-          '<div id="fg-hud" style="color:#fde047;font-weight:800;font-size:13px;">Score: 0 | Coins: 0</div>' +
-          '<button type="button" onclick="FactoryGame.exitRace()" style="min-height:30px;padding:4px 12px;background:#dc2626 !important;font-size:12px;">Exit</button>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:rgba(15,23,42,0.92);border-radius:12px;border:1px solid #f59e0b;gap:6px;">' +
+          '<div style="color:#fde047;font-weight:800;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (vehicleName || "3D Racer") + '</div>' +
+          '<div id="fg-hud" style="color:#ffffff;font-weight:800;font-size:12px;">Score: 0 | +0</div>' +
+          '<div style="display:flex;gap:4px;">' +
+            '<button id="fg-cam-btn" type="button" style="min-height:28px;padding:3px 8px;background:#2563eb !important;font-size:11px;">CAM</button>' +
+            '<button id="fg-walk-btn" type="button" style="min-height:28px;padding:3px 8px;background:#059669 !important;font-size:11px;">WALK</button>' +
+            '<button type="button" onclick="FactoryGame.exitRace()" style="min-height:28px;padding:3px 8px;background:#dc2626 !important;font-size:11px;">Exit</button>' +
+          '</div>' +
         '</div>' +
-        '<canvas id="fg-canvas" style="width:100%;flex:1;min-height:240px;border-radius:14px;margin:6px 0;background:#14532d;display:block;"></canvas>' +
+        '<div id="fg-3d-wrap" style="width:100%;flex:1;min-height:240px;border-radius:14px;margin:6px 0;overflow:hidden;position:relative;"></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">' +
-          '<button id="fg-left" type="button" style="min-height:48px;background:#1e293b !important;border:1px solid #38bdf8;font-size:16px;font-weight:800;">&larr; LEFT</button>' +
-          '<button id="fg-boost" type="button" style="min-height:48px;background:linear-gradient(135deg,#f59e0b,#ef4444) !important;font-size:14px;font-weight:800;">NITRO</button>' +
-          '<button id="fg-right" type="button" style="min-height:48px;background:#1e293b !important;border:1px solid #38bdf8;font-size:16px;font-weight:800;">RIGHT &rarr;</button>' +
+          '<button id="fg-left" type="button" style="min-height:48px;background:#1e293b !important;border:2px solid #38bdf8;font-size:15px;font-weight:800;">STEER &larr;</button>' +
+          '<button id="fg-boost" type="button" style="min-height:48px;background:linear-gradient(135deg,#f59e0b,#ef4444) !important;font-size:14px;font-weight:800;">NITRO / GO</button>' +
+          '<button id="fg-right" type="button" style="min-height:48px;background:#1e293b !important;border:2px solid #38bdf8;font-size:15px;font-weight:800;">&rarr; STEER</button>' +
         '</div>';
       document.body.appendChild(ov);
       try { if (ov.requestFullscreen) ov.requestFullscreen().catch(function(){}); } catch (e) {}
       try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function(){}); } catch (e) {}
 
+      const wrap = document.getElementById("fg-3d-wrap");
+      if (typeof window.THREE === "undefined") {
+        wrap.innerHTML = '<div style="padding:30px;color:#fff;text-align:center;">Loading 3D Engine...</div>';
+        return;
+      }
+      const THREE = window.THREE;
+      const W = wrap.clientWidth || 360, H = wrap.clientHeight || 420;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0ea5e9);
+      scene.fog = new THREE.Fog(0x38bdf8, 22, 95);
+      const camera = new THREE.PerspectiveCamera(65, W / H, 0.1, 140);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(W, H);
+      wrap.appendChild(renderer.domElement);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+      const sun = new THREE.DirectionalLight(0xfef08a, 0.95);
+      sun.position.set(15, 30, 20);
+      scene.add(sun);
+
+      // Ground + 3D Highway + River Bridge
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 240), new THREE.MeshLambertMaterial({ color: 0x15803d }));
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.z = -80;
+      scene.add(ground);
+
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 240), new THREE.MeshLambertMaterial({ color: 0x1e293b }));
+      road.rotation.x = -Math.PI / 2;
+      road.position.y = 0.02;
+      road.position.z = -80;
+      scene.add(road);
+
+      const bridgeDeck = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.4, 24), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+      bridgeDeck.position.set(0, 0.1, -55);
+      scene.add(bridgeDeck);
+      const river = new THREE.Mesh(new THREE.PlaneGeometry(120, 20), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+      river.rotation.x = -Math.PI / 2;
+      river.position.set(0, 0.05, -55);
+      scene.add(river);
+
+      // Village Roofed Huts & 3D Trees scrolling
+      const scenery = [];
+      for (let i = 0; i < 16; i++) {
+        const z = -i * 12;
+        const side = (i % 2 === 0) ? -1 : 1;
+        const grp = new THREE.Group();
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 3.2), new THREE.MeshLambertMaterial({ color: 0xfef3c7 }));
+        wall.position.y = 1.1;
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.7, 1.6, 4), new THREE.MeshLambertMaterial({ color: 0xb91c1c }));
+        roof.position.y = 3.0; roof.rotation.y = Math.PI / 4;
+        grp.add(wall); grp.add(roof);
+        grp.position.set(side * 9.5, 0, z);
+        scene.add(grp);
+        scenery.push(grp);
+
+        const tGrp = new THREE.Group();
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.0, 6), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+        trunk.position.y = 1.0;
+        const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.6, 3.0, 7), new THREE.MeshLambertMaterial({ color: 0x16a34a }));
+        leaves.position.y = 3.1;
+        tGrp.add(trunk); tGrp.add(leaves);
+        tGrp.position.set(-side * 8.0, 0, z - 5);
+        scene.add(tGrp);
+        scenery.push(tGrp);
+      }
+
+      // 3D Player Vehicle + 3D Driver Character
+      const car = new THREE.Group();
+      const bodyCol = accentColor ? new THREE.Color(accentColor) : new THREE.Color(0xef4444);
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.7, 3.2), new THREE.MeshLambertMaterial({ color: bodyCol }));
+      chassis.position.y = 0.55;
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 1.6), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+      cabin.position.set(0, 1.15, -0.1);
+      car.add(chassis); car.add(cabin);
+      car.position.set(0, 0, 0);
+      scene.add(car);
+
+      const walker = new THREE.Group();
+      const wBody = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.4), new THREE.MeshLambertMaterial({ color: 0xfacc15 }));
+      wBody.position.y = 0.8;
+      const wHead = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 8), new THREE.MeshLambertMaterial({ color: 0xfde68a }));
+      wHead.position.y = 1.55;
+      walker.add(wBody); walker.add(wHead);
+      walker.visible = false;
+      scene.add(walker);
+
+      // Coins & Obstacles
+      const items = [];
+      for (let j = 0; j < 10; j++) {
+        const isCoin = j % 3 !== 0;
+        const m = new THREE.Mesh(
+          isCoin ? new THREE.CylinderGeometry(0.55, 0.55, 0.15, 12) : new THREE.BoxGeometry(1.4, 1.1, 1.4),
+          new THREE.MeshLambertMaterial({ color: isCoin ? 0xfacc15 : 0xdc2626 })
+        );
+        if (isCoin) m.rotation.x = Math.PI / 2;
+        m.userData = { isCoin: isCoin, lane: (j % 3) - 1 };
+        m.position.set(m.userData.lane * 2.8, 0.7, -22 - j * 14);
+        scene.add(m);
+        items.push(m);
+      }
+
+      let lane = 0, camMode = 0, walkMode = false, speed = 0.42, score = 0, coins = 0, alive = true, wx = 2.5, wz = 0;
+      document.getElementById("fg-cam-btn").onclick = function() {
+        camMode = (camMode + 1) % 3;
+        if (window.FactorySound) window.FactorySound.tap();
+        window.FactoryUI.toast(["Chase Cam", "Driver Seat Cam", "Top 3D Cam"][camMode], "info");
+      };
+      document.getElementById("fg-walk-btn").onclick = function() {
+        walkMode = !walkMode;
+        walker.visible = walkMode;
+        if (walkMode) { wx = car.position.x + 2.2; wz = car.position.z; walker.position.set(wx, 0, wz); }
+        this.textContent = walkMode ? "DRIVE" : "WALK";
+        if (window.FactorySound) window.FactorySound.tap();
+      };
+      document.getElementById("fg-left").onclick = function() {
+        if (walkMode) { wx -= 1.2; } else { lane = Math.max(-1, lane - 1); }
+        if (window.FactorySound) window.FactorySound.tap();
+      };
+      document.getElementById("fg-right").onclick = function() {
+        if (walkMode) { wx += 1.2; } else { lane = Math.max(-1, Math.min(1, lane + 1)); }
+        if (window.FactorySound) window.FactorySound.tap();
+      };
+      document.getElementById("fg-boost").onclick = function() {
+        if (walkMode) { wz -= 2.0; } else { speed = Math.min(0.9, speed + 0.12); }
+        if (window.FactorySound) window.FactorySound.coin();
+      };
+
+      window.FactoryGame._threeCleanup = function() { try { renderer.dispose(); } catch (e) {} };
+
+      function animate() {
+        if (!alive || !document.getElementById("fg-3d-wrap")) return;
+        if (walkMode) {
+          walker.position.x += (wx - walker.position.x) * 0.2;
+          walker.position.z += (wz - walker.position.z) * 0.2;
+          camera.position.set(walker.position.x, 3.4, walker.position.z + 5.5);
+          camera.lookAt(walker.position.x, 1.2, walker.position.z - 6);
+        } else {
+          car.position.x += (lane * 2.8 - car.position.x) * 0.18;
+          for (let i = 0; i < scenery.length; i++) {
+            scenery[i].position.z += speed;
+            if (scenery[i].position.z > 14) scenery[i].position.z -= 180;
+          }
+          bridgeDeck.position.z += speed; river.position.z += speed;
+          if (bridgeDeck.position.z > 20) { bridgeDeck.position.z = -120; river.position.z = -120; }
+          for (let j = 0; j < items.length; j++) {
+            const it = items[j];
+            it.position.z += speed;
+            if (it.userData.isCoin) it.rotation.z += 0.08;
+            if (Math.abs(it.position.z - car.position.z) < 1.8 && Math.abs(it.position.x - car.position.x) < 1.5) {
+              if (it.userData.isCoin) {
+                coins += 10; score += 25;
+                it.position.z = -130;
+                if (window.FactorySound) window.FactorySound.coin();
+              } else {
+                alive = false;
+                if (window.FactorySound) window.FactorySound.error();
+                const finalScore = score + 50;
+                if (window.FactoryDB) {
+                  window.FactoryDB.saveItem("race", (vehicleName || "3D Race") + " (" + finalScore + ")", { score: finalScore, coins: coins });
+                  window.FactoryDB.recordTx("xp", coins, "3D Race Coins");
+                }
+                window.FactoryUI.toast("Race Finished! Score: " + finalScore + " | +" + coins + " Coins", "success");
+                setTimeout(function() { window.FactoryGame.exitRace(); if (typeof window.onAppReady === "function") window.onAppReady(); }, 900);
+                return;
+              }
+            }
+            if (it.position.z > 8) { it.position.z = -130; score += 5; }
+          }
+          if (camMode === 0) { camera.position.set(car.position.x * 0.5, 3.8, 6.8); camera.lookAt(car.position.x, 1.0, -14); }
+          else if (camMode === 1) { camera.position.set(car.position.x, 1.65, -0.6); camera.lookAt(car.position.x, 1.3, -24); }
+          else { camera.position.set(0, 16, 4); camera.lookAt(0, 0, -18); }
+        }
+        const hud = document.getElementById("fg-hud");
+        if (hud) hud.textContent = "Score: " + score + " | +" + coins + " Coins";
+        renderer.render(scene, camera);
+        window.FactoryGame._raf = requestAnimationFrame(animate);
+      }
+      window.FactoryGame._raf = requestAnimationFrame(animate);
+    },
+    startSpinWheel: function(title) {
+      const body = '<div class="sf-hero-card" style="text-align:center;"><h3>' + (title || "Lucky Spin Wheel") + '</h3>' +
+        '<div id="spin-res" style="font-size:28px;font-weight:800;color:#fde047;margin:14px 0;">READY TO SPIN</div>' +
+        '<button type="button" onclick="FactoryGame._doSpin()" style="width:100%;background:linear-gradient(135deg,#f59e0b,#ef4444) !important;">SPIN NOW</button></div>';
+      window.FactoryNav.openDetail(title || "Spin & Win", body);
+    },
+    _doSpin: async function() {
+      const prizes = [10, 25, 50, 75, 100];
+      const won = prizes[Math.floor(Math.random() * prizes.length)];
+      const el = document.getElementById("spin-res");
+      if (el) el.textContent = "+" + won + " COINS WON!";
+      if (window.FactorySound) window.FactorySound.win();
+      window.FactoryUI.confetti();
+      if (window.FactoryDB) await window.FactoryDB.recordTx("xp", won, "Spin Wheel Reward");
+      window.FactoryUI.toast("Won +" + won + " Coins!", "success");
+    },
+    startCharacterRunner: function(charName, accentColor) {
+      window.FactoryGame.exitRace();
+      const ov = document.createElement("div");
+      ov.id = "sf-game-overlay";
+      ov.style.cssText = "position:fixed;inset:0;z-index:99990;background:#090d1a;display:flex;flex-direction:column;justify-content:space-between;padding:8px;";
+      ov.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:rgba(15,23,42,0.92);border-radius:12px;border:1px solid #10b981;">' +
+          '<div style="color:#34d399;font-weight:800;font-size:13px;">' + (charName || "Village Runner") + '</div>' +
+          '<div id="fg-hud" style="color:#fde047;font-weight:800;font-size:13px;">Score: 0 | +0 Coins</div>' +
+          '<button type="button" onclick="FactoryGame.exitRace()" style="min-height:30px;padding:4px 12px;background:#dc2626 !important;font-size:12px;">Exit</button>' +
+        '</div>' +
+        '<canvas id="fg-canvas" style="width:100%;flex:1;min-height:240px;border-radius:14px;margin:6px 0;display:block;"></canvas>' +
+        '<button id="fg-jump" type="button" style="min-height:54px;background:linear-gradient(135deg,#10b981,#0284c7) !important;font-size:17px;font-weight:800;">TAP TO JUMP</button>';
+      document.body.appendChild(ov);
       const cvs = document.getElementById("fg-canvas");
       const ctx = cvs.getContext("2d");
-      cvs.width = cvs.clientWidth || 360;
-      cvs.height = cvs.clientHeight || 420;
-      let lane = 1, score = 0, coins = 0, speed = 4.2, roadY = 0, alive = true;
-      const objs = [];
-      const vLow = (vehicleName || "").toLowerCase();
-      const vEmoji = vLow.includes("horse") ? "H" : (vLow.includes("bike") ? "B" : (vLow.includes("scooter") ? "S" : "C"));
-
-      function moveLane(dir) {
-        lane = Math.max(0, Math.min(2, lane + dir));
-        if (window.FactorySound) window.FactorySound.tap();
-      }
-      document.getElementById("fg-left").onclick = function() { moveLane(-1); };
-      document.getElementById("fg-right").onclick = function() { moveLane(1); };
-      document.getElementById("fg-boost").onclick = function() { speed = Math.min(9.5, speed + 1.4); if (window.FactorySound) window.FactorySound.coin(); };
-
-      let frame = 0;
+      cvs.width = cvs.clientWidth || 360; cvs.height = cvs.clientHeight || 380;
+      let py = cvs.height - 80, vy = 0, groundY = cvs.height - 56, score = 0, coins = 0, alive = true, frame = 0;
+      const obs = [];
+      document.getElementById("fg-jump").onclick = function() {
+        if (py >= groundY - 4) { vy = -12.5; if (window.FactorySound) window.FactorySound.tap(); }
+      };
       function loop() {
         if (!alive || !document.getElementById("fg-canvas")) return;
         const W = cvs.width, H = cvs.height;
-        const roadL = W * 0.2, roadW = W * 0.6, laneW = roadW / 3;
-        ctx.fillStyle = "#166534";
-        ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(roadL, 0, roadW, H);
-
-        roadY = (roadY + speed * 2) % 48;
-        for (let y = -48; y < H + 48; y += 48) {
-          ctx.fillStyle = "#fde047";
-          ctx.fillRect(roadL + laneW - 2, y + roadY, 4, 24);
-          ctx.fillRect(roadL + laneW * 2 - 2, y + roadY, 4, 24);
-          ctx.fillStyle = "#15803d";
-          ctx.beginPath(); ctx.arc(roadL * 0.45, y + roadY + 12, 14, 0, 6.28); ctx.fill();
-          ctx.fillStyle = "#92400e";
-          ctx.fillRect(W - roadL * 0.72, y + roadY + 4, 22, 18);
-        }
-
+        ctx.fillStyle = "#0ea5e9"; ctx.fillRect(0, 0, W, groundY);
+        ctx.fillStyle = "#15803d"; ctx.fillRect(0, groundY, W, H - groundY);
+        vy += 0.65; py = Math.min(groundY, py + vy);
+        ctx.fillStyle = accentColor || "#f59e0b"; ctx.fillRect(48, py - 38, 28, 38);
         frame++;
-        if (frame % 26 === 0) {
-          objs.push({ lane: Math.floor(Math.random() * 3), y: -24, type: Math.random() < 0.62 ? "coin" : "rock" });
-        }
-        const px = roadL + lane * laneW + laneW / 2;
-        const py = H - 56;
-        ctx.fillStyle = accentColor || "#ef4444";
-        ctx.fillRect(px - 18, py - 24, 36, 48);
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 16px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(vEmoji, px, py + 6);
-
-        for (let i = objs.length - 1; i >= 0; i--) {
-          const o = objs[i];
-          o.y += speed;
-          const ox = roadL + o.lane * laneW + laneW / 2;
-          if (o.type === "coin") {
-            ctx.fillStyle = "#facc15";
-            ctx.beginPath(); ctx.arc(ox, o.y, 12, 0, 6.28); ctx.fill();
-          } else {
-            ctx.fillStyle = "#dc2626";
-            ctx.fillRect(ox - 16, o.y - 12, 32, 24);
-          }
-          if (Math.abs(o.y - py) < 28 && o.lane === lane) {
-            if (o.type === "coin") {
-              coins += 10; score += 25; objs.splice(i, 1);
-              if (window.FactorySound) window.FactorySound.coin();
-            } else {
-              alive = false;
-              if (window.FactorySound) window.FactorySound.error();
-              const finalScore = score + Math.floor(frame / 4);
-              const tok = window.FactoryPro ? window.FactoryPro.scoreToken(finalScore) : "V1";
-              if (window.FactoryDB) {
-                window.FactoryDB.saveItem("race", (vehicleName || "Race") + " (" + finalScore + ")", { score: finalScore, coins: coins, token: tok });
-                window.FactoryDB.recordTx("xp", coins, "Race Coins (" + vehicleName + ")");
-              }
-              window.FactoryUI.toast("Race Over! Score: " + finalScore + " | +" + coins + " Coins", "success");
-              setTimeout(function() { window.FactoryGame.exitRace(); if (typeof window.onAppReady === "function") window.onAppReady(); }, 900);
+        if (frame % 55 === 0) obs.push({ x: W + 20, coin: Math.random() < 0.55 });
+        for (let i = obs.length - 1; i >= 0; i--) {
+          const o = obs[i]; o.x -= 5;
+          if (o.coin) { ctx.fillStyle = "#facc15"; ctx.beginPath(); ctx.arc(o.x, groundY - 56, 11, 0, 6.28); ctx.fill(); }
+          else { ctx.fillStyle = "#dc2626"; ctx.fillRect(o.x, groundY - 28, 22, 28); }
+          if (Math.abs(o.x - 62) < 22 && ((o.coin && py < groundY - 20) || (!o.coin && py > groundY - 26))) {
+            if (o.coin) { coins += 10; obs.splice(i, 1); if (window.FactorySound) window.FactorySound.coin(); }
+            else {
+              alive = false; if (window.FactorySound) window.FactorySound.error();
+              if (window.FactoryDB) window.FactoryDB.recordTx("xp", coins, "Runner Coins");
+              window.FactoryUI.toast("Run Over! +" + coins + " Coins", "success");
+              setTimeout(function() { window.FactoryGame.exitRace(); if (typeof window.onAppReady === "function") window.onAppReady(); }, 800);
               return;
             }
-          } else if (o.y > H + 30) {
-            objs.splice(i, 1);
-            score += 5;
-          }
+          } else if (o.x < -30) { obs.splice(i, 1); score += 10; }
         }
         const hud = document.getElementById("fg-hud");
-        if (hud) hud.textContent = "Score: " + (score + Math.floor(frame / 4)) + " | +" + coins + " Coins";
+        if (hud) hud.textContent = "Score: " + score + " | +" + coins + " Coins";
         window.FactoryGame._raf = requestAnimationFrame(loop);
       }
       window.FactoryGame._raf = requestAnimationFrame(loop);
@@ -1442,6 +1641,76 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
         login_header_block = f'<div style="padding:20px 18px 8px 18px;text-align:center;border-bottom:1px dashed {th["accent"]}66;">{logo_html}<span style="background:{th["accent"]}33;color:{th["accent"]};border:1px solid {th["accent"]};padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;">CLOUD ARENA ACCESS</span><h2 style="margin:8px 0 0 0;font-size:21px;font-weight:800;color:#fff;">{safe_title}</h2></div>'
     else:
         login_header_block = f'<div style="padding:20px 18px 6px 18px;text-align:center;">{logo_html}<h2 style="margin:4px 0 4px 0;font-size:22px;font-weight:800;color:#fff;">Welcome to {safe_title}</h2><p style="margin:0;font-size:12px;color:#cbd5e1;">Step 1: Enter Gmail &rarr; Step 2: Verify OTP</p></div>'
+    if reactor_mode == "GAMING":
+        app_shell_html = f"""<div id="app-shell" style="display:none;padding-bottom:24px;">
+    <header id="app-header" style="border-bottom:1.5px solid {th['accent']};">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Driver Menu"><span id="header-avatar-txt">P</span></button>
+        <div>
+          <span style="font-size:15px;font-weight:800;color:#ffffff;display:block;">{safe_title}</span>
+          <span style="font-size:10px;color:{th['accent']};font-weight:700;">TITAN 3D ARENA</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button type="button" onclick="FactorySound.toggle()" class="icon-btn" style="min-height:32px;padding:4px 8px;font-size:11px;" aria-label="Sound">SFX</button>
+        <button type="button" onclick="FactoryGame.openGmailSync()" class="icon-btn" style="min-height:32px;padding:4px 8px;font-size:11px;border:1px solid {th['accent']};">Gmail</button>
+        <span id="header-badge" class="header-pill">100 Pts</span>
+      </div>
+    </header>
+    <main id="app-main" style="padding:12px;">
+      <div id="notice-banner" style="display:none;" class="notice-pill"></div>
+      <section id="view-1" class="tab-view"></section>
+      <section id="view-2" class="tab-view" style="display:none;"></section>
+      <section id="view-3" class="tab-view" style="display:none;"></section>
+      <section id="view-4" class="tab-view" style="display:none;"></section>
+      <section id="view-detail" class="tab-view" style="display:none;"></section>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+        <button type="button" onclick="FactoryNav.switchTab(3)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">Leaderboard</button>
+        <button type="button" onclick="FactoryNav.switchTab(2)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">Custom Cup</button>
+        <button type="button" onclick="FactoryEngine.openTutorial()" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">How to Play</button>
+      </div>
+    </main>
+  </div>"""
+    else:
+        app_shell_html = f"""<div id="app-shell" style="display:none;padding-bottom:76px;">
+    <header id="app-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Profile Menu">
+          <span id="header-avatar-txt">U</span>
+        </button>
+        <span style="font-size:15px;font-weight:800;color:#ffffff;">{safe_title}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button id="lang-toggle-btn" type="button" onclick="FactoryLang.toggle()" style="min-height:28px;padding:3px 8px;font-size:10.5px;font-weight:800;border-radius:999px;background:#1e293b !important;border:1px solid {th['accent']};color:#fff;">EN/HI</button>
+        <button type="button" onclick="FactoryEngine.openNotifications()" class="icon-btn" style="position:relative;min-height:32px;padding:5px 7px;" aria-label="Notifications">
+          <i data-lucide="bell"></i>
+          <span id="bell-badge" style="position:absolute;top:1px;right:1px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;min-width:14px;height:14px;border-radius:999px;display:flex;align-items:center;justify-content:center;">2</span>
+        </button>
+        <span id="header-badge" class="header-pill">100 Pts</span>
+      </div>
+    </header>
+    <div style="display:flex;gap:6px;padding:8px 12px 4px 12px;overflow-x:auto;scrollbar-width:none;">
+      <button id="nav-1" type="button" onclick="FactoryNav.switchTab(1)" class="nav-btn active-tab" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="home" style="width:14px;height:14px;"></i><span>Overview</span></button>
+      <button id="nav-2" type="button" onclick="FactoryNav.switchTab(2)" class="nav-btn" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="zap" style="width:14px;height:14px;"></i><span>Hub</span></button>
+      <button id="nav-3" type="button" onclick="FactoryNav.switchTab(3)" class="nav-btn" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="layers" style="width:14px;height:14px;"></i><span>Feed</span></button>
+      <button id="nav-4" type="button" onclick="FactoryNav.switchTab(4)" class="nav-btn" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="user" style="width:14px;height:14px;"></i><span>Account</span></button>
+    </div>
+    <main id="app-main" style="padding:10px 12px;">
+      <div id="notice-banner" style="display:none;" class="notice-pill"></div>
+      <div style="margin-bottom:10px;">
+        <input id="app-search-bar" type="search" placeholder="Search items, services, or records..." oninput="if(window.onSearchInput) window.onSearchInput(this.value);">
+      </div>
+      <section id="view-1" class="tab-view"></section>
+      <section id="view-2" class="tab-view" style="display:none;"></section>
+      <section id="view-3" class="tab-view" style="display:none;"></section>
+      <section id="view-4" class="tab-view" style="display:none;"></section>
+      <section id="view-detail" class="tab-view" style="display:none;"></section>
+    </main>
+    <button id="floating-cta" type="button" onclick="if(window.onFloatingAction) window.onFloatingAction(); else FactoryNav.switchTab(2);" aria-label="Quick Action" style="bottom:18px !important;right:16px !important;">
+      <i data-lucide="plus"></i>
+    </button>
+  </div>"""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1460,6 +1729,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     body, #app-shell {{ background: {th['full_bg']} !important; background-attachment: fixed !important; }}
     .sf-card, .sf-stat-box {{ border-color: {th['accent']}44 !important; }}
@@ -1560,56 +1830,8 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
     </div>
   </section>
 
-  <!-- 5. Authenticated App Shell -->
-  <div id="app-shell" style="display:none;">
-    <header id="app-header">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Profile Menu">
-          <span id="header-avatar-txt">U</span>
-        </button>
-        <span style="font-size:16px;font-weight:800;color:#ffffff;">{safe_title}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button id="lang-toggle-btn" type="button" onclick="FactoryLang.toggle()" style="min-height:30px;padding:4px 9px;font-size:11px;font-weight:800;border-radius:999px;background:#1e293b !important;border:1px solid {th['accent']};color:#fff;">EN/HI</button>
-        <button type="button" onclick="FactoryEngine.openNotifications()" class="icon-btn" style="position:relative;min-height:34px;padding:6px 8px;" aria-label="Notifications">
-          <i data-lucide="bell"></i>
-          <span id="bell-badge" style="position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;min-width:15px;height:15px;border-radius:999px;display:flex;align-items:center;justify-content:center;">2</span>
-        </button>
-        <span id="header-badge" class="header-pill">100 Pts</span>
-      </div>
-    </header>
-
-    <main id="app-main">
-      <div id="notice-banner" style="display:none;" class="notice-pill"></div>
-      <div style="margin-bottom:12px;">
-        <input id="app-search-bar" type="search" placeholder="Search items, records, or actions..." oninput="if(window.onSearchInput) window.onSearchInput(this.value);">
-      </div>
-      <section id="view-1" class="tab-view"></section>
-      <section id="view-2" class="tab-view" style="display:none;"></section>
-      <section id="view-3" class="tab-view" style="display:none;"></section>
-      <section id="view-4" class="tab-view" style="display:none;"></section>
-      <section id="view-detail" class="tab-view" style="display:none;"></section>
-    </main>
-
-    <button id="floating-cta" type="button" onclick="if(window.onFloatingAction) window.onFloatingAction(); else FactoryNav.switchTab(2);" aria-label="Quick Action">
-      <i data-lucide="plus"></i>
-    </button>
-
-    <nav id="bottom-nav">
-      <button id="nav-1" type="button" onclick="FactoryNav.switchTab(1)" class="nav-btn active-tab">
-        <i data-lucide="home"></i><span>Home</span>
-      </button>
-      <button id="nav-2" type="button" onclick="FactoryNav.switchTab(2)" class="nav-btn">
-        <i data-lucide="layout-grid"></i><span>Actions</span>
-      </button>
-      <button id="nav-3" type="button" onclick="FactoryNav.switchTab(3)" class="nav-btn">
-        <i data-lucide="book-open"></i><span>Records</span>
-      </button>
-      <button id="nav-4" type="button" onclick="FactoryNav.switchTab(4)" class="nav-btn">
-        <i data-lucide="user"></i><span>Profile</span>
-      </button>
-    </nav>
-  </div>
+  <!-- 5. Authenticated App Shell (Separated by Reactor!) -->
+  {app_shell_html}
 
   <script>window.SF_REACTOR_MODE = "{reactor_mode}";</script>
   <script src="db.js"></script>
@@ -1940,6 +2162,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
         "architect": ["google/gemini-2.0-flash-001", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
         "brand_director": ["anthropic/claude-3.7-sonnet", "google/gemini-2.5-flash", "openai/gpt-4o-mini"],
         "reactor_router": ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini", "x-ai/grok-4.1-fast"],
+        "market_research": ["perplexity/sonar", "google/gemini-2.0-flash-001:online", "openai/gpt-4o-mini"],
         "designer": ["anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001", "openai/gpt-4o-mini"],
         "engineer_single": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
         "engineer_a": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
@@ -2044,12 +2267,27 @@ Reply ONLY in format: GAMING | <short 5-word reason> OR COMMERCIAL | <short 5-wo
         return "GAMING", used_m or "Keyword Router", "GAMING | Detected 2D Racing/Arcade prompt"
     return "COMMERCIAL", used_m or "Keyword Router", "COMMERCIAL | Detected Commercial/Utility prompt"
 
+def run_live_market_research(app_title, user_prompt, reactor_mode):
+    """Dept 0B: Live Internet Market & Trend Research AI (Perplexity Sonar) before Architect designs the app."""
+    if reactor_mode == "GAMING":
+        sys_p = "You are a Live Mobile Gaming Market Researcher. Give 4 crisp bullet points on top trending mechanics, rewards, and 3D/arcade hooks for this game idea."
+    else:
+        sys_p = "You are a Live Indian & Global App Market Researcher. Give 4 crisp bullet points on top user-loved features, monetization, and UI flows for this commercial app."
+    res, used_m, _ = call_specialist_ai("market_research", sys_p, f"App: {app_title}\nIdea: {user_prompt[:450]}", max_tokens=320)
+    return (res or "Focus on smooth interactive actions, crisp cards, and fast cloud sync."), (used_m or "Market AI")
+
 def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     """Execute Dual-Reactor Multi-AI Factory with Dept 0 Reactor Router + Continuous Grok Boss & Live Radar Bot."""
     reactor_mode, router_m, router_note = route_prompt_to_reactor(app_title, user_prompt)
-    boss_log = [f"Dept 0 Router ({router_m}): {router_note} — Grok Boss & Radar Bot watching all steps!"]
+    reactor_label = "TITAN_3D_GAME_REACTOR" if reactor_mode == "GAMING" else "NEXUS_COMMERCE_REACTOR"
+    if reactor_mode == "GAMING":
+        remove_json_file(COMMERCE_MEM_FILE)
+    else:
+        remove_json_file(GAMING_MEM_FILE)
+    mkt_notes, mkt_m = run_live_market_research(app_title, user_prompt, reactor_mode)
+    boss_log = [f"Dept 0A Router ({router_m}): {reactor_label} | Dept 0B Research ({mkt_m}) active — Grok Boss watching!"]
     stages = [
-        {"title": f"0. Dedicated Reactor Router AI — Selected: {reactor_mode} REACTOR", "status": "done", "note": router_note},
+        {"title": f"0. Dedicated Reactor Router AI — Selected: {reactor_label}", "status": "done", "note": router_note},
         {"title": "1. Architect AI + Grok Gate 1 — Custom Blueprint & App Tutorial", "status": "running", "note": f"Designing {reactor_mode} architecture..."},
         {"title": "2. UI Designer + Brand & 3D Studio AI — Theme & Symbol", "status": "pending", "note": ""},
         {"title": "3. Sarfealam Core, Realtime & Game/OTP Reactor Engine", "status": "pending", "note": ""},
@@ -2209,6 +2447,7 @@ Mandatory rules:
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     save_json_file(STAGED_APP_FILE, staged_bundle)
+    save_json_file(GAMING_MEM_FILE if reactor_mode == "GAMING" else COMMERCE_MEM_FILE, staged_bundle)
     return staged_bundle, None
 
 # ==============================================================================
