@@ -2047,7 +2047,7 @@ Reply ONLY in format: GAMING | <short 5-word reason> OR COMMERCIAL | <short 5-wo
 def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     """Execute Dual-Reactor Multi-AI Factory with Dept 0 Reactor Router + Continuous Grok Boss & Live Radar Bot."""
     reactor_mode, router_m, router_note = route_prompt_to_reactor(app_title, user_prompt)
-    boss_log = [f"Dept 0 Router ({router_m}): {reactor_note} — Grok Boss & Radar Bot watching all steps!"]
+    boss_log = [f"Dept 0 Router ({router_m}): {router_note} — Grok Boss & Radar Bot watching all steps!"]
     stages = [
         {"title": f"0. Dedicated Reactor Router AI — Selected: {reactor_mode} REACTOR", "status": "done", "note": router_note},
         {"title": "1. Architect AI + Grok Gate 1 — Custom Blueprint & App Tutorial", "status": "running", "note": f"Designing {reactor_mode} architecture..."},
