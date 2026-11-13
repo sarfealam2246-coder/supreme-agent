@@ -358,6 +358,7 @@ def generate_db_js(app_slug):
   const SUPA_URL = "{SUPABASE_URL}";
   const SUPA_KEY = "{SUPABASE_KEY}";
   const APP_ID = "{app_slug}";
+  window.SF_APP_SLUG = APP_ID;
   const LOCAL_USER_KEY = "sf_user_" + APP_ID;
   const LOCAL_TX_KEY = "sf_tx_" + APP_ID;
   const LOCAL_QUEUE_KEY = "sf_queue_" + APP_ID;
@@ -671,7 +672,7 @@ def generate_components_js():
       if (nb && window.FactoryLang.slideIdx === 2) nb.textContent = "Get Started";
     },
     finishOnboarding: function() {
-      localStorage.setItem("sf_onboard_done", "1");
+      localStorage.setItem("sf_ob_" + (window.SF_APP_SLUG || "app"), "1");
       const ob = document.getElementById("onboarding-screen");
       if (ob) ob.style.display = "none";
       window.FactoryNav.showLogin();
@@ -1091,11 +1092,11 @@ def generate_components_js():
   window.FactoryPro = {
     claimDailyBonus: async function() {
       const today = new Date().toISOString().slice(0, 10);
-      if (localStorage.getItem("sf_daily_bonus") === today) {
+      if (localStorage.getItem("sf_dbonus_" + (window.SF_APP_SLUG || "app")) === today) {
         window.FactoryUI.toast("Today's +50 Pts bonus already claimed!", "warn");
         return false;
       }
-      localStorage.setItem("sf_daily_bonus", today);
+      localStorage.setItem("sf_dbonus_" + (window.SF_APP_SLUG || "app"), today);
       if (window.FactoryDB) await window.FactoryDB.recordTx("bonus", 50, "Daily Streak Bonus " + today);
       window.FactorySound.win();
       window.FactoryUI.confetti();
@@ -1124,6 +1125,156 @@ def generate_components_js():
       if (window.FactorySound) window.FactorySound.win();
       window.FactoryUI.confetti();
       window.FactoryUI.toast("Pro Trial Request Logged!", "success");
+    }
+  };
+
+  window.FactoryGame = {
+    _raf: null,
+    isUnlocked: function(vId, freeByDefault) {
+      if (freeByDefault) return true;
+      try {
+        const list = JSON.parse(localStorage.getItem("sf_unlock_" + (window.SF_APP_SLUG || "app")) || "[]");
+        return list.indexOf(vId) !== -1;
+      } catch (e) { return false; }
+    },
+    unlockVehicle: async function(vId, cost, label) {
+      const u = window.FactoryDB ? window.FactoryDB.getUserSync() : null;
+      const pts = u ? (u.points || 0) : 0;
+      if (pts < cost) {
+        if (window.FactorySound) window.FactorySound.error();
+        window.FactoryUI.toast("Need " + cost + " Coins! You have " + pts + " Coins.", "warn");
+        return false;
+      }
+      try {
+        const key = "sf_unlock_" + (window.SF_APP_SLUG || "app");
+        const list = JSON.parse(localStorage.getItem(key) || "[]");
+        if (list.indexOf(vId) === -1) list.push(vId);
+        localStorage.setItem(key, JSON.stringify(list));
+      } catch (e) {}
+      if (window.FactoryDB) await window.FactoryDB.recordTx("unlock", -cost, "Unlocked " + label);
+      if (window.FactorySound) window.FactorySound.win();
+      window.FactoryUI.confetti();
+      window.FactoryUI.toast(label + " Unlocked!", "success");
+      if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
+      return true;
+    },
+    exitRace: function() {
+      if (window.FactoryGame._raf) { cancelAnimationFrame(window.FactoryGame._raf); window.FactoryGame._raf = null; }
+      const ov = document.getElementById("sf-game-overlay");
+      if (ov) ov.remove();
+      try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+    },
+    startVillageRace: function(vehicleName, accentColor) {
+      window.FactoryGame.exitRace();
+      const ov = document.createElement("div");
+      ov.id = "sf-game-overlay";
+      ov.style.cssText = "position:fixed;inset:0;z-index:99990;background:#090d1a;display:flex;flex-direction:column;justify-content:space-between;padding:8px;";
+      ov.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:rgba(15,23,42,0.9);border-radius:12px;border:1px solid #38bdf8;">' +
+          '<div style="color:#fff;font-weight:800;font-size:13px;">' + (vehicleName || "Turbo Racer") + '</div>' +
+          '<div id="fg-hud" style="color:#fde047;font-weight:800;font-size:13px;">Score: 0 | Coins: 0</div>' +
+          '<button type="button" onclick="FactoryGame.exitRace()" style="min-height:30px;padding:4px 12px;background:#dc2626 !important;font-size:12px;">Exit</button>' +
+        '</div>' +
+        '<canvas id="fg-canvas" style="width:100%;flex:1;min-height:240px;border-radius:14px;margin:6px 0;background:#14532d;display:block;"></canvas>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">' +
+          '<button id="fg-left" type="button" style="min-height:48px;background:#1e293b !important;border:1px solid #38bdf8;font-size:16px;font-weight:800;">&larr; LEFT</button>' +
+          '<button id="fg-boost" type="button" style="min-height:48px;background:linear-gradient(135deg,#f59e0b,#ef4444) !important;font-size:14px;font-weight:800;">NITRO</button>' +
+          '<button id="fg-right" type="button" style="min-height:48px;background:#1e293b !important;border:1px solid #38bdf8;font-size:16px;font-weight:800;">RIGHT &rarr;</button>' +
+        '</div>';
+      document.body.appendChild(ov);
+      try { if (ov.requestFullscreen) ov.requestFullscreen().catch(function(){}); } catch (e) {}
+      try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function(){}); } catch (e) {}
+
+      const cvs = document.getElementById("fg-canvas");
+      const ctx = cvs.getContext("2d");
+      cvs.width = cvs.clientWidth || 360;
+      cvs.height = cvs.clientHeight || 420;
+      let lane = 1, score = 0, coins = 0, speed = 4.2, roadY = 0, alive = true;
+      const objs = [];
+      const vLow = (vehicleName || "").toLowerCase();
+      const vEmoji = vLow.includes("horse") ? "H" : (vLow.includes("bike") ? "B" : (vLow.includes("scooter") ? "S" : "C"));
+
+      function moveLane(dir) {
+        lane = Math.max(0, Math.min(2, lane + dir));
+        if (window.FactorySound) window.FactorySound.tap();
+      }
+      document.getElementById("fg-left").onclick = function() { moveLane(-1); };
+      document.getElementById("fg-right").onclick = function() { moveLane(1); };
+      document.getElementById("fg-boost").onclick = function() { speed = Math.min(9.5, speed + 1.4); if (window.FactorySound) window.FactorySound.coin(); };
+
+      let frame = 0;
+      function loop() {
+        if (!alive || !document.getElementById("fg-canvas")) return;
+        const W = cvs.width, H = cvs.height;
+        const roadL = W * 0.2, roadW = W * 0.6, laneW = roadW / 3;
+        ctx.fillStyle = "#166534";
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(roadL, 0, roadW, H);
+
+        roadY = (roadY + speed * 2) % 48;
+        for (let y = -48; y < H + 48; y += 48) {
+          ctx.fillStyle = "#fde047";
+          ctx.fillRect(roadL + laneW - 2, y + roadY, 4, 24);
+          ctx.fillRect(roadL + laneW * 2 - 2, y + roadY, 4, 24);
+          ctx.fillStyle = "#15803d";
+          ctx.beginPath(); ctx.arc(roadL * 0.45, y + roadY + 12, 14, 0, 6.28); ctx.fill();
+          ctx.fillStyle = "#92400e";
+          ctx.fillRect(W - roadL * 0.72, y + roadY + 4, 22, 18);
+        }
+
+        frame++;
+        if (frame % 26 === 0) {
+          objs.push({ lane: Math.floor(Math.random() * 3), y: -24, type: Math.random() < 0.62 ? "coin" : "rock" });
+        }
+        const px = roadL + lane * laneW + laneW / 2;
+        const py = H - 56;
+        ctx.fillStyle = accentColor || "#ef4444";
+        ctx.fillRect(px - 18, py - 24, 36, 48);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 16px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(vEmoji, px, py + 6);
+
+        for (let i = objs.length - 1; i >= 0; i--) {
+          const o = objs[i];
+          o.y += speed;
+          const ox = roadL + o.lane * laneW + laneW / 2;
+          if (o.type === "coin") {
+            ctx.fillStyle = "#facc15";
+            ctx.beginPath(); ctx.arc(ox, o.y, 12, 0, 6.28); ctx.fill();
+          } else {
+            ctx.fillStyle = "#dc2626";
+            ctx.fillRect(ox - 16, o.y - 12, 32, 24);
+          }
+          if (Math.abs(o.y - py) < 28 && o.lane === lane) {
+            if (o.type === "coin") {
+              coins += 10; score += 25; objs.splice(i, 1);
+              if (window.FactorySound) window.FactorySound.coin();
+            } else {
+              alive = false;
+              if (window.FactorySound) window.FactorySound.error();
+              const finalScore = score + Math.floor(frame / 4);
+              const tok = window.FactoryPro ? window.FactoryPro.scoreToken(finalScore) : "V1";
+              if (window.FactoryDB) {
+                window.FactoryDB.saveItem("race", (vehicleName || "Race") + " (" + finalScore + ")", { score: finalScore, coins: coins, token: tok });
+                window.FactoryDB.recordTx("xp", coins, "Race Coins (" + vehicleName + ")");
+              }
+              window.FactoryUI.toast("Race Over! Score: " + finalScore + " | +" + coins + " Coins", "success");
+              setTimeout(function() { window.FactoryGame.exitRace(); if (typeof window.onAppReady === "function") window.onAppReady(); }, 900);
+              return;
+            }
+          } else if (o.y > H + 30) {
+            objs.splice(i, 1);
+            score += 5;
+          }
+        }
+        const hud = document.getElementById("fg-hud");
+        if (hud) hud.textContent = "Score: " + (score + Math.floor(frame / 4)) + " | +" + coins + " Coins";
+        window.FactoryGame._raf = requestAnimationFrame(loop);
+      }
+      window.FactoryGame._raf = requestAnimationFrame(loop);
     }
   };
 
@@ -1218,8 +1369,15 @@ def generate_components_js():
         if (typeof window.onAppReady === "function") { try { window.onAppReady(); } catch (e) {} }
       });
     } else {
+      if (window.SF_REACTOR_MODE === "GAMING" && window.FactoryDB) {
+        await window.FactoryDB.login("Player_" + String(Math.floor(100 + Math.random() * 899)), "9000000000");
+        window.FactoryNav.showAppShell();
+        if (typeof window.onAppReady === "function") { try { await window.onAppReady(); } catch (e) {} }
+        window.FactoryNav.ensureNonBlank();
+        return;
+      }
       const ob = document.getElementById("onboarding-screen");
-      if (ob && !localStorage.getItem("sf_onboard_done")) {
+      if (ob && !localStorage.getItem("sf_ob_" + (window.SF_APP_SLUG || "app"))) {
         ob.style.display = "flex";
       } else {
         window.FactoryNav.showLogin();
@@ -1264,7 +1422,7 @@ def pick_unique_app_theme(app_title, user_prompt="", theme_key=""):
         "layout": "minimal-crest"
     }
 
-def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=None):
+def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=None, reactor_mode="COMMERCIAL"):
     """Guaranteed 14-ID Colorful Fixed App Shell (index.html) with Tailwind, Fonts, Lucide, Chart.js, jsPDF, Confetti."""
     safe_title = app_title.replace("<", "").replace(">", "")
     bm = brand_meta or {}
@@ -1453,6 +1611,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
     </nav>
   </div>
 
+  <script>window.SF_REACTOR_MODE = "{reactor_mode}";</script>
   <script src="db.js"></script>
   <script src="components.js"></script>
   <script src="app.js"></script>
@@ -1780,6 +1939,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3200):
     role_map = {
         "architect": ["google/gemini-2.0-flash-001", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
         "brand_director": ["anthropic/claude-3.7-sonnet", "google/gemini-2.5-flash", "openai/gpt-4o-mini"],
+        "reactor_router": ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini", "x-ai/grok-4.1-fast"],
         "designer": ["anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001", "openai/gpt-4o-mini"],
         "engineer_single": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
         "engineer_a": ["deepseek/deepseek-chat", "x-ai/grok-4.1-fast", "openai/gpt-4o-mini"],
@@ -1854,7 +2014,7 @@ def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js
 
     rev_sys = """You are a strict Senior Mobile App Supervisor Bot. Audit app.js and verify:
 1. All 4 views (view-1..view-4) render colorful, working 3D glass UI with zero dummy buttons or NaN bugs.
-2. Every card/button opens a detail page (FactoryNav.openDetail) or action, with Back navigation.
+2. Note: FactoryPro.claimDailyBonus(), FactoryPro.showProModal(), FactorySound.*, FactoryGame.startVillageRace(), FactoryGame.unlockVehicle(), and FactoryEngine.* ARE real built-in engines — NEVER flag or remove them! Keep .sf-card styling intact.
 3. Reply ONLY with 'APPROVED' if solid, otherwise list exact fixes needed concisely."""
     sup_model = "x-ai/grok-4.1-fast"
     try:
@@ -1867,16 +2027,35 @@ def senior_review_all_5_files(app_title, user_prompt, html_code, css_code, db_js
         pass
     return (len(issues) == 0), issues, sup_model
 
+def route_prompt_to_reactor(app_title, user_prompt):
+    """Dept 0: Dedicated Reactor Router AI deciding GAMING vs COMMERCIAL reactor without disturbing Grok Boss."""
+    sys_p = """You are a Dedicated App Reactor Router AI. Classify the user's app into EXACTLY ONE reactor:
+- GAMING: racing, arcade, vehicle/horse race, shooter, puzzle game, coin-unlock game, 2D canvas game.
+- COMMERCIAL: shop khata, billing, service booking, delivery, quiz/learning, business dashboard, sports analytics.
+Reply ONLY in format: GAMING | <short 5-word reason> OR COMMERCIAL | <short 5-word reason>"""
+    raw, used_m, _ = call_specialist_ai("reactor_router", sys_p, f"Title: {app_title}\nPrompt: {user_prompt[:500]}", max_tokens=60)
+    txt = (raw or "").strip().upper()
+    if txt.startswith("GAMING"):
+        return "GAMING", used_m or "Router AI", raw.strip()
+    if txt.startswith("COMMERCIAL"):
+        return "COMMERCIAL", used_m or "Router AI", raw.strip()
+    p_low = (app_title + " " + user_prompt).lower()
+    if any(k in p_low for k in ["racing", "race", "drift", "arcade", "scooter", "bike", "horse", "phaser", "canvas 2d"]):
+        return "GAMING", used_m or "Keyword Router", "GAMING | Detected 2D Racing/Arcade prompt"
+    return "COMMERCIAL", used_m or "Keyword Router", "COMMERCIAL | Detected Commercial/Utility prompt"
+
 def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
-    """Execute 6-Department Unified Assembly Line with Live Grok Boss & Radar Bot from Step 1."""
-    boss_log = ["Grok Boss & Live Radar Bot initialized — monitoring all 6 departments..."]
+    """Execute Dual-Reactor Multi-AI Factory with Dept 0 Reactor Router + Continuous Grok Boss & Live Radar Bot."""
+    reactor_mode, router_m, router_note = route_prompt_to_reactor(app_title, user_prompt)
+    boss_log = [f"Dept 0 Router ({router_m}): {reactor_note} — Grok Boss & Radar Bot watching all steps!"]
     stages = [
-        {"title": "1. Architect AI + Grok Gate 1 — Custom Blueprint & App Tutorial", "status": "running", "note": "Designing unique app plan from your prompt..."},
-        {"title": "2. UI Designer + Grok Gate 2 — Floating Glass & 3D Cards", "status": "pending", "note": ""},
-        {"title": "3. Sarfealam Core & Realtime Engine — Supabase WS + Refer/Share", "status": "pending", "note": ""},
-        {"title": "4. Single Full-Stack Coder — Complete Unified app.js (All 4 Tabs)", "status": "pending", "note": ""},
-        {"title": "5. Grok Boss & Live Radar — Full Audit & 1x Auto-Repair", "status": "pending", "note": ""},
-        {"title": "6. 3D Logo Studio (6 Styles) & Final APK Bundle", "status": "pending", "note": ""}
+        {"title": f"0. Dedicated Reactor Router AI — Selected: {reactor_mode} REACTOR", "status": "done", "note": router_note},
+        {"title": "1. Architect AI + Grok Gate 1 — Custom Blueprint & App Tutorial", "status": "running", "note": f"Designing {reactor_mode} architecture..."},
+        {"title": "2. UI Designer + Brand & 3D Studio AI — Theme & Symbol", "status": "pending", "note": ""},
+        {"title": "3. Sarfealam Core, Realtime & Game/OTP Reactor Engine", "status": "pending", "note": ""},
+        {"title": "4. Single Full-Stack Coder — Complete Unified app.js", "status": "pending", "note": ""},
+        {"title": "5. Grok Boss & Live Radar — Strict Audit & Hard-Stop Gate", "status": "pending", "note": ""},
+        {"title": "6. 3D Brand Studio (6 Symbols) & Final APK Bundle", "status": "pending", "note": ""}
     ]
     render_pipeline_board(progress_slot, stages, boss_log)
 
@@ -1888,10 +2067,10 @@ def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     if not spec_doc:
         spec_doc = f"Custom 4-tab mobile app for {app_title} matching: {user_prompt}"
     boss_log.append(grok_boss_gate("Dept 1 Architect", app_title, spec_doc))
-    stages[0]["status"] = "done"
-    stages[0]["note"] = f"Blueprint locked ({arch_m or 'Architect'}) — Checked by Grok Boss."
-    stages[1]["status"] = "running"
-    stages[1]["note"] = "Crafting 3D glass cards, horizontal scroll & vibrant theme..."
+    stages[1]["status"] = "done"
+    stages[1]["note"] = f"Blueprint locked ({arch_m or 'Architect'}) — Checked by Grok Boss."
+    stages[2]["status"] = "running"
+    stages[2]["note"] = "Crafting 3D glass cards, horizontal scroll & vibrant theme..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 2: UI Designer + Grok Gate 2
@@ -1899,10 +2078,10 @@ def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     raw_css, ui_m, _ = call_specialist_ai("designer", css_sys, f"App Name: {app_title}\nSpec:\n{spec_doc}", max_tokens=1600)
     clean_css = enforce_css_guardrails(raw_css)
     boss_log.append(grok_boss_gate("Dept 2 UI Designer", app_title, clean_css[:2000]))
-    stages[1]["status"] = "done"
-    stages[1]["note"] = f"3D Glass CSS ready ({ui_m or 'UI AI'}) — Checked by Grok Boss."
-    stages[2]["status"] = "running"
-    stages[2]["note"] = "Injecting Sarfealam Realtime Engine, Supabase 4-Table, Email OTP & Refer/Share..."
+    stages[2]["status"] = "done"
+    stages[2]["note"] = f"3D Glass CSS ready ({ui_m or 'UI AI'}) — Checked by Grok Boss."
+    stages[3]["status"] = "running"
+    stages[3]["note"] = "Injecting Sarfealam Realtime Engine, Supabase 4-Table, Email OTP & Refer/Share..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 2B: Dedicated Brand & 3D Studio AI + Dept 3 Sarfealam Core
@@ -1912,12 +2091,12 @@ def execute_sdlc_pipeline(app_title, user_prompt, progress_slot):
     custom_svg = logos[sel_idx]["svg"]
     db_js = generate_db_js(app_slug)
     components_js = generate_components_js()
-    fixed_html = build_fixed_app_shell(app_title, custom_svg, user_prompt, brand_meta)
+    fixed_html = build_fixed_app_shell(app_title, custom_svg, user_prompt, brand_meta, reactor_mode)
     boss_log.append("[Grok Boss] Dept 3 Sarfealam Realtime Engine + Floating Glass Shell wired.")
-    stages[2]["status"] = "done"
-    stages[2]["note"] = "Sarfealam Core + Supabase Realtime + Floating Glass Shell ready."
-    stages[3]["status"] = "running"
-    stages[3]["note"] = "Single Full-Stack Coder writing complete app.js (all 4 tabs, Back & Tutorial)..."
+    stages[3]["status"] = "done"
+    stages[3]["note"] = "Sarfealam Core + Supabase Realtime + Floating Glass Shell ready."
+    stages[4]["status"] = "running"
+    stages[4]["note"] = "Single Full-Stack Coder writing complete app.js (all 4 tabs, Back & Tutorial)..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 4: Single Full-Stack Coder (Unified app.js — NO Pass A/B split!)
@@ -1936,14 +2115,15 @@ Mandatory rules:
 7. All-Rounder Pro Engines available in shell: `FactorySound.tap()/.coin()/.win()`, `FactoryPro.claimDailyBonus()`, `FactoryPro.showProModal(title, price)`, `Phaser` (for 2D games), `Chart` (Chart.js), `FactoryEngine.openReferShare()`, `FactoryEngine.openTutorial()`. Use them naturally to match the prompt's category!
 8. Every clickable card/button must call `FactoryNav.openDetail(title, html)` (which includes Back), `FactoryUI.modal(...)`, or a real DB/Engine action. ZERO dead buttons, ZERO <img> tags with fake URLs, ZERO NaN (use `FactoryUI.safeNum`), ZERO markdown fences, NEVER put raw newlines inside single/double quotes (use backtick `...` or array .join() for multiline HTML like APP_TUTORIAL_HTML). Output ONLY raw JavaScript."""
 
-    merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=6500)
+    reactor_hint = "\nREACTOR MODE: GAMING — Use built-in FactoryGame.startVillageRace(vehicleName, color), FactoryGame.isUnlocked(id, free), and FactoryGame.unlockVehicle(id, cost, label) for playable full-screen 2D racing + coin-unlock garage! Keep all .sf-card/.sf-stat-box styling." if reactor_mode == "GAMING" else "\nREACTOR MODE: COMMERCIAL — Use .sf-card/.sf-stat-box/.sf-list-row styling, WhatsApp/PDF/Pro tools."
+    merged_js, eng_m, err_eng = call_specialist_ai("engineer_single", single_sys, f"App Name: {app_title}{reactor_hint}\nUser Prompt:\n{user_prompt}\n\nArchitect Spec:\n{spec_doc}", max_tokens=6500)
     if not merged_js:
         return None, err_eng or "Single Full-Stack Coder failed"
     boss_log.append(f"[{eng_m}] Unified app.js generated ({len(merged_js)} chars) — passing to Grok Boss Audit...")
-    stages[3]["status"] = "done"
-    stages[3]["note"] = f"Complete unified app.js written by {eng_m}."
-    stages[4]["status"] = "running"
-    stages[4]["note"] = "Grok Boss & Radar auditing all 5 files + running 1x Auto-Repair if needed..."
+    stages[4]["status"] = "done"
+    stages[4]["note"] = f"Complete unified app.js written by {eng_m}."
+    stages[5]["status"] = "running"
+    stages[5]["note"] = "Grok Boss & Radar auditing all 5 files + running 1x Auto-Repair if needed..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 5: Security Gate + Grok Boss Audit & 1x Auto-Repair
@@ -1955,7 +2135,7 @@ Mandatory rules:
     if not approved:
         repair_log.append("Detected issues: " + "; ".join(rev_issues))
         boss_log.append(f"[{sup_model}] Caught issues — running 1x Auto-Repair before preview...")
-        stages[4]["note"] = f"{sup_model} caught issues — auto-repairing app.js..."
+        stages[5]["note"] = f"{sup_model} caught issues — auto-repairing app.js..."
         render_pipeline_board(progress_slot, stages, boss_log)
         fix_sys = "Fix ALL listed issues in this unified app.js while keeping window.renderTabs, window.onFloatingAction, window.onSearchInput, window.APP_TUTORIAL_HTML, and window.onAppReady intact. Output ONLY valid raw JavaScript."
         rep_js, _, _ = call_specialist_ai("engineer_single", fix_sys, f"Issues:\n{chr(10).join(rev_issues)}\n\nCode:\n{c_js}", max_tokens=6500)
@@ -1976,18 +2156,18 @@ Mandatory rules:
                 prim_ok, prim_msg = validate_js_brackets(c_js)
                 if not prim_ok:
                     boss_log.append(f"[HARD STOP] Broken app.js blocked: {prim_msg}")
-                    stages[4]["status"] = "done"
-                    stages[4]["note"] = f"BLOCKED: {prim_msg}"
+                    stages[5]["status"] = "done"
+                    stages[5]["note"] = f"BLOCKED: {prim_msg}"
                     render_pipeline_board(progress_slot, stages, boss_log)
                     return None, f"STOPPED BY GROK BOSS: Generated app.js had a JS syntax error ({prim_msg}) and auto-repair did not pass. Please click Generate again."
                 repair_log.append("Kept primary syntax-valid app.js.")
     else:
         repair_log.append(f"{sup_model}: All 5 files, 14 IDs, and click handlers passed first inspection.")
         boss_log.append(f"[{sup_model}] ALL 5 FILES APPROVED ON FIRST CHECK!")
-    stages[4]["status"] = "done"
-    stages[4]["note"] = repair_log[-1]
-    stages[5]["status"] = "running"
-    stages[5]["note"] = "Generating 6 custom 3D logos & finalizing bundle..."
+    stages[5]["status"] = "done"
+    stages[5]["note"] = repair_log[-1]
+    stages[6]["status"] = "running"
+    stages[6]["note"] = "Generating 6 custom 3D logos & finalizing bundle..."
     render_pipeline_board(progress_slot, stages, boss_log)
 
     # Dept 6: Final 5-File Bundle & Strict Syntax Verification
@@ -2004,8 +2184,8 @@ Mandatory rules:
     safe_c_js = f"""try {{\n{c_js}\n}} catch (sfErr) {{ console.error("AppJS Error:", sfErr); if (window.FactoryNav) window.FactoryNav.ensureNonBlank(); }}"""
     preview_html = build_combined_preview_html(c_html, c_css, c_db, components_js, safe_c_js)
 
-    stages[5]["status"] = "done"
-    stages[5]["note"] = f"3D Logo Studio ({logos[sel_idx]['label']}) + 5-file bundle ready!"
+    stages[6]["status"] = "done"
+    stages[6]["note"] = f"3D Logo Studio ({logos[sel_idx]['label']}) + 5-file bundle ready!"
     render_pipeline_board(progress_slot, stages, boss_log)
 
     staged_bundle = {
@@ -2022,6 +2202,7 @@ Mandatory rules:
         "icon_svg": custom_svg,
         "logos": logos,
         "brand_meta": brand_meta,
+        "reactor_mode": reactor_mode,
         "selected_logo_idx": sel_idx,
         "model": f"{arch_m} | {ui_m} | {eng_m} | {sup_model}",
         "qa": qa_report,
@@ -2338,7 +2519,7 @@ with tab_build:
                             if st.button(btn_lbl, key=f"pick_logo_{idx_l}", use_container_width=True):
                                 staged_app["selected_logo_idx"] = idx_l
                                 staged_app["icon_svg"] = l_obj["svg"]
-                                staged_app["html"] = build_fixed_app_shell(staged_app["title"], l_obj["svg"], staged_app.get("prompt", ""), staged_app.get("brand_meta"))
+                                staged_app["html"] = build_fixed_app_shell(staged_app["title"], l_obj["svg"], staged_app.get("prompt", ""), staged_app.get("brand_meta"), staged_app.get("reactor_mode", "COMMERCIAL"))
                                 staged_app["preview_html"] = build_combined_preview_html(staged_app["html"], staged_app["css"], staged_app["db_js"], staged_app["components_js"], staged_app["app_js"])
                                 save_json_file(STAGED_APP_FILE, staged_app)
                                 st.rerun()
