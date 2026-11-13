@@ -1294,14 +1294,58 @@ def generate_components_js():
         scenery.push(tGrp);
       }
 
-      // 3D Player Vehicle + 3D Driver Character
+      // Distinct 3D Vehicle Builder (Truck, Bus, Bike, Horse, Sports Car) with Wheels & Headlights
       const car = new THREE.Group();
+      const vLow = (vehicleName || "").toLowerCase();
       const bodyCol = accentColor ? new THREE.Color(accentColor) : new THREE.Color(0xef4444);
-      const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.7, 3.2), new THREE.MeshLambertMaterial({ color: bodyCol }));
-      chassis.position.y = 0.55;
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 1.6), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
-      cabin.position.set(0, 1.15, -0.1);
-      car.add(chassis); car.add(cabin);
+      const matBody = new THREE.MeshLambertMaterial({ color: bodyCol });
+      const matGlass = new THREE.MeshLambertMaterial({ color: 0x38bdf8 });
+      const matWheel = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+      const matLight = new THREE.MeshLambertMaterial({ color: 0xfef08a });
+      function addWheel(wx, wy, wz) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.28, 12), matWheel);
+        w.rotation.z = Math.PI / 2; w.position.set(wx, wy, wz); car.add(w);
+      }
+      if (vLow.includes("truck")) {
+        const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.5, 3.2), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
+        cargo.position.set(0, 1.15, 0.6); car.add(cargo);
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.2, 1.3), matBody);
+        cab.position.set(0, 1.0, -1.65); car.add(cab);
+        const win = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.1), matGlass);
+        win.position.set(0, 1.25, -2.31); car.add(win);
+        addWheel(-1.05, 0.36, -1.5); addWheel(1.05, 0.36, -1.5);
+        addWheel(-1.05, 0.36, 0.6); addWheel(1.05, 0.36, 0.6);
+        addWheel(-1.05, 0.36, 1.8); addWheel(1.05, 0.36, 1.8);
+      } else if (vLow.includes("bus")) {
+        const busBody = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.65, 4.6), matBody);
+        busBody.position.set(0, 1.15, 0); car.add(busBody);
+        const winRow = new THREE.Mesh(new THREE.BoxGeometry(2.06, 0.55, 3.8), matGlass);
+        winRow.position.set(0, 1.35, -0.1); car.add(winRow);
+        addWheel(-1.02, 0.36, -1.5); addWheel(1.02, 0.36, -1.5);
+        addWheel(-1.02, 0.36, 1.5); addWheel(1.02, 0.36, 1.5);
+      } else if (vLow.includes("bike") || vLow.includes("scooter")) {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.55, 2.1), matBody);
+        frame.position.set(0, 0.65, 0); car.add(frame);
+        const rider = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.45), matGlass);
+        rider.position.set(0, 1.25, 0.1); car.add(rider);
+        addWheel(0, 0.36, -0.85); addWheel(0, 0.36, 0.85);
+      } else if (vLow.includes("horse")) {
+        const hBody = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.75, 2.0), new THREE.MeshLambertMaterial({ color: 0x92400e }));
+        hBody.position.set(0, 0.95, 0); car.add(hBody);
+        const hNeck = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.9, 0.5), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+        hNeck.position.set(0, 1.55, -0.85); car.add(hNeck);
+      } else {
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.65, 3.3), matBody);
+        chassis.position.y = 0.55; car.add(chassis);
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.52, 1.6), matGlass);
+        cabin.position.set(0, 1.12, -0.1); car.add(cabin);
+        addWheel(-0.9, 0.35, -1.05); addWheel(0.9, 0.35, -1.05);
+        addWheel(-0.9, 0.35, 1.05); addWheel(0.9, 0.35, 1.05);
+      }
+      const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.1), matLight);
+      hl1.position.set(-0.55, 0.6, -1.7); car.add(hl1);
+      const hl2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.1), matLight);
+      hl2.position.set(0.55, 0.6, -1.7); car.add(hl2);
       car.position.set(0, 0, 0);
       scene.add(car);
 
@@ -1647,7 +1691,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
       <div style="display:flex;align-items:center;gap:10px;">
         <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Driver Menu"><span id="header-avatar-txt">P</span></button>
         <div>
-          <span style="font-size:15px;font-weight:800;color:#ffffff;display:block;">{safe_title}</span>
+          <span style="font-size:14px;font-weight:800;color:#ffffff;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:135px;">{safe_title}</span>
           <span style="font-size:10px;color:{th['accent']};font-weight:700;">TITAN 3D ARENA</span>
         </div>
       </div>
@@ -1657,17 +1701,18 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
         <span id="header-badge" class="header-pill">100 Pts</span>
       </div>
     </header>
-    <main id="app-main" style="padding:12px;">
+    <main id="app-main" style="padding:84px 12px 16px 12px !important;">
       <div id="notice-banner" style="display:none;" class="notice-pill"></div>
       <section id="view-1" class="tab-view"></section>
       <section id="view-2" class="tab-view" style="display:none;"></section>
       <section id="view-3" class="tab-view" style="display:none;"></section>
       <section id="view-4" class="tab-view" style="display:none;"></section>
       <section id="view-detail" class="tab-view" style="display:none;"></section>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
-        <button type="button" onclick="FactoryNav.switchTab(3)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">Leaderboard</button>
-        <button type="button" onclick="FactoryNav.switchTab(2)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">Custom Cup</button>
-        <button type="button" onclick="FactoryEngine.openTutorial()" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:12px;">How to Play</button>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:14px;">
+        <button type="button" onclick="FactoryNav.switchTab(1)" style="background:{th['btn']} !important;font-size:11.5px;padding:6px 4px;">Garage</button>
+        <button type="button" onclick="FactoryNav.switchTab(2)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:11.5px;padding:6px 4px;">Cups</button>
+        <button type="button" onclick="FactoryNav.switchTab(3)" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:11.5px;padding:6px 4px;">Ranks</button>
+        <button type="button" onclick="FactoryEngine.openTutorial()" style="background:#1e293b !important;border:1px solid {th['accent']};font-size:11.5px;padding:6px 4px;">Guide</button>
       </div>
     </main>
   </div>"""
@@ -1678,7 +1723,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
         <button type="button" onclick="FactoryNav.openDrawer()" class="sf-avatar-btn" aria-label="Profile Menu">
           <span id="header-avatar-txt">U</span>
         </button>
-        <span style="font-size:15px;font-weight:800;color:#ffffff;">{safe_title}</span>
+        <span style="font-size:14px;font-weight:800;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:135px;">{safe_title}</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <button id="lang-toggle-btn" type="button" onclick="FactoryLang.toggle()" style="min-height:28px;padding:3px 8px;font-size:10.5px;font-weight:800;border-radius:999px;background:#1e293b !important;border:1px solid {th['accent']};color:#fff;">EN/HI</button>
@@ -1695,7 +1740,7 @@ def build_fixed_app_shell(app_title, custom_svg="", user_prompt="", brand_meta=N
       <button id="nav-3" type="button" onclick="FactoryNav.switchTab(3)" class="nav-btn" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="layers" style="width:14px;height:14px;"></i><span>Feed</span></button>
       <button id="nav-4" type="button" onclick="FactoryNav.switchTab(4)" class="nav-btn" style="flex:1;min-height:36px !important;border-radius:999px !important;font-size:12px !important;flex-direction:row !important;gap:5px;"><i data-lucide="user" style="width:14px;height:14px;"></i><span>Account</span></button>
     </div>
-    <main id="app-main" style="padding:10px 12px;">
+    <main id="app-main" style="padding:84px 12px 16px 12px !important;">
       <div id="notice-banner" style="display:none;" class="notice-pill"></div>
       <div style="margin-bottom:10px;">
         <input id="app-search-bar" type="search" placeholder="Search items, services, or records..." oninput="if(window.onSearchInput) window.onSearchInput(this.value);">
