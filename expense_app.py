@@ -188,28 +188,74 @@ echo "APK BUILT: dist/{safe_pkg}_release.apk"
 # ==============================================================================
 # PERSISTENCE & PROJECT SIDELINE / REJECT HELPERS
 # ==============================================================================
+_CLOUD_SYNC_FILES = {DESIGN_LOCK_FILE, CODED_APP_FILE, ACTIVE_BUILD_FILE}
+
+def _cloud_state_sync(action, path, data=None):
+    """Auto-saves & restores active Design Studio / Coded Bundle in Supabase Cloud so restarts never wipe work."""
+    if path not in _CLOUD_SYNC_FILES:
+        return None
+    ckey = f"CLOUD_{path}"
+    try:
+        if action == "save" and data is not None:
+            supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}", method="DELETE")
+            supabase_rest("factory_transactions", method="POST", payload={
+                "app_id": "NEXUS_CLOUD_STATE",
+                "type": ckey,
+                "title": json.dumps(data),
+                "amount": 0
+            })
+        elif action == "load":
+            rows = supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}&order=created_at.desc&limit=1", method="GET")
+            if isinstance(rows, list) and rows:
+                raw_t = rows[0].get("title", "")
+                if raw_t:
+                    return json.loads(raw_t)
+        elif action == "delete":
+            supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}", method="DELETE")
+    except Exception:
+        pass
+    return None
+
 def load_json_file(path, default_val):
+    ss_key = f"_local_cache_{path}"
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                val = json.load(f)
+                st.session_state[ss_key] = val
+                return val
         except Exception:
             pass
+    if ss_key in st.session_state and st.session_state[ss_key] is not None:
+        return st.session_state[ss_key]
+    cloud_val = _cloud_state_sync("load", path)
+    if cloud_val is not None:
+        st.session_state[ss_key] = cloud_val
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cloud_val, f, indent=2)
+        except Exception:
+            pass
+        return cloud_val
     return default_val
 
 def save_json_file(path, data):
+    st.session_state[f"_local_cache_{path}"] = data
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception:
         pass
+    _cloud_state_sync("save", path, data)
 
 def remove_json_file(path):
+    st.session_state.pop(f"_local_cache_{path}", None)
     try:
         if os.path.exists(path):
             os.remove(path)
     except Exception:
         pass
+    _cloud_state_sync("delete", path)
 
 def reject_and_clear_project(repo_name=None):
     if repo_name:
@@ -230,45 +276,69 @@ def save_to_vault(record):
 # ==============================================================================
 # LIVE OPEN-SOURCE ICON FETCHER (ICONIFY API + GAME-ICONS.NET — ZERO KEYS)
 # ==============================================================================
-def fetch_live_iconify_icons(prompt_text, factory_id, accent_hex="#38bdf8"):
-    """Fetches real open-source SVG icons live from api.iconify.design for visual display."""
+def fetch_live_iconify_icons(prompt_text, factory_id, accent_hex="#38bdf8", ai_keywords=None):
+    """Fetches real domain-matched open-source SVG icons live from api.iconify.design (mdi + lucide + game-icons)."""
     is_game = (factory_id == "GAMING_FACTORY_01")
-    words = [w for w in re.findall(r'[a-zA-Z]{3,}', prompt_text.lower()) if w not in ("build", "app", "make", "with", "using", "and", "the", "for", "pro", "free")]
-    base_queries = words[:3] + (["trophy", "cricket", "sword", "crown"] if is_game else ["wallet", "store", "user", "shield"])
-    prefix = "game-icons" if is_game else "lucide"
+    low = (prompt_text or "").lower()
+    smart_map = [
+        (["truck", "bus", "vehicle", "lorry", "highway", "drive", "transport", "tractor"], ["truck", "bus", "steering", "highway", "road"]),
+        (["cricket", "ipl", "bat", "wicket", "pitch", "match"], ["cricket", "trophy", "stadium", "medal", "timer"]),
+        (["hisab", "khata", "ledger", "shop", "dukan", "billing", "invoice", "gst"], ["wallet", "receipt", "store", "calculator", "coins"]),
+        (["food", "delivery", "order", "restaurant", "kitchen"], ["utensils", "truck", "shopping-bag", "map-pin", "clock"]),
+        (["taxi", "cab", "ride", "auto", "bike"], ["car", "map-pin", "navigation", "wallet", "shield"])
+    ]
+    ctx_words = []
+    for triggers, targets in smart_map:
+        if any(t in low for t in triggers):
+            ctx_words.extend(targets)
+
+    clean_ai_kw = [re.sub(r'[^a-z0-9-]', '', str(k).lower()) for k in (ai_keywords or []) if k]
+    raw_words = re.findall(r'[a-zA-Z]{3,}', low)
+    stop_w = {"build", "app", "make", "with", "using", "and", "the", "for", "pro", "free", "smart", "super", "ultra", "best", "real", "new", "high", "profile", "option", "player", "driver"}
+    other_w = [w for w in raw_words if w not in stop_w]
+
+    base_queries = []
+    for w in (clean_ai_kw + ctx_words + other_w + (["trophy", "gamepad", "crown", "shield"] if is_game else ["wallet", "store", "user", "shield"])):
+        if w and w not in base_queries:
+            base_queries.append(w)
+
+    prefixes = ["mdi", "lucide", "game-icons"] if any(k in low for k in ["truck", "bus", "car", "vehicle", "drive", "highway", "shop", "ledger"]) else (["game-icons", "mdi"] if is_game else ["lucide", "mdi"])
     fetched = []
     seen = set()
     clean_col = urllib.parse.quote(accent_hex)
 
-    for q in base_queries[:4]:
+    for q in base_queries[:5]:
         if len(fetched) >= 6:
             break
-        try:
-            s_url = f"https://api.iconify.design/search?query={urllib.parse.quote(q)}&prefix={prefix}&limit=3"
-            req = urllib.request.Request(s_url, headers={"User-Agent": "Sarfealam-Factory"})
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            for ic_name in data.get("icons", []):
-                if ic_name in seen or len(fetched) >= 6:
-                    continue
-                seen.add(ic_name)
-                if ":" in ic_name:
-                    p_name, i_slug = ic_name.split(":", 1)
-                    svg_url = f"https://api.iconify.design/{p_name}/{i_slug}.svg?color={clean_col}"
-                    req2 = urllib.request.Request(svg_url, headers={"User-Agent": "Sarfealam-Factory"})
-                    with urllib.request.urlopen(req2, timeout=6) as resp2:
-                        svg_txt = resp2.read().decode("utf-8", errors="ignore")
-                    if "<svg" in svg_txt.lower():
-                        fetched.append({"name": ic_name, "svg": svg_txt})
-        except Exception:
-            continue
+        for pref in prefixes:
+            if len(fetched) >= 6:
+                break
+            try:
+                s_url = f"https://api.iconify.design/search?query={urllib.parse.quote(q)}&prefix={pref}&limit=2"
+                req = urllib.request.Request(s_url, headers={"User-Agent": "Sarfealam-Nexus-Forge"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for ic_name in data.get("icons", []):
+                    if ic_name in seen or len(fetched) >= 6:
+                        continue
+                    seen.add(ic_name)
+                    if ":" in ic_name:
+                        p_name, i_slug = ic_name.split(":", 1)
+                        svg_url = f"https://api.iconify.design/{p_name}/{i_slug}.svg?color={clean_col}"
+                        req2 = urllib.request.Request(svg_url, headers={"User-Agent": "Sarfealam-Nexus-Forge"})
+                        with urllib.request.urlopen(req2, timeout=5) as resp2:
+                            svg_txt = resp2.read().decode("utf-8", errors="ignore")
+                        if "<svg" in svg_txt.lower():
+                            fetched.append({"name": ic_name, "svg": svg_txt})
+            except Exception:
+                continue
 
     if not fetched:
         fallback_svgs = [
-            ("shield-check", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>'),
-            ("wallet-card", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M16 12h2"/></svg>'),
-            ("user-badge", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c2-4 14-4 16 0"/></svg>'),
-            ("trophy-star", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M6 9H4a2 2 0 0 1 0-4h2m12 4h2a2 2 0 0 0 0-4h-2M6 4h12v6a6 6 0 0 1-12 0V4z"/><path d="M12 16v5m-4 0h8"/></svg>')
+            ("mdi:truck", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>'),
+            ("lucide:shield-check", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>'),
+            ("lucide:wallet", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M16 12h2"/></svg>'),
+            ("lucide:trophy", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M6 9H4a2 2 0 0 1 0-4h2m12 4h2a2 2 0 0 0 0-4h-2M6 4h12v6a6 6 0 0 1-12 0V4z"/><path d="M12 16v5m-4 0h8"/></svg>')
         ]
         fetched = [{"name": n, "svg": s} for n, s in fallback_svgs]
     return fetched
@@ -846,7 +916,7 @@ def transcribe_voice_groq(audio_bytes, filename="voice.wav"):
 
 def _infer_voice_action_fallback(text):
     t = (text or "").lower()
-    if any(k in t for k in ["reject", "hatao", "cancel", "fresh", "naya shuru", "band karo"]):
+    if "confirm delete project" in t or "confirm reject project" in t:
         return "REJECT_RESET"
     if any(k in t for k in ["repair", "fix", "error", "kimi", "theek kar"]):
         return "KIMI_REPAIR"
@@ -868,7 +938,7 @@ def ask_voice_boss(owner_instruction, project_bus):
     }
     boss_sys = (
         f"You are the Live Voice Director of {OWNER_NAME} Nexus Forge speaking directly to {OWNER_NAME} Boss in energetic Indian Hinglish (Roman Hindi + English, ZERO Devanagari). "
-        "CRITICAL RULE: NEVER say 'No', 'I cannot', or 'do it yourself'. If Boss asks you to make other workers code, change design/colors, fix errors via Kimi, build APK, or reset project, ALWAYS say 'Thik hai Boss, main abhi worker bots se kara raha hoon!' and pick the matching action. "
+        "CRITICAL RULE: NEVER say 'No', 'I cannot', or 'do it yourself'. ALWAYS agree enthusiastically. IMPORTANT: NEVER output REJECT_RESET unless Boss explicitly says 'confirm delete project' — for normal complaints or feedback, use CHAT_ONLY or UPDATE_DESIGN! "
         "Output ONLY valid JSON: "
         '{"action": "CHAT_ONLY|UPDATE_DESIGN|START_CODING|KIMI_REPAIR|BUILD_APK|REJECT_RESET", "reply": "2 enthusiastic spoken Hinglish sentences calling him Sarfealam Boss", "directive": "short English instruction for workers"}'
     )
@@ -1149,12 +1219,12 @@ def auto_detect_and_repair_bundle(project_bus):
 # DISPLAY 1: FILM-STYLE LIVE CONNECTION BOARD + VISUAL RESEARCH ICONS
 # ==============================================================================
 def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
-    """60-FPS 3D-Isometric Animated Cartoon Studio showing Drone, Neon Pads, Speech Bubbles & Bots."""
-    safe_cc = json.dumps(cross_check[:62])
+    """60-FPS 3D-Isometric Walking, Jumping & Talking Cartoon Studio Movie Engine."""
+    safe_cc = json.dumps(cross_check[:46])
     safe_fid = json.dumps(factory_id)
     scene_html = f"""
-    <div style="background:#050a18;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(56,189,248,0.18);">
-      <canvas id="factory3d" width="520" height="220" style="width:100%;height:auto;display:block;"></canvas>
+    <div style="background:#050a18;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(56,189,248,0.22);">
+      <canvas id="factory3d" width="520" height="232" style="width:100%;height:auto;display:block;"></canvas>
     </div>
     <script>
     (function() {{
@@ -1166,6 +1236,13 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
       const doneCount = {done_cnt};
       const fid = {safe_fid};
       const msg = {safe_cc};
+
+      const bots = [
+        {{ baseX: 118, x: 118, name: 'Scout Bot', talk: 'Fetching SVG!', col: '#38bdf8', phase: 0 }},
+        {{ baseX: 215, x: 215, name: 'Human UX', talk: 'Checking UX!', col: '#a78bfa', phase: 1.4 }},
+        {{ baseX: 318, x: 318, name: '3D Coders', talk: 'Writing Dart!', col: '#f59e0b', phase: 2.8 }},
+        {{ baseX: 422, x: 422, name: 'Boss+Kimi', talk: 'APK Ready!', col: '#10b981', phase: 4.1 }}
+      ];
 
       function draw3DBox(x, y, w, h, d, topC, leftC, rightC) {{
         ctx.fillStyle = leftC;
@@ -1183,87 +1260,128 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
       }}
 
       function drawBubble(x, y, txt, col) {{
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
         ctx.strokeStyle = col;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1.4;
         ctx.beginPath();
-        ctx.roundRect(x - 36, y - 28, 72, 16, 6);
+        ctx.roundRect(x - 40, y - 32, 80, 17, 7);
         ctx.fill(); ctx.stroke();
         ctx.fillStyle = col;
         ctx.font = 'bold 8.5px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(txt, x, y - 17);
+        ctx.fillText(txt, x, y - 20);
       }}
 
-      function drawBot(x, y, label, bubbleTxt, active, done, bob) {{
-        // Neon Workstation Pad
-        ctx.fillStyle = active ? 'rgba(245,158,11,0.2)' : (done ? 'rgba(16,185,129,0.16)' : 'rgba(56,189,248,0.08)');
-        ctx.beginPath(); ctx.ellipse(x + 2, y + 20, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
-        const by = y + Math.sin(bob) * (active ? 4.5 : 1.5);
-        const glow = active ? '#f59e0b' : (done ? '#10b981' : '#64748b');
-        draw3DBox(x - 16, by - 14, 32, 26, 9, glow, '#1e293b', '#0f172a');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(x - 6, by - 4, 3.2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(x + 6, by - 4, 3.2, 0, Math.PI * 2); ctx.fill();
+      function drawCartoonWorker(bot, idx, isActive, isDone) {{
+        // Walking patrol + energetic jump physics when active!
+        const walkRange = isActive ? 22 : 12;
+        bot.x = bot.baseX + Math.sin(t * 0.045 + bot.phase) * walkRange;
+        const jumpHeight = isActive ? Math.abs(Math.sin(t * 0.14 + bot.phase)) * 16 : Math.abs(Math.sin(t * 0.06 + bot.phase)) * 4;
+        const y = 116 - jumpHeight;
+        const glow = isActive ? '#fbbf24' : (isDone ? '#34d399' : bot.col);
+
+        // Ground shadow shrinks as bot jumps higher
+        const shScale = Math.max(0.55, 1 - jumpHeight / 28);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath(); ctx.ellipse(bot.x + 2, 138, 18 * shScale, 5 * shScale, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Walking animated legs
+        const legSwing = Math.sin(t * 0.18 + bot.phase) * 6;
+        ctx.strokeStyle = glow; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(bot.x - 6, y + 10); ctx.lineTo(bot.x - 8 + legSwing, y + 21); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bot.x + 6, y + 10); ctx.lineTo(bot.x + 8 - legSwing, y + 21); ctx.stroke();
+
+        // 3D Cartoon Body
+        draw3DBox(bot.x - 14, y - 14, 28, 24, 8, glow, '#1e293b', '#0f172a');
+
+        // Animated Eyes
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(bot.x - 5, y - 4, 3.8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bot.x + 5, y - 4, 3.8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#020617';
+        const lookX = Math.cos(t * 0.06 + bot.phase) * 1.4;
+        ctx.beginPath(); ctx.arc(bot.x - 5 + lookX, y - 4, 1.8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bot.x + 5 + lookX, y - 4, 1.8, 0, Math.PI * 2); ctx.fill();
+
+        // Waving Arms + Carrying Tool Crate if active
+        const armWave = isActive ? Math.sin(t * 0.25 + bot.phase) * 10 : Math.sin(t * 0.08 + bot.phase) * 4;
         ctx.strokeStyle = glow; ctx.lineWidth = 3;
-        const armAng = active ? Math.sin(t * 0.25) * 8 : 0;
-        ctx.beginPath(); ctx.moveTo(x - 16, by); ctx.lineTo(x - 24, by + 6 + armAng); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + 16, by); ctx.lineTo(x + 24, by + 6 - armAng); ctx.stroke();
-        ctx.fillStyle = '#f1f5f9'; ctx.font = 'bold 9.5px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(label, x + 2, y + 34);
-        if (active) {{
-          drawBubble(x + 2, by - 14, bubbleTxt, '#fde047');
+        ctx.beginPath(); ctx.moveTo(bot.x - 14, y - 2); ctx.lineTo(bot.x - 23, y + 4 + armWave); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bot.x + 14, y - 2); ctx.lineTo(bot.x + 23, y + 4 - armWave); ctx.stroke();
+
+        if (isActive) {{
+          draw3DBox(bot.x + 18, y - 8 - armWave, 10, 10, 4, '#38bdf8', '#0284c7', '#0369a1');
+          drawBubble(bot.x, y - 14, bot.talk, '#fde047');
           ctx.fillStyle = '#fde047';
           for (let s = 0; s < 4; s++) {{
-            ctx.fillRect(x + (Math.random()-0.5)*28, by - 18 - Math.random()*12, 2.5, 2.5);
+            ctx.fillRect(bot.x + (Math.random()-0.5)*30, y - 20 - Math.random()*12, 2.5, 2.5);
           }}
-        }} else if (done) {{
-          drawBubble(x + 2, by - 12, 'DONE ✓', '#34d399');
+        }} else if (isDone) {{
+          drawBubble(bot.x, y - 12, 'DONE ✓', '#34d399');
         }}
+
+        ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(bot.name, bot.x + 2, 152);
       }}
 
       function frame() {{
         t += 1;
-        ctx.clearRect(0, 0, 520, 220);
-        const grd = ctx.createLinearGradient(0, 0, 0, 220);
+        ctx.clearRect(0, 0, 520, 232);
+        const grd = ctx.createLinearGradient(0, 0, 0, 232);
         grd.addColorStop(0, '#0b142c'); grd.addColorStop(1, '#020617');
-        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 220);
+        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 232);
 
         // 3D Isometric Floor Grid
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)'; ctx.lineWidth = 1;
         for (let gx = 0; gx < 520; gx += 38) {{
-          ctx.beginPath(); ctx.moveTo(gx, 142); ctx.lineTo(gx - 34, 220); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(gx, 140); ctx.lineTo(gx - 34, 232); ctx.stroke();
         }}
-        ctx.beginPath(); ctx.moveTo(0, 172); ctx.lineTo(520, 172); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 180); ctx.lineTo(520, 180); ctx.stroke();
 
         // Web Cloud Portal on Left
         ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
-        ctx.beginPath(); ctx.arc(46, 58, 26 + Math.sin(t*0.08)*2, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(44, 58, 25 + Math.sin(t*0.08)*2, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('WEB CLOUD', 46, 55);
-        ctx.fillText('Iconify+AI', 46, 66);
+        ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 8.5px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('WEB CLOUD', 44, 55);
+        ctx.fillText('Iconify+AI', 44, 66);
 
-        // 3D Conveyor Belt
-        draw3DBox(75, 146, 412, 16, 18, '#1e293b', '#0f172a', '#020617');
-        for (let rx = 85; rx < 476; rx += 22) {{
+        // Glowing Tool-to-Tool Laser Connection Beams!
+        const beamIdx = Math.min(2, Math.floor((t / 45) % 3));
+        const bA = bots[beamIdx], bB = bots[beamIdx + 1];
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.lineDashOffset = -t * 1.2;
+        ctx.beginPath(); ctx.moveTo(bA.x, 108); ctx.lineTo(bB.x, 108); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Animated Energy Packet travelling from Tool A -> Tool B
+        const pktP = (t % 45) / 45;
+        const px = bA.x + (bB.x - bA.x) * pktP;
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath(); ctx.arc(px, 108, 4, 0, Math.PI * 2); ctx.fill();
+
+        // 3D Conveyor Belt cleanly below the walking bots
+        draw3DBox(68, 174, 420, 14, 16, '#1e293b', '#0f172a', '#020617');
+        for (let rx = 78; rx < 478; rx += 22) {{
           const shift = (rx + (t * 1.8) % 22);
-          ctx.fillStyle = '#38bdf8'; ctx.fillRect(shift, 140, 8, 3);
+          ctx.fillStyle = '#38bdf8'; ctx.fillRect(shift, 169, 8, 3);
+        }}
+        const phoneX = 88 + ((t * 1.1) % 360);
+        draw3DBox(phoneX, 152, 20, 20, 6, '#38bdf8', '#2563eb', '#1d4ed8');
+
+        // Draw all 4 Walking, Jumping, Talking Cartoon Workers
+        for (let i = 0; i < bots.length; i++) {{
+          const isAct = (activeStage === i) || (activeStage === 0 && i === 0) || (activeStage >= 4 && i === 3);
+          const isDn = (doneCount > i);
+          drawCartoonWorker(bots[i], i, isAct, isDn);
         }}
 
-        // 4 Animated 3D Cartoon Studio Worker Bots
-        drawBot(130, 114, '1. Scout+SVG', 'Icon Fetch!', activeStage===0, doneCount>0, t*0.1);
-        drawBot(225, 114, '2. Human+UI', 'UX Polish!', activeStage===1||activeStage===2, doneCount>2, t*0.1+1);
-        drawBot(325, 114, '3. 3D Coders', 'Dart Code!', activeStage===3, doneCount>3, t*0.1+2);
-        drawBot(425, 114, '4. Boss+Kimi', 'APK Check!', activeStage>=4, doneCount>=5, t*0.1+3);
-
-        // Moving 3D Phone Chassis on Belt
-        const phoneX = 110 + ((activeStage * 85) + (t * 0.65) % 45);
-        draw3DBox(Math.min(phoneX, 445), 120, 22, 26, 7, '#38bdf8', '#2563eb', '#1d4ed8');
-
-        // Flying 3D Research Drone bringing Icon Crates
-        const dx = 46 + (Math.sin(t * 0.04) * 0.5 + 0.5) * 165;
-        const dy = 40 + Math.sin(t * 0.12) * 8;
+        // Flying Research Drone dropping crates between Web Cloud & Active Bot
+        const targetBot = bots[Math.min(3, Math.max(0, activeStage))];
+        const dx = 44 + (Math.sin(t * 0.04) * 0.5 + 0.5) * (targetBot.baseX - 44);
+        const dy = 38 + Math.sin(t * 0.12) * 7;
         ctx.fillStyle = '#f59e0b';
         ctx.beginPath(); ctx.ellipse(dx, dy, 13, 6, 0, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
@@ -1272,11 +1390,11 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
         ctx.fillStyle = '#10b981'; ctx.fillRect(dx-5, dy+6, 10, 8);
 
         // Top HUD Banner
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-        ctx.fillRect(88, 6, 424, 24);
-        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(88, 6, 424, 24);
-        ctx.fillStyle = '#fde68a'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('NEXUS FORGE 3D | ' + fid + ' | ' + msg, 96, 21);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.fillRect(82, 6, 430, 22);
+        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(82, 6, 430, 22);
+        ctx.fillStyle = '#fde68a'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText(fid + ' | ' + msg, 90, 20);
 
         requestAnimationFrame(frame);
       }}
@@ -1284,7 +1402,7 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
     }})();
     </script>
     """
-    components.html(scene_html, height=230)
+    components.html(scene_html, height=240)
 
 def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
     """Display 1 (3D Cartoon Factory Movie + Live Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
@@ -1487,8 +1605,8 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, select
         orch_m = "MANUAL_LOCK"
         orch_json = {"factory_id": factory_id, "app_type": app_type, "category": FACTORY_REGISTRY[factory_id]["name"], "goals": ["Realistic UI", "Working Wallet & Gateway", "Cloud Sync"]}
     else:
-        orch_sys = """You are Dept 1 Factory Router. Classify prompt into GAMING_FACTORY_01 (games, fantasy, 3D, prediction, arcade) or MARKET_FACTORY_02 (business, commerce, fintech, service, delivery, ledger). Output ONLY JSON:
-{"factory_id": "GAMING_FACTORY_01 or MARKET_FACTORY_02", "category": "short domain", "goals": ["goal 1", "goal 2", "goal 3"]}"""
+        orch_sys = """You are Dept 1 Factory Router. Classify prompt into GAMING_FACTORY_01 (games, fantasy, 3D, prediction, arcade) or MARKET_FACTORY_02 (business, commerce, fintech, service, delivery, ledger). Also pick 4 exact Iconify search nouns matching the REAL subject (e.g. truck, bus, steering, highway for a vehicle game). Output ONLY JSON:
+{"factory_id": "GAMING_FACTORY_01 or MARKET_FACTORY_02", "category": "short domain", "icon_keywords": ["word1", "word2", "word3", "word4"], "goals": ["goal 1", "goal 2", "goal 3"]}"""
         raw_orch, orch_m, err_o = call_specialist_ai("orchestrator", orch_sys, f"Title: {app_title}\nPrompt: {user_prompt}", max_tokens=450)
         if not raw_orch:
             return None, err_o or "Orchestrator failed"
@@ -1503,7 +1621,7 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, select
     project_bus["orchestrator"] = orch_json
 
     # Dept 2: Live Open-Source SVG Icon Fetcher (api.iconify.design / game-icons.net)
-    fetched_icons = fetch_live_iconify_icons(app_title + " " + user_prompt, factory_id)
+    fetched_icons = fetch_live_iconify_icons(app_title + " " + user_prompt, factory_id, ai_keywords=orch_json.get("icon_keywords", []))
     project_bus["fetched_icons"] = fetched_icons
     stages[0]["status"] = "done"
     stages[0]["note"] = f"[{orch_m}] Routed to {factory_id} | Pulled {len(fetched_icons)} live SVG icons."
@@ -1521,7 +1639,8 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, select
     hum_sys = """You are Dept 4 Chief Human Developer & UX Architect (independent senior engineer applying Laws of UX & Nielsen Norman heuristics).
 Review the idea and Factory Tool Store, and output 4 sharp developer mandates so nothing feels basic or broken in the real world (e.g. confirm dialogs, empty states, one-way VIP/checkout wallet clarity, own-brand originality)."""
     hum_notes, hum_m, _ = call_specialist_ai("human_architect", hum_sys, f"Brand: {app_title}\nFactory: {factory_id}\nIdea: {user_prompt}\nTool Store: {json.dumps(f_meta['tool_store'])}\nTrends: {project_bus['market_brain'][:600]}", max_tokens=450)
-    project_bus["human_brain_note"] = f"[{hum_m or 'Human Brain'}] {(hum_notes or 'Enforce thumb-reach controls, Wallet & Profile sheets, and zero dead-end screens.')[:180]}"
+    clean_hum = re.sub(r"[#*|>`]+", " ", hum_notes or "Enforce thumb-reach controls, Wallet & Profile sheets, and zero dead-end screens."); clean_hum = re.sub(r"\s+", " ", clean_hum).strip()
+    project_bus["human_brain_note"] = f"[{hum_m or 'Human Brain'}] {clean_hum[:175]}"
     stages[1]["status"] = "done"
     stages[1]["note"] = f"[{brain_m}] Trends + [{hum_m}] Human Dev Mandates locked."
     stages[2]["status"] = "running"
@@ -1615,7 +1734,10 @@ Use rich layered linearGradient/radialGradient ({c1} to {c2}), rounded rect rx="
     project_bus["cross_check_msg"] = "Ready for Owner Touch Test & Lock -> Coding Depts Standing By"
     project_bus["stages_p1"] = stages
 
-    project_bus["last_voice_msg"] = f"Wah {OWNER_NAME} Boss! {app_title} ka {factory_id} design, live icons aur mobile preview ekdum mast taiyar ho gaya hai. Check karke lock karein!"
+    msg_p1 = f"Wah {OWNER_NAME} Boss! {app_title} ka {factory_id} design, live icons aur mobile preview ekdum mast taiyar ho gaya hai. Check karke lock karein!"
+    project_bus["last_voice_msg"] = msg_p1
+    st.session_state["pending_boss_speech"] = msg_p1
+    st.session_state["spoken_last"] = msg_p1
     save_json_file(DESIGN_LOCK_FILE, project_bus)
     return project_bus, None
 
@@ -1759,7 +1881,10 @@ Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Mater
     project_bus["pkg_slug"] = app_slug
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
-    project_bus["last_voice_msg"] = f"Shabash {OWNER_NAME} Boss! Sabhi 16 departments ne coding aur Kimi auto-wiring pass kar li hai. Ab APK build dabayein!"
+    msg_p2 = f"Shabash {OWNER_NAME} Boss! Sabhi 16 departments ne coding aur Kimi auto-wiring pass kar li hai. Ab APK build dabayein!"
+    project_bus["last_voice_msg"] = msg_p2
+    st.session_state["pending_boss_speech"] = msg_p2
+    st.session_state["spoken_last"] = msg_p2
     save_json_file(CODED_APP_FILE, project_bus)
     return project_bus, None
 
@@ -1773,6 +1898,7 @@ st.markdown("""
 .block-container {padding: 0.4rem 0.7rem 3rem 0.7rem; max-width: 560px;}
 .stApp {background: radial-gradient(circle at 50% 0%, #111827 0%, #030712 100%); color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;}
 textarea, input[type="text"], input[type="password"] {background-color: #1e293b !important; color: #ffffff !important; border: 1.5px solid #3b82f6 !important; border-radius: 12px !important;}
+label, .stSelectbox label p, .stTextInput label p, .stTextArea label p, .stAudioInput label p {color: #e2e8f0 !important; font-weight: 700 !important;}
 .stButton > button, button[data-testid="stBaseButton-secondary"], button[kind="secondary"] {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important; color: #f8fafc !important;
     border: 1px solid #38bdf8 !important; border-radius: 12px !important; font-weight: 700 !important;
@@ -1869,9 +1995,8 @@ with tab_build:
         v_cmd = voice_act.get("action")
         v_dir = voice_act.get("directive", "")
         if v_cmd == "REJECT_RESET":
-            reject_and_clear_project(active_build.get("repo") if active_build else None)
-            st.session_state["pending_boss_speech"] = f"Thik hai {OWNER_NAME} Boss, purana project hata diya hai. Naya shuru karein!"
-            st.rerun()
+            st.warning("Voice safety lock: Tap 'Reject & Start Fresh' button below if you really want to clear the current project.")
+            st.session_state["pending_boss_speech"] = f"{OWNER_NAME} Boss, safety ke liye maine project delete nahi kiya hai. Agar pakka hatana hai to neeche Reject button dabayein!"
         elif v_cmd == "UPDATE_DESIGN" and locked_bus and not active_build:
             run_phase1_design_studio(locked_bus["app_title"], locked_bus["user_prompt"], st.empty(), st.empty(), selected_factory=locked_bus.get("factory_id", "AUTO"), design_feedback=v_dir)
             st.rerun()
