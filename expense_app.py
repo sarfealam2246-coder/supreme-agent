@@ -3,9 +3,8 @@ import streamlit.components.v1 as components
 import json
 import os
 import re
-import io
-import wave
 import time
+import threading
 import base64
 import urllib.request
 import urllib.parse
@@ -47,6 +46,8 @@ ACTIVE_BUILD_FILE = "active_build.json"
 DESIGN_LOCK_FILE = "design_lock_bus.json"
 CODED_APP_FILE = "coded_flutter_bundle.json"
 REJECTED_REPOS_FILE = "rejected_repos.json"
+SCOUT_STATE_FILE = "scout_state.json"
+_SCOUT_JOBS = {}
 
 # ==============================================================================
 # 2 DEDICATED FACTORY IDs & THEIR REAL TOOL STORES (ZERO EXTERNAL BRAND NAMES)
@@ -761,219 +762,6 @@ def run_live_engine_diagnostics():
 
 
 # ==============================================================================
-# LIVE VOICE BOSS (GEMINI HINDI/HINGLISH TTS + ACTION ROUTER + WHATSAPP MIC)
-# ==============================================================================
-def _pcm_to_wav_bytes(pcm_bytes, sample_rate=24000):
-    """Wraps raw 16-bit mono PCM audio from Gemini TTS into a playable RIFF WAV."""
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_bytes)
-    return buf.getvalue()
-
-def _fetch_gemini_tts_audio(text, voice_name="Puck"):
-    """Fetches natural Hindi/Hinglish WAV audio via Google Gemini TTS (existing AI Studio key)."""
-    cache = st.session_state.setdefault("tts_audio_cache", {})
-    key = f"gem:{voice_name}:{text[:110]}"
-    if key in cache:
-        return cache[key]
-    for model_id in ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview"]:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-            payload = {
-                "contents": [{"parts": [{"text": f"Speak warmly and energetically in natural Indian Hinglish: {text[:360]}"}]}],
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "temperature": 1.0,
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {"voiceName": voice_name}
-                        }
-                    }
-                }
-            }
-            headers = {
-                "x-goog-api-key": DEFAULT_GEMINI_KEY,
-                "Content-Type": "application/json",
-                "User-Agent": "Sarfealam-Nexus-Forge"
-            }
-            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                for p in parts:
-                    inline = p.get("inlineData", {})
-                    b64 = inline.get("data", "")
-                    if b64:
-                        raw_bytes = base64.b64decode(b64)
-                        wav_bytes = raw_bytes if raw_bytes[:4] == b"RIFF" else _pcm_to_wav_bytes(raw_bytes, 24000)
-                        if len(wav_bytes) > 500:
-                            cache[key] = wav_bytes
-                            return wav_bytes
-        except Exception:
-            continue
-    return None
-
-def _fetch_groq_tts_audio(text, voice_name="autumn"):
-    """Fallback WAV audio via Groq Orpheus TTS API."""
-    cache = st.session_state.setdefault("tts_audio_cache", {})
-    key = f"groq:{voice_name}:{text[:100]}"
-    if key in cache:
-        return cache[key]
-    for model_id, v_id in [("canopylabs/orpheus-v1-english", voice_name)]:
-        try:
-            payload = {"model": model_id, "input": text[:350], "voice": v_id, "response_format": "wav"}
-            headers = {
-                "Authorization": f"Bearer {DEFAULT_GROQ_KEY}",
-                "Content-Type": "application/json",
-                "User-Agent": "Sarfealam-Nexus-Forge"
-            }
-            req = urllib.request.Request("https://api.groq.com/openai/v1/audio/speech", data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                audio_bytes = resp.read()
-                if audio_bytes and len(audio_bytes) > 500:
-                    cache[key] = audio_bytes
-                    return audio_bytes
-        except Exception:
-            continue
-    return None
-
-def speak_boss_voice(message_text, voice_style="Default Hindi-English", unlock_on_touch=False):
-    """Plays Gemini Native Hindi/Hinglish WAV audio (Groq fallback) with autoplay=True."""
-    if not message_text or voice_style == "Mute (Silent)":
-        return
-    gem_voice_map = {
-        "Default Hindi-English": "Puck",
-        "Deep Boss (Male)": "Charon",
-        "Warm Assistant (Female)": "Kore",
-        "Fast Pro (English-IN)": "Fenrir"
-    }
-    groq_voice_map = {
-        "Default Hindi-English": "autumn",
-        "Deep Boss (Male)": "daniel",
-        "Warm Assistant (Female)": "diana",
-        "Fast Pro (English-IN)": "troy"
-    }
-    audio_bytes = _fetch_gemini_tts_audio(message_text, gem_voice_map.get(voice_style, "Puck"))
-    if not audio_bytes:
-        audio_bytes = _fetch_groq_tts_audio(message_text, groq_voice_map.get(voice_style, "autumn"))
-    if audio_bytes:
-        st.audio(audio_bytes, format="audio/wav", autoplay=True)
-        return
-
-    rate_val, pitch_val, lang_val = 1.03, 1.0, "hi-IN"
-    if voice_style == "Deep Boss (Male)":
-        pitch_val, rate_val = 0.85, 0.98
-    elif voice_style == "Warm Assistant (Female)":
-        pitch_val, rate_val = 1.18, 1.02
-    elif voice_style == "Fast Pro (English-IN)":
-        lang_val, pitch_val, rate_val = "en-IN", 1.0, 1.12
-
-    safe_msg = json.dumps(message_text)
-    short_lbl = (message_text[:64] + "...") if len(message_text) > 64 else message_text
-    components.html(f"""
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:linear-gradient(135deg,#0f172a,#1e293b);border:1px solid #38bdf8;border-radius:10px;padding:6px 10px;font-family:sans-serif;">
-      <div style="color:#e2e8f0;font-size:11.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><b>Boss:</b> {short_lbl}</div>
-      <button onclick="playBoss()" style="background:#0284c7;color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🔊 Hear Boss</button>
-    </div>
-    <script>
-      function playBoss() {{
-        try {{
-          if ('speechSynthesis' in window) {{
-            window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance({safe_msg});
-            u.lang = '{lang_val}'; u.rate = {rate_val}; u.pitch = {pitch_val};
-            window.speechSynthesis.speak(u);
-          }}
-        }} catch (e) {{}}
-      }}
-      playBoss();
-    </script>
-    """, height=48)
-
-def transcribe_voice_groq(audio_bytes, filename="voice.wav"):
-    """Transcribes WhatsApp-style Hindi/Hinglish voice note cleanly via Groq Whisper ($0)."""
-    boundary = "----SarfealamBoundary7MA4YWxkTrZu0gW"
-    parts = []
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n".encode("utf-8"))
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nhi\r\n".encode("utf-8"))
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nSarfealam Boss, Nexus Forge, Design, Coding, Worker, Kimi Repair, APK, Reject\r\n".encode("utf-8"))
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: audio/wav\r\n\r\n".encode("utf-8"))
-    parts.append(audio_bytes)
-    parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
-    body = b"".join(parts)
-    headers = {
-        "Authorization": f"Bearer {DEFAULT_GROQ_KEY}",
-        "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "User-Agent": "Sarfealam-Nexus-Forge"
-    }
-    req = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions", data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        return res.get("text", "").strip()
-
-def _infer_voice_action_fallback(text):
-    t = (text or "").lower()
-    if "confirm delete project" in t or "confirm reject project" in t:
-        return "REJECT_RESET"
-    if any(k in t for k in ["repair", "fix", "error", "kimi", "theek kar"]):
-        return "KIMI_REPAIR"
-    if any(k in t for k in ["apk", "github", "compile", "release", "publish"]):
-        return "BUILD_APK"
-    if any(k in t for k in ["coding", "code", "worker", "dart", "banwa", "karwa"]):
-        return "START_CODING"
-    if any(k in t for k in ["design", "color", "rang", "theme", "ui", "screen", "layout", "badlo", "change"]):
-        return "UPDATE_DESIGN"
-    return "CHAT_ONLY"
-
-def ask_voice_boss(owner_instruction, project_bus):
-    """Action-capable Voice Boss: NEVER says No; dispatches workers + replies in energetic Hinglish."""
-    bus_snap = {
-        "app_title": project_bus.get("app_title", "None"),
-        "factory_id": project_bus.get("factory_id", "None"),
-        "boss_status": project_bus.get("boss_status", ""),
-        "repair_status": project_bus.get("repair_status", "")
-    }
-    boss_sys = (
-        f"You are the Live Voice Director of {OWNER_NAME} Nexus Forge speaking directly to {OWNER_NAME} Boss in energetic Indian Hinglish (Roman Hindi + English, ZERO Devanagari). "
-        "CRITICAL RULE: NEVER say 'No', 'I cannot', or 'do it yourself'. ALWAYS agree enthusiastically. IMPORTANT: NEVER output REJECT_RESET unless Boss explicitly says 'confirm delete project' — for normal complaints or feedback, use CHAT_ONLY or UPDATE_DESIGN! "
-        "Output ONLY valid JSON: "
-        '{"action": "CHAT_ONLY|UPDATE_DESIGN|START_CODING|KIMI_REPAIR|BUILD_APK|REJECT_RESET", "reply": "2 enthusiastic spoken Hinglish sentences calling him Sarfealam Boss", "directive": "short English instruction for workers"}'
-    )
-    usr_p = f"Studio State: {json.dumps(bus_snap)}\nSarfealam Boss Said: {owner_instruction}"
-    fast_routes = [
-        ("groq", "llama-3.3-70b-versatile"),
-        ("gemini", "gemini-2.5-flash"),
-        ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b")
-    ]
-    for prov, m_id in fast_routes:
-        try:
-            if prov == "groq":
-                out = _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", DEFAULT_GROQ_KEY, m_id, boss_sys, usr_p, max_tokens=220)
-            elif prov == "gemini":
-                out = _call_gemini_api(m_id, boss_sys, usr_p, max_tokens=220)
-            else:
-                out = _call_openai_compat("https://integrate.api.nvidia.com/v1/chat/completions", DEFAULT_NVIDIA_KEY, m_id, boss_sys, usr_p, max_tokens=220)
-            parsed = extract_json_object(out)
-            if isinstance(parsed, dict) and parsed.get("reply"):
-                act = str(parsed.get("action", "CHAT_ONLY")).upper()
-                if act not in ("CHAT_ONLY", "UPDATE_DESIGN", "START_CODING", "KIMI_REPAIR", "BUILD_APK", "REJECT_RESET"):
-                    act = _infer_voice_action_fallback(owner_instruction)
-                return parsed["reply"], f"{prov.upper()}:{m_id}", {"action": act, "directive": parsed.get("directive", owner_instruction)}
-            cleaned = strip_markdown_fences(out)
-            if cleaned:
-                act = _infer_voice_action_fallback(owner_instruction)
-                return cleaned, f"{prov.upper()}:{m_id}", {"action": act, "directive": owner_instruction}
-        except Exception:
-            continue
-    act = _infer_voice_action_fallback(owner_instruction)
-    if act != "CHAT_ONLY":
-        return f"Thik hai {OWNER_NAME} Boss! Maine worker bots ko turant kaam par laga diya hai, abhi ho raha hai!", "LOCAL_ACTION", {"action": act, "directive": owner_instruction}
-    return f"Wah {OWNER_NAME} Boss! Nexus Forge mein aapka swagat hai, sabhi 16 workers ekdum ready hain!", "LOCAL_FAST", {"action": "CHAT_ONLY", "directive": ""}
-
-# ==============================================================================
 # DART SYNTAX & FLUTTER 3.50 DETERMINISTIC AUTO-FIXER + KIMI REPAIR
 # ==============================================================================
 def validate_dart_code(dart_code):
@@ -1125,6 +913,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon.svg
+    - assets/
 """
 
 def auto_detect_and_repair_bundle(project_bus):
@@ -1145,7 +934,12 @@ def auto_detect_and_repair_bundle(project_bus):
         "pdf": "^3.11.1",
         "printing": "^5.13.4",
         "qr_flutter": "^4.1.0",
-        "razorpay_flutter": "^1.3.7"
+        "razorpay_flutter": "^1.3.7",
+        "flame": "^1.38.2",
+        "flutter_animate": "^4.5.2",
+        "lucide_icons_flutter": "^4.0.2",
+        "lottie": "^3.1.3",
+        "webview_flutter": "^4.14.0"
     }
     for pkg, ver in pkg_versions.items():
         if f"package:{pkg}/" in all_dart and pkg not in pub_extra:
@@ -1219,12 +1013,12 @@ def auto_detect_and_repair_bundle(project_bus):
 # DISPLAY 1: FILM-STYLE LIVE CONNECTION BOARD + VISUAL RESEARCH ICONS
 # ==============================================================================
 def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
-    """60-FPS 3D-Isometric Walking, Jumping & Talking Cartoon Studio Movie Engine."""
-    safe_cc = json.dumps(cross_check[:46])
+    """60-FPS Hi-Fi Google-Style 3D Tech Studio: Glass Cabins, Dual-Monitor Coding Desks & Human Handover."""
+    safe_cc = json.dumps(cross_check[:44])
     safe_fid = json.dumps(factory_id)
     scene_html = f"""
-    <div style="background:#050a18;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(56,189,248,0.22);">
-      <canvas id="factory3d" width="520" height="232" style="width:100%;height:auto;display:block;"></canvas>
+    <div style="background:#030712;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(56,189,248,0.24);">
+      <canvas id="factory3d" width="520" height="242" style="width:100%;height:auto;display:block;"></canvas>
     </div>
     <script>
     (function() {{
@@ -1237,164 +1031,137 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
       const fid = {safe_fid};
       const msg = {safe_cc};
 
-      const bots = [
-        {{ baseX: 118, x: 118, name: 'Scout Bot', talk: 'Fetching SVG!', col: '#38bdf8', phase: 0 }},
-        {{ baseX: 215, x: 215, name: 'Human UX', talk: 'Checking UX!', col: '#a78bfa', phase: 1.4 }},
-        {{ baseX: 318, x: 318, name: '3D Coders', talk: 'Writing Dart!', col: '#f59e0b', phase: 2.8 }},
-        {{ baseX: 422, x: 422, name: 'Boss+Kimi', talk: 'APK Ready!', col: '#10b981', phase: 4.1 }}
+      const team = [
+        {{ deskX: 92,  name: 'Scout Dev',  shirt: '#0284c7', hair: '#1e293b', talk: 'Bhai, 3D & Iconify ready! Tu UX dekh' }},
+        {{ deskX: 202, name: 'UX Architect', shirt: '#7c3aed', hair: '#0f172a', talk: 'Pro UX lock bhai, ab tu code likh' }},
+        {{ deskX: 314, name: 'Flutter Dev', shirt: '#d97706', hair: '#334155', talk: 'APK code done bhai, tu verify kar' }},
+        {{ deskX: 426, name: 'Kimi Lead',   shirt: '#059669', hair: '#111827', talk: '16/16 PASS! Real APK Ready hai!' }}
       ];
 
-      function draw3DBox(x, y, w, h, d, topC, leftC, rightC) {{
-        ctx.fillStyle = leftC;
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = topC;
-        ctx.beginPath();
-        ctx.moveTo(x, y); ctx.lineTo(x + d, y - d * 0.55);
-        ctx.lineTo(x + w + d, y - d * 0.55); ctx.lineTo(x + w, y);
-        ctx.closePath(); ctx.fill();
-        ctx.fillStyle = rightC;
-        ctx.beginPath();
-        ctx.moveTo(x + w, y); ctx.lineTo(x + w + d, y - d * 0.55);
-        ctx.lineTo(x + w + d, y + h - d * 0.55); ctx.lineTo(x + w, y + h);
-        ctx.closePath(); ctx.fill();
+      function drawGlassCabin(x, glowCol, isAct) {{
+        // Sleek Glass Studio Bay behind each workstation
+        ctx.fillStyle = isAct ? 'rgba(56,189,248,0.09)' : 'rgba(15,23,42,0.55)';
+        ctx.strokeStyle = isAct ? glowCol : 'rgba(148,163,184,0.22)';
+        ctx.lineWidth = isAct ? 1.6 : 1;
+        ctx.beginPath(); ctx.roundRect(x - 42, 42, 84, 152, 8); ctx.fill(); ctx.stroke();
+        // Ambient Ceiling Light Strip
+        ctx.fillStyle = isAct ? glowCol : 'rgba(56,189,248,0.35)';
+        ctx.fillRect(x - 24, 46, 48, 3);
       }}
 
-      function drawBubble(x, y, txt, col) {{
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 1.4;
+      function drawDualMonitorDesk(x, y, glowCol) {{
+        ctx.fillStyle = '#0f172a'; ctx.fillRect(x - 32, y + 6, 64, 18);
+        ctx.fillStyle = '#1e293b';
         ctx.beginPath();
-        ctx.roundRect(x - 40, y - 32, 80, 17, 7);
-        ctx.fill(); ctx.stroke();
-        ctx.fillStyle = col;
-        ctx.font = 'bold 8.5px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(txt, x, y - 20);
-      }}
-
-      function drawCartoonWorker(bot, idx, isActive, isDone) {{
-        // Walking patrol + energetic jump physics when active!
-        const walkRange = isActive ? 22 : 12;
-        bot.x = bot.baseX + Math.sin(t * 0.045 + bot.phase) * walkRange;
-        const jumpHeight = isActive ? Math.abs(Math.sin(t * 0.14 + bot.phase)) * 16 : Math.abs(Math.sin(t * 0.06 + bot.phase)) * 4;
-        const y = 116 - jumpHeight;
-        const glow = isActive ? '#fbbf24' : (isDone ? '#34d399' : bot.col);
-
-        // Ground shadow shrinks as bot jumps higher
-        const shScale = Math.max(0.55, 1 - jumpHeight / 28);
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.beginPath(); ctx.ellipse(bot.x + 2, 138, 18 * shScale, 5 * shScale, 0, 0, Math.PI * 2); ctx.fill();
-
-        // Walking animated legs
-        const legSwing = Math.sin(t * 0.18 + bot.phase) * 6;
-        ctx.strokeStyle = glow; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(bot.x - 6, y + 10); ctx.lineTo(bot.x - 8 + legSwing, y + 21); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bot.x + 6, y + 10); ctx.lineTo(bot.x + 8 - legSwing, y + 21); ctx.stroke();
-
-        // 3D Cartoon Body
-        draw3DBox(bot.x - 14, y - 14, 28, 24, 8, glow, '#1e293b', '#0f172a');
-
-        // Animated Eyes
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(bot.x - 5, y - 4, 3.8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(bot.x + 5, y - 4, 3.8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#020617';
-        const lookX = Math.cos(t * 0.06 + bot.phase) * 1.4;
-        ctx.beginPath(); ctx.arc(bot.x - 5 + lookX, y - 4, 1.8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(bot.x + 5 + lookX, y - 4, 1.8, 0, Math.PI * 2); ctx.fill();
-
-        // Waving Arms + Carrying Tool Crate if active
-        const armWave = isActive ? Math.sin(t * 0.25 + bot.phase) * 10 : Math.sin(t * 0.08 + bot.phase) * 4;
-        ctx.strokeStyle = glow; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(bot.x - 14, y - 2); ctx.lineTo(bot.x - 23, y + 4 + armWave); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bot.x + 14, y - 2); ctx.lineTo(bot.x + 23, y + 4 - armWave); ctx.stroke();
-
-        if (isActive) {{
-          draw3DBox(bot.x + 18, y - 8 - armWave, 10, 10, 4, '#38bdf8', '#0284c7', '#0369a1');
-          drawBubble(bot.x, y - 14, bot.talk, '#fde047');
-          ctx.fillStyle = '#fde047';
-          for (let s = 0; s < 4; s++) {{
-            ctx.fillRect(bot.x + (Math.random()-0.5)*30, y - 20 - Math.random()*12, 2.5, 2.5);
+        ctx.moveTo(x - 32, y + 6); ctx.lineTo(x - 24, y - 3);
+        ctx.lineTo(x + 40, y - 3); ctx.lineTo(x + 32, y + 6);
+        ctx.closePath(); ctx.fill();
+        // Dual Monitors with Live Scrolling Code Lines
+        for (let m = -1; m <= 1; m += 2) {{
+          const mx = x + m * 15 - 12;
+          ctx.fillStyle = '#020617'; ctx.fillRect(mx, y - 23, 24, 18);
+          ctx.strokeStyle = glowCol; ctx.lineWidth = 1.4; ctx.strokeRect(mx, y - 23, 24, 18);
+          for (let l = 0; l < 3; l++) {{
+            ctx.fillStyle = l === 0 ? '#34d399' : glowCol;
+            const lw = 7 + ((t * 0.4 + l * 5 + m * 3) % 12);
+            ctx.fillRect(mx + 3, y - 19 + l * 4.5, lw, 2);
           }}
-        }} else if (isDone) {{
-          drawBubble(bot.x, y - 12, 'DONE ✓', '#34d399');
+        }}
+      }}
+
+      function drawSpeechBubble(x, y, txt, col) {{
+        ctx.font = 'bold 8.5px sans-serif';
+        const w = Math.min(182, Math.max(88, ctx.measureText(txt).width + 14));
+        const bx = Math.max(8, Math.min(512 - w, x - w / 2));
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+        ctx.strokeStyle = col; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.roundRect(bx, y - 28, w, 18, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = col; ctx.textAlign = 'center';
+        ctx.fillText(txt, bx + w / 2, y - 16);
+      }}
+
+      function drawHumanEngineer(eng, x, y, walking, holdingFile, isActive, isDone) {{
+        const glow = isActive ? '#fbbf24' : (isDone ? '#34d399' : '#38bdf8');
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath(); ctx.ellipse(x, y + 32, 14, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+
+        const stride = walking ? Math.sin(t * 0.22) * 7 : 0;
+        ctx.strokeStyle = '#334155'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x - 4, y + 14); ctx.lineTo(x - 5 + stride, y + 31); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 4, y + 14); ctx.lineTo(x + 5 - stride, y + 31); ctx.stroke();
+
+        ctx.fillStyle = eng.shirt;
+        ctx.beginPath(); ctx.roundRect(x - 10, y - 6, 20, 22, 5); ctx.fill();
+
+        ctx.fillStyle = '#fcd34d';
+        ctx.beginPath(); ctx.arc(x, y - 16, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eng.hair;
+        ctx.beginPath(); ctx.arc(x, y - 19, 9, Math.PI, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = glow; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y - 16, 10.5, Math.PI * 0.85, Math.PI * 2.15); ctx.stroke();
+
+        const armAng = holdingFile ? -6 : Math.sin(t * 0.14) * 3;
+        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x - 10, y - 2); ctx.lineTo(x - 17, y + 7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 10, y - 2); ctx.lineTo(x + 19, y + 2 + armAng); ctx.stroke();
+
+        if (holdingFile) {{
+          ctx.fillStyle = '#38bdf8'; ctx.fillRect(x + 16, y - 5 + armAng, 11, 13);
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(x + 16, y - 5 + armAng, 11, 13);
         }}
 
-        ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(bot.name, bot.x + 2, 152);
+        ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(eng.name, x, y + 44);
       }}
 
       function frame() {{
         t += 1;
-        ctx.clearRect(0, 0, 520, 232);
-        const grd = ctx.createLinearGradient(0, 0, 0, 232);
-        grd.addColorStop(0, '#0b142c'); grd.addColorStop(1, '#020617');
-        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 232);
+        ctx.clearRect(0, 0, 520, 242);
+        const grd = ctx.createLinearGradient(0, 0, 0, 242);
+        grd.addColorStop(0, '#0a1329'); grd.addColorStop(1, '#020617');
+        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 242);
 
-        // 3D Isometric Floor Grid
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)'; ctx.lineWidth = 1;
-        for (let gx = 0; gx < 520; gx += 38) {{
-          ctx.beginPath(); ctx.moveTo(gx, 140); ctx.lineTo(gx - 34, 232); ctx.stroke();
+        // 3D Glass Floor Grid
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)'; ctx.lineWidth = 1;
+        for (let gx = 0; gx < 520; gx += 40) {{
+          ctx.beginPath(); ctx.moveTo(gx, 150); ctx.lineTo(gx - 34, 242); ctx.stroke();
         }}
-        ctx.beginPath(); ctx.moveTo(0, 180); ctx.lineTo(520, 180); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 194); ctx.lineTo(520, 194); ctx.stroke();
 
-        // Web Cloud Portal on Left
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
-        ctx.beginPath(); ctx.arc(44, 58, 25 + Math.sin(t*0.08)*2, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 8.5px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('WEB CLOUD', 44, 55);
-        ctx.fillText('Iconify+AI', 44, 66);
+        for (let i = 0; i < team.length; i++) {{
+          const isAct = (activeStage === i) || (activeStage >= 4 && i === 3);
+          const isDn = (doneCount > i);
+          const gCol = isAct ? '#fbbf24' : (isDn ? '#34d399' : '#38bdf8');
+          drawGlassCabin(team[i].deskX, gCol, isAct);
+          drawDualMonitorDesk(team[i].deskX, 178, gCol);
+        }}
 
-        // Glowing Tool-to-Tool Laser Connection Beams!
-        const beamIdx = Math.min(2, Math.floor((t / 45) % 3));
-        const bA = bots[beamIdx], bB = bots[beamIdx + 1];
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 4]);
-        ctx.lineDashOffset = -t * 1.2;
-        ctx.beginPath(); ctx.moveTo(bA.x, 108); ctx.lineTo(bB.x, 108); ctx.stroke();
+        const curIdx = Math.min(2, Math.max(0, activeStage));
+        const walkProgress = (Math.sin(t * 0.032) * 0.5 + 0.5);
+        const walkerX = (team[curIdx].deskX + 16) + ((team[curIdx + 1].deskX - 28) - (team[curIdx].deskX + 16)) * walkProgress;
+
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)'; ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]); ctx.lineDashOffset = -t * 1.1;
+        ctx.beginPath(); ctx.moveTo(team[curIdx].deskX, 146); ctx.lineTo(team[curIdx + 1].deskX, 146); ctx.stroke();
         ctx.setLineDash([]);
 
-        // Animated Energy Packet travelling from Tool A -> Tool B
-        const pktP = (t % 45) / 45;
-        const px = bA.x + (bB.x - bA.x) * pktP;
-        ctx.fillStyle = '#fde047';
-        ctx.beginPath(); ctx.arc(px, 108, 4, 0, Math.PI * 2); ctx.fill();
-
-        // 3D Conveyor Belt cleanly below the walking bots
-        draw3DBox(68, 174, 420, 14, 16, '#1e293b', '#0f172a', '#020617');
-        for (let rx = 78; rx < 478; rx += 22) {{
-          const shift = (rx + (t * 1.8) % 22);
-          ctx.fillStyle = '#38bdf8'; ctx.fillRect(shift, 169, 8, 3);
-        }}
-        const phoneX = 88 + ((t * 1.1) % 360);
-        draw3DBox(phoneX, 152, 20, 20, 6, '#38bdf8', '#2563eb', '#1d4ed8');
-
-        // Draw all 4 Walking, Jumping, Talking Cartoon Workers
-        for (let i = 0; i < bots.length; i++) {{
-          const isAct = (activeStage === i) || (activeStage === 0 && i === 0) || (activeStage >= 4 && i === 3);
+        for (let i = 0; i < team.length; i++) {{
+          const isHanding = (i === curIdx);
+          const ex = isHanding ? walkerX : team[i].deskX;
           const isDn = (doneCount > i);
-          drawCartoonWorker(bots[i], i, isAct, isDn);
+          drawHumanEngineer(team[i], ex, 134, isHanding, isHanding, isHanding, isDn);
+          if (isHanding) {{
+            drawSpeechBubble(ex, 92, team[i].talk, '#fde047');
+          }} else if (isDn) {{
+            drawSpeechBubble(team[i].deskX, 92, 'VERIFIED ✓', '#34d399');
+          }}
         }}
 
-        // Flying Research Drone dropping crates between Web Cloud & Active Bot
-        const targetBot = bots[Math.min(3, Math.max(0, activeStage))];
-        const dx = 44 + (Math.sin(t * 0.04) * 0.5 + 0.5) * (targetBot.baseX - 44);
-        const dy = 38 + Math.sin(t * 0.12) * 7;
-        ctx.fillStyle = '#f59e0b';
-        ctx.beginPath(); ctx.ellipse(dx, dy, 13, 6, 0, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(dx-16, dy-6); ctx.lineTo(dx-5, dy-6); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(dx+5, dy-6); ctx.lineTo(dx+16, dy-6); ctx.stroke();
-        ctx.fillStyle = '#10b981'; ctx.fillRect(dx-5, dy+6, 10, 8);
-
-        // Top HUD Banner
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.fillRect(82, 6, 430, 22);
-        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(82, 6, 430, 22);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+        ctx.fillRect(10, 6, 500, 22);
+        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(10, 6, 500, 22);
         ctx.fillStyle = '#fde68a'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText(fid + ' | ' + msg, 90, 20);
+        ctx.fillText('NEXUS TECH STUDIO | ' + fid + ' | ' + msg, 18, 20);
 
         requestAnimationFrame(frame);
       }}
@@ -1402,7 +1169,7 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
     }})();
     </script>
     """
-    components.html(scene_html, height=240)
+    components.html(scene_html, height=250)
 
 def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
     """Display 1 (3D Cartoon Factory Movie + Live Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
@@ -1443,33 +1210,35 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
         rows += f"<div style='background:rgba(15,23,42,0.9);border:1px solid #1e293b;border-radius:10px;padding:7px 10px;margin-bottom:4px;display:flex;gap:8px;align-items:flex-start;'><span style='font-size:14px;'>{ic}</span><div><div style='font-size:11.5px;font-weight:700;color:{col};'>{stg['title']}</div>{sync_tag}{note}</div></div>"
     sync_slot.markdown(rows, unsafe_allow_html=True)
 
-def generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, icon_svg):
-    """Uses Nemotron VL / Gemini to build a realistic interactive mobile HTML preview with NO external brand names."""
+def generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, icon_svg, fetched_icons=None):
+    """Builds a real playable HTML5/Three.js preview with Bot Auto-Test -> Self-Play button + real Iconify SVGs."""
     b64_ic = base64.b64encode(icon_svg.encode("utf-8")).decode("utf-8")
     pal = design_doc.get("palette", {})
     is_game = (factory_id == "GAMING_FACTORY_01")
+    ic_b64s = [base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8") for ic in (fetched_icons or [])[:4]]
     prev_sys = (
-        "You are a Senior Mobile Prototyper building a realistic interactive HTML5+CSS3+JS mobile app preview inside a 296px wide phone frame.\n"
-        "Rules:\n"
-        "1. Output ONLY raw HTML+CSS+JS (NO markdown fences, just <div style=\"width:296px;height:540px;...\">...</div> + <script>...</script>).\n"
-        "2. Use the User's OWN brand name and tagline ONLY — never copy any third-party brand names.\n"
-        "3. Include a clickable top-right Wallet icon/pill and Profile icon that open real interactive in-phone panels (Wallet + Razorpay-Ready Test Checkout Sheet + User Profile).\n"
-        + ("4. GAMING_FACTORY_01: NO bottom nav bar; include Live XP Wallet, One-Way VIP Pass / Booster Unlock Store (0% cash prize pool), interactive Match/Level Cards, and a playable tap mini-game!"
-           if is_game else
-           "4. MARKET_FACTORY_02: Include 4-tab Bottom Navigation Bar, Hero Balance/Search Card, 4x2 Quick Action Icon Grid, Searchable Items, and Working Checkout Sheet!")
-        + "\n5. Put <img src=\"__APP_ICON__\" width=\"34\" height=\"34\" style=\"border-radius:10px;\"/> for the brand logo."
+        "You are a Senior Playable App & Game Prototyper building a 296x540 interactive HTML5+CSS3+JS mobile frame.\n"
+        "STRICT RULES:\n"
+        "1. Output ONLY raw HTML+CSS+JS (NO markdown fences).\n"
+        "2. Use ONLY the owner's brand name and prompt — ZERO third-party brand names.\n"
+        "3. Start in '🤖 Bot Auto-Testing' mode for 4 seconds (auto-steering/auto-playing or auto-filling sample data), with a glowing '🎮 Self-Play / Take Control' button so the user can take over immediately.\n"
+        "4. Include a real <canvas> game loop with Target Goal, Level 1->2->3 Model Unlocks, Win/Lose/Retry (if GAMING), OR interactive Add Entry + Chart + Razorpay-Ready Checkout + Profile (if MARKET).\n"
+        "5. Embed <img src=\"__APP_ICON__\" width=\"32\" height=\"32\" style=\"border-radius:10px;\"/> and optionally __ICON_0__, __ICON_1__."
     )
-    usr_p = f"Brand Title: {app_title}\nFactory: {factory_id}\nPrompt: {user_prompt[:850]}\nPalette: {json.dumps(pal)}\nDesign Doc: {json.dumps(design_doc)[:1100]}"
-    raw_html, _, _ = call_specialist_ai("live_preview", prev_sys, usr_p, max_tokens=2800)
-    if raw_html and "<div" in raw_html.lower() and ("<script" in raw_html.lower() or "onclick" in raw_html.lower()):
-        return raw_html.replace("__APP_ICON__", f"data:image/svg+xml;base64,{b64_ic}")
+    usr_p = f"Brand: {app_title}\nFactory: {factory_id}\nPrompt: {user_prompt[:850]}\nPalette: {json.dumps(pal)}\nDesign: {json.dumps(design_doc)[:950]}"
+    raw_html, _, _ = call_specialist_ai("live_preview", prev_sys, usr_p, max_tokens=3600)
+    if raw_html and "<div" in raw_html.lower() and ("<script" in raw_html.lower() or "onclick" in raw_html.lower()) and ("<canvas" in raw_html.lower() or not is_game):
+        out = raw_html.replace("__APP_ICON__", f"data:image/svg+xml;base64,{b64_ic}")
+        for idx, b_s in enumerate(ic_b64s):
+            out = out.replace(f"__ICON_{idx}__", f"data:image/svg+xml;base64,{b_s}")
+        return out
     return ""
 
 def render_live_mobile_preview(locked_bus):
-    """Renders Display 2: Realistic Interactive Phone Preview with rich guaranteed fallback."""
+    """Display 2: Guaranteed Real Playable Preview (Bot Auto-Test -> Self-Play Button) for ANY Gaming or Market Genre."""
     ai_html = locked_bus.get("preview_html", "")
     if ai_html:
-        components.html(f"<div style='display:flex;justify-content:center;'>{ai_html}</div>", height=560, scrolling=True)
+        components.html(f"<div style='display:flex;justify-content:center;'>{ai_html}</div>", height=575, scrolling=True)
         return
 
     dd = locked_bus.get("design_doc", {})
@@ -1483,99 +1252,390 @@ def render_live_mobile_preview(locked_bus):
     tagline = dd.get("tagline", "Smart Interactive Experience")
     is_game = (locked_bus.get("factory_id") == "GAMING_FACTORY_01")
     b64_ic = base64.b64encode(locked_bus["icon_svg"].encode("utf-8")).decode("utf-8")
+    low_p = (title + " " + locked_bus.get("user_prompt", "")).lower()
+
+    if any(k in low_p for k in ["construct", "excavator", "dig", "crane", "house", "site", "builder"]):
+        game_mode = "CONSTRUCTION"
+        models_js = '["Mini Excavator", "Heavy Dozer", "Mega Tower Crane"]'
+        action_lbl = "⛏️ DIG & BUILD"
+    elif any(k in low_p for k in ["truck", "bus", "wheel", "highway", "drive", "car", "race"]):
+        game_mode = "DRIVE"
+        models_js = '["Bharat Tipper", "Volvo Sleeper Bus", "18-Wheeler Rig"]'
+        action_lbl = "⚡ NITRO BOOST"
+    elif any(k in low_p for k in ["cricket", "bat", "xi", "pitch", "match"]):
+        game_mode = "CRICKET"
+        models_js = '["Street Bat", "Pro Willow", "Champion Gold Bat"]'
+        action_lbl = "🏏 HIT SIX!"
+    else:
+        game_mode = "ARCADE"
+        models_js = '["Starter Gear", "Turbo Pro", "Apex Legend"]'
+        action_lbl = "⚡ POWER PULSE"
+
+    fetched_ics = locked_bus.get("fetched_icons", [])
+    ic0_b64 = base64.b64encode(fetched_ics[0]["svg"].encode("utf-8")).decode("utf-8") if fetched_ics else b64_ic
 
     fallback_html = f"""
     <div style="display:flex;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-      <div style="width:296px;height:540px;background:{bg};border:4px solid #334155;border-radius:34px;box-shadow:0 20px 45px rgba(0,0,0,0.7);overflow:hidden;display:flex;flex-direction:column;color:{txt};">
+      <div style="width:298px;height:555px;background:{bg};border:4px solid #334155;border-radius:34px;box-shadow:0 20px 45px rgba(0,0,0,0.75);overflow:hidden;display:flex;flex-direction:column;color:{txt};">
         <div style="height:22px;background:#020617;display:flex;justify-content:center;align-items:center;"><div style="width:70px;height:10px;background:#1e293b;border-radius:999px;"></div></div>
-        <div style="padding:10px 12px;background:linear-gradient(135deg,{prim},{surf});display:flex;align-items:center;gap:8px;">
-          <img src="data:image/svg+xml;base64,{b64_ic}" width="34" height="34" style="border-radius:10px;border:1px solid rgba(255,255,255,0.3);"/>
+        <div style="padding:8px 10px;background:linear-gradient(135deg,{prim},{surf});display:flex;align-items:center;gap:7px;">
+          <img src="data:image/svg+xml;base64,{b64_ic}" width="32" height="32" style="border-radius:9px;border:1px solid rgba(255,255,255,0.3);"/>
           <div style="flex:1;min-width:0;">
-            <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{title}</div>
-            <div style="font-size:9.5px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{tagline}</div>
+            <div style="font-size:12.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{title}</div>
+            <div style="font-size:9px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{tagline}</div>
           </div>
-          <button onclick="openSheet('wallet')" style="background:rgba(0,0,0,0.35);border:1px solid {acc};color:#fff;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;">{'1000 XP' if is_game else '₹2,450'}</button>
-          <button onclick="openSheet('profile')" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:26px;height:26px;font-size:11px;cursor:pointer;">👤</button>
+          <button onclick="openSheet('wallet')" style="background:rgba(0,0,0,0.35);border:1px solid {acc};color:#fff;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:700;cursor:pointer;">{'🏆 LVL ' if is_game else '₹'}<span id="topVal">{'1' if is_game else '2450'}</span></button>
+          <button onclick="openSheet('profile')" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:24px;height:24px;font-size:10px;cursor:pointer;">👤</button>
         </div>
-        <div id="phoneBody" style="flex:1;padding:10px;overflow-y:auto;"></div>
-        <div id="phoneNav" style="background:{surf};padding:8px 6px;display:{'none' if is_game else 'flex'};justify-content:space-around;border-top:1px solid rgba(255,255,255,0.1);"></div>
+        <div style="background:#0f172a;padding:5px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;">
+          <span id="botBanner" style="font-size:9.5px;font-weight:700;color:#34d399;">🤖 AI Bot Auto-Testing...</span>
+          <button id="takeCtrlBtn" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:3px 9px;font-size:9.5px;font-weight:800;cursor:pointer;">🎮 Self-Play</button>
+        </div>
+        <div id="phoneBody" style="flex:1;padding:8px;overflow-y:auto;"></div>
+        <div id="phoneNav" style="background:{surf};padding:7px 5px;display:{'none' if is_game else 'flex'};justify-content:space-around;border-top:1px solid rgba(255,255,255,0.1);"></div>
       </div>
     </div>
     <script>
-      let xp = 1000, bal = 2450, vip = false, tab = 0;
       const isGame = {'true' if is_game else 'false'};
-      function renderBody() {{
-        const b = document.getElementById('phoneBody');
-        if (isGame) {{
-          b.innerHTML = `
-            <div style="background:linear-gradient(135deg,{prim}33,{surf});border:1px solid {prim};border-radius:14px;padding:12px;margin-bottom:10px;">
-              <div style="display:flex;justify-content:space-between;font-size:10px;color:{acc};font-weight:700;"><span>LIVE ARENA</span><span>${{vip ? '👑 VIP ACTIVE' : 'FREE TIER'}}</span></div>
-              <div style="font-size:15px;font-weight:800;margin:4px 0;">Match Challenge #1</div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-                <span style="background:{surf};padding:6px 10px;border-radius:10px;font-weight:800;font-size:12px;">TEAM A</span>
-                <span style="color:{acc};font-weight:800;font-size:11px;">VS</span>
-                <span style="background:{surf};padding:6px 10px;border-radius:10px;font-weight:800;font-size:12px;">TEAM B</span>
-              </div>
-              <button onclick="xp+=50;toast('Joined! +50 Bonus XP');renderBody();" style="width:100%;margin-top:10px;padding:9px;border:none;border-radius:10px;background:linear-gradient(135deg,{prim},{acc});color:#fff;font-weight:800;font-size:12px;cursor:pointer;">Build XI &amp; Play (+50 XP)</button>
-            </div>
-            <div style="background:{surf};border:1px solid {acc};border-radius:14px;padding:10px;margin-bottom:8px;">
-              <div style="font-size:11.5px;font-weight:800;color:{acc};">👑 One-Way VIP Unlock Store</div>
-              <div style="font-size:10px;opacity:0.8;margin:3px 0;">Unlock Pro Boosters &amp; Skins (Direct Owner Gateway)</div>
-              <button onclick="openSheet('gateway')" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:8px;background:{acc};color:#000;font-weight:800;font-size:11px;cursor:pointer;">Unlock VIP Pass (₹49)</button>
-            </div>
-            <div id="simMsg" style="font-size:11px;color:#34d399;text-align:center;font-weight:700;"></div>`;
-        }} else {{
-          const tabs = ['Home', 'Services', 'Wallet', 'Profile'];
-          document.getElementById('phoneNav').innerHTML = tabs.map((t, i) => `<button onclick="tab=${{i}};renderBody();" style="background:${{tab===i?'{prim}':'transparent'}};color:{txt};border:none;padding:4px 8px;border-radius:8px;font-size:10px;font-weight:700;cursor:pointer;">${{t}}</button>`).join('');
-          b.innerHTML = `
-            <div style="background:linear-gradient(135deg,{prim},{surf});border-radius:14px;padding:12px;margin-bottom:10px;">
-              <div style="font-size:10px;opacity:0.85;">Available Wallet Balance</div>
-              <div style="font-size:20px;font-weight:800;margin:2px 0;">₹${{bal.toLocaleString()}}</div>
-              <button onclick="openSheet('gateway')" style="margin-top:6px;padding:6px 12px;border:none;border-radius:8px;background:{acc};color:#000;font-weight:800;font-size:11px;cursor:pointer;">+ Add / Pay via Gateway</button>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              <button onclick="toast('Quick Action 1 Opened')" style="background:{surf};border:1px solid rgba(255,255,255,0.1);color:{txt};padding:12px 6px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;">⚡ Quick Pay</button>
-              <button onclick="toast('Records Opened')" style="background:{surf};border:1px solid rgba(255,255,255,0.1);color:{txt};padding:12px 6px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;">📒 Ledger</button>
-              <button onclick="openSheet('wallet')" style="background:{surf};border:1px solid rgba(255,255,255,0.1);color:{txt};padding:12px 6px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;">💳 Passbook</button>
-              <button onclick="openSheet('profile')" style="background:{surf};border:1px solid rgba(255,255,255,0.1);color:{txt};padding:12px 6px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;">👤 Profile</button>
-            </div>
-            <div id="simMsg" style="margin-top:10px;font-size:11px;color:#34d399;text-align:center;font-weight:700;"></div>`;
-        }}
+      const gameMode = '{game_mode}';
+      const models = {models_js};
+      let autoBot = true, score = 0, level = 1, lives = 3, xp = 1000, bal = 2450, vip = false, tab = 0;
+      let px = 135, vx = 0, boost = 0, gameOver = false, tick = 0;
+      let items = [{{x:70,y:20,good:true}},{{x:195,y:-60,good:false}},{{x:130,y:-140,good:true}}];
+      let ledger = [{{title:'Opening Balance', amt:2450, t:'CR'}}];
+
+      function toggleSelfPlay() {{
+        autoBot = !autoBot;
+        document.getElementById('botBanner').innerText = autoBot ? '🤖 AI Bot Auto-Testing...' : '🎮 Self-Play Active (Your Turn!)';
+        document.getElementById('botBanner').style.color = autoBot ? '#34d399' : '#fde047';
+        document.getElementById('takeCtrlBtn').innerText = autoBot ? '🎮 Self-Play' : '🤖 Resume Bot';
       }}
+
+      function renderGameShell() {{
+        document.getElementById('phoneBody').innerHTML = `
+          <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;margin-bottom:4px;">
+            <span>Score: <b id="gScore" style="color:{acc};">0</b>/${{level*100}}</span>
+            <span>Model: <b id="gModel" style="color:#38bdf8;">${{models[Math.min(2,level-1)]}}</b></span>
+            <span id="gLives">❤️❤️❤️</span>
+          </div>
+          <canvas id="gameCv" width="272" height="235" style="width:100%;border-radius:12px;border:1.5px solid {prim};background:#060d1f;display:block;"></canvas>
+          <div style="display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:6px;margin-top:7px;">
+            <button onmousedown="vx=-4" ontouchstart="vx=-4" onmouseup="vx=0" ontouchend="vx=0" onclick="if(autoBot)toggleSelfPlay();px=Math.max(24,px-24);" style="padding:10px;border:none;border-radius:10px;background:{surf};color:#fff;font-weight:800;font-size:13px;cursor:pointer;">◀ LEFT</button>
+            <button onclick="if(autoBot)toggleSelfPlay();boost=12;score+=15;" style="padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,{prim},{acc});color:#fff;font-weight:800;font-size:11px;cursor:pointer;">{action_lbl}</button>
+            <button onmousedown="vx=4" ontouchstart="vx=4" onmouseup="vx=0" ontouchend="vx=0" onclick="if(autoBot)toggleSelfPlay();px=Math.min(248,px+24);" style="padding:10px;border:none;border-radius:10px;background:{surf};color:#fff;font-weight:800;font-size:13px;cursor:pointer;">RIGHT ▶</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button onclick="openSheet('gateway')" style="flex:1;padding:7px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;font-size:10px;cursor:pointer;">👑 Unlock VIP (₹49)</button>
+            <button onclick="score=0;level=1;lives=3;gameOver=false;" style="padding:7px 10px;border:none;border-radius:9px;background:#334155;color:#fff;font-weight:700;font-size:10px;cursor:pointer;">🔄 Retry</button>
+          </div>
+          <div id="gBanner" style="margin-top:5px;text-align:center;font-size:10.5px;font-weight:800;color:#34d399;"></div>`;
+        requestAnimationFrame(gameLoop);
+      }}
+
+      function gameLoop() {{
+        const cv = document.getElementById('gameCv');
+        if (!cv) return;
+        const ctx = cv.getContext('2d');
+        tick++;
+        ctx.clearRect(0, 0, 272, 235);
+
+        // 3D Perspective Ground / Road / Site
+        ctx.fillStyle = gameMode === 'CRICKET' ? '#064e3b' : (gameMode === 'CONSTRUCTION' ? '#292524' : '#0f172a');
+        ctx.fillRect(0, 0, 272, 235);
+        ctx.fillStyle = gameMode === 'CRICKET' ? '#d97706' : '#1e293b';
+        ctx.beginPath(); ctx.moveTo(100, 0); ctx.lineTo(172, 0); ctx.lineTo(252, 235); ctx.lineTo(20, 235); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
+        for (let y = (tick * 4) % 36; y < 235; y += 36) {{
+          ctx.beginPath(); ctx.moveTo(136, y); ctx.lineTo(136, y + 16); ctx.stroke();
+        }}
+
+        if (!gameOver) {{
+          if (autoBot) {{
+            const good = items.find(i => i.good && i.y > 0) || items[0];
+            const bad = items.find(i => !i.good && i.y > 120);
+            let targetX = bad ? (bad.x < 136 ? 205 : 65) : good.x;
+            px += (targetX - px) * 0.08;
+          }} else {{
+            px = Math.max(24, Math.min(248, px + vx));
+          }}
+          if (boost > 0) boost--;
+
+          for (let it of items) {{
+            it.y += (2.4 + level * 0.55 + (boost > 0 ? 1.8 : 0));
+            if (it.y > 240) {{ it.y = -20; it.x = 40 + Math.random() * 190; it.good = Math.random() > 0.35; }}
+            ctx.fillStyle = it.good ? '#fbbf24' : '#ef4444';
+            ctx.beginPath(); ctx.arc(it.x, it.y, it.good ? 9 : 11, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#000'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(it.good ? (gameMode==='CONSTRUCTION'?'🧱':'★') : '✖', it.x, it.y + 3);
+            if (Math.abs(it.y - 196) < 18 && Math.abs(it.x - px) < 22) {{
+              if (it.good) {{
+                score += 25; xp += 25;
+                if (score >= level * 100 && level < 3) {{
+                  level++;
+                  document.getElementById('gBanner').innerText = '🎉 LEVEL ' + level + ' UNLOCKED: ' + models[level-1] + '!';
+                }}
+              }} else {{
+                lives--;
+                if (lives <= 0) {{ gameOver = true; document.getElementById('gBanner').innerText = '💥 MISSION FAILED! Tap Retry.'; }}
+              }}
+              it.y = -25; it.x = 40 + Math.random() * 190;
+            }}
+          }}
+        }}
+
+        // Draw Player Vehicle / Rig / Character
+        ctx.fillStyle = '{prim}'; ctx.fillRect(px - 16, 182, 32, 28);
+        ctx.fillStyle = '{acc}'; ctx.fillRect(px - 12, 186, 24, 12);
+        ctx.fillStyle = '#38bdf8'; ctx.fillRect(px - 10, 176, 20, 6);
+        document.getElementById('gScore').innerText = score;
+        document.getElementById('gModel').innerText = models[Math.min(2, level - 1)];
+        document.getElementById('gLives').innerText = '❤️'.repeat(Math.max(0, lives)) || '💀';
+        document.getElementById('topVal').innerText = level;
+        requestAnimationFrame(gameLoop);
+      }}
+
+      function renderMarketShell() {{
+        const tabs = ['Home', 'Add', 'Wallet', 'Profile'];
+        document.getElementById('phoneNav').innerHTML = tabs.map((t, i) => `<button onclick="if(autoBot)toggleSelfPlay();tab=${{i}};renderMarketShell();" style="background:${{tab===i?'{prim}':'transparent'}};color:{txt};border:none;padding:4px 8px;border-radius:8px;font-size:10px;font-weight:700;cursor:pointer;">${{t}}</button>`).join('');
+        const b = document.getElementById('phoneBody');
+        document.getElementById('topVal').innerText = bal;
+        if (tab === 1) {{
+          b.innerHTML = `<div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
+            <div style="font-size:13px;font-weight:800;margin-bottom:8px;">➕ Add New Entry / Order</div>
+            <input id="eTitle" value="Customer Order #${{ledger.length+1}}" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:6px;"/>
+            <input id="eAmt" type="number" value="450" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:8px;"/>
+            <button onclick="const t=document.getElementById('eTitle').value;const a=Number(document.getElementById('eAmt').value||0);bal+=a;ledger.unshift({{title:t,amt:a,t:'CR'}});tab=0;renderMarketShell();" style="width:100%;padding:9px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Save &amp; Update Chart</button>
+          </div>`;
+          return;
+        }}
+        b.innerHTML = `
+          <div style="background:linear-gradient(135deg,{prim},{surf});border-radius:14px;padding:11px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div style="font-size:10px;opacity:0.85;">Live Balance</div><div style="font-size:20px;font-weight:800;">₹${{bal.toLocaleString()}}</div></div>
+              <img src="data:image/svg+xml;base64,{ic0_b64}" width="32" height="32"/>
+            </div>
+            <button onclick="if(autoBot)toggleSelfPlay();openSheet('gateway');" style="margin-top:6px;padding:6px 11px;border:none;border-radius:8px;background:{acc};color:#000;font-weight:800;font-size:10.5px;cursor:pointer;">+ Pay via UPI Gateway</button>
+          </div>
+          <div style="background:{surf};border-radius:12px;padding:8px;margin-bottom:8px;">
+            <div style="font-size:10px;font-weight:700;color:#38bdf8;margin-bottom:4px;">📊 Live Revenue Chart (${{ledger.length}} txns)</div>
+            <div style="display:flex;align-items:flex-end;gap:6px;height:44px;">
+              ${{ledger.slice(0,5).map((x,idx)=>`<div style="flex:1;background:{acc};height:${{Math.min(42,14+idx*6)}}px;border-radius:4px;"></div>`).join('')}}
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <button onclick="if(autoBot)toggleSelfPlay();tab=1;renderMarketShell();" style="background:{surf};border:1px solid rgba(255,255,255,0.12);color:{txt};padding:9px;border-radius:10px;font-size:10.5px;font-weight:700;cursor:pointer;">➕ Add Entry</button>
+            <button onclick="if(autoBot)toggleSelfPlay();openSheet('wallet');" style="background:{surf};border:1px solid rgba(255,255,255,0.12);color:{txt};padding:9px;border-radius:10px;font-size:10.5px;font-weight:700;cursor:pointer;">💳 Passbook</button>
+          </div>`;
+      }}
+
       function openSheet(kind) {{
         const b = document.getElementById('phoneBody');
+        const backFn = isGame ? 'renderGameShell()' : 'renderMarketShell()';
         if (kind === 'gateway') {{
           b.innerHTML = `<div style="background:{surf};border:1.5px solid {acc};border-radius:14px;padding:12px;">
             <div style="font-size:13px;font-weight:800;color:{acc};">🔒 Razorpay-Ready Checkout</div>
             <div style="font-size:11px;margin:6px 0;opacity:0.9;">Direct Owner Payment • UPI / Card / NetBanking</div>
-            <button onclick="vip=true;bal+=500;renderBody();toast('Payment Captured! Unlocked.');" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Success Pay</button>
-            <button onclick="renderBody();" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Back</button>
+            <button onclick="vip=true;bal+=500;xp+=200;${{backFn}};" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Pay Success</button>
+            <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Back</button>
           </div>`;
         }} else if (kind === 'profile') {{
           b.innerHTML = `<div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
-            <div style="font-size:14px;font-weight:800;">👤 User Profile</div>
-            <div style="font-size:11px;margin:6px 0;opacity:0.85;">Verified Cloud Account • Supabase Synced</div>
-            <button onclick="renderBody();toast('Profile Saved!');" style="width:100%;padding:9px;border:none;border-radius:10px;background:{prim};color:#fff;font-weight:700;cursor:pointer;">Save &amp; Back</button>
+            <div style="font-size:14px;font-weight:800;">👤 Verified Profile</div>
+            <div style="font-size:11px;margin:6px 0;">Level: ${{level}} | Supabase Cloud Synced</div>
+            <button onclick="${{backFn}};" style="width:100%;padding:9px;border:none;border-radius:10px;background:{prim};color:#fff;font-weight:700;cursor:pointer;">Save &amp; Back</button>
           </div>`;
         }} else {{
           b.innerHTML = `<div style="background:{surf};border:1px solid {acc};border-radius:14px;padding:12px;">
             <div style="font-size:14px;font-weight:800;">💳 Wallet &amp; Passbook</div>
             <div style="font-size:12px;margin:6px 0;">Balance: ${'{isGame ? xp + " XP" : "₹" + bal}'}</div>
             <button onclick="openSheet('gateway')" style="width:100%;padding:9px;border:none;border-radius:10px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Open Checkout Gateway</button>
-            <button onclick="renderBody();" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Close</button>
+            <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Close</button>
           </div>`;
         }}
       }}
-      function toast(m) {{ const e = document.getElementById('simMsg'); if (e) e.innerText = '✅ ' + m; }}
-      renderBody();
+
+      if (isGame) {{
+        renderGameShell();
+      }} else {{
+        renderMarketShell();
+        setInterval(() => {{
+          if (autoBot && document.getElementById('phoneBody') && tab === 0) {{
+            bal += 120;
+            ledger.unshift({{title:'Bot Auto-Test #'+ledger.length, amt:120, t:'CR'}});
+            renderMarketShell();
+          }}
+        }}, 3500);
+      }}
     </script>
     """
-    components.html(fallback_html, height=560)
+    locked_bus["rendered_preview_html"] = fallback_html
+    components.html(fallback_html, height=575)
+
+# ==============================================================================
+# WORLD SCOUT BOT + CHIEF COMMANDER DEEP AUDIT (BACKGROUND THREAD + HEARTBEAT)
+# ==============================================================================
+def _extract_svg_inner(svg_txt):
+    """Extracts pure vector geometry (<path>,<circle>,<rect>,<polygon>,<g>) and viewBox from Iconify SVG."""
+    if not svg_txt or "<svg" not in svg_txt.lower():
+        return "0 0 24 24", '<circle cx="12" cy="12" r="9" fill="#38bdf8"/>'
+    vb_m = re.search(r"viewBox=[\'\"]([^\'\"]+)[\'\"]", svg_txt, flags=re.IGNORECASE)
+    vb = vb_m.group(1) if vb_m else "0 0 24 24"
+    inner = re.sub(r'^.*?<svg[^>]*>', '', svg_txt, flags=re.IGNORECASE | re.DOTALL)
+    inner = re.sub(r'</svg>.*$', '', inner, flags=re.IGNORECASE | re.DOTALL).strip()
+    inner = re.sub(r'currentColor', '#ffffff', inner)
+    return vb, (inner or '<circle cx="12" cy="12" r="9" fill="#38bdf8"/>')
+
+def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons):
+    """Builds a 512x512 Pure-Vector 3D Metallic Brand Logo (no nested <image>, 100% ImageMagick APK safe) + 3D Badge Text."""
+    badge_words = re.sub(r'[^A-Za-z0-9 ]', '', app_title or "PRO").upper().split()
+    badge_txt = " ".join(badge_words[:2])[:11] or "PRO 3D"
+    ic_svg = fetched_icons[0]["svg"] if fetched_icons else ""
+    vb, inner = _extract_svg_inner(ic_svg)
+    try:
+        parts = [float(x) for x in vb.replace(",", " ").split()]
+        vw, vh = (parts[2], parts[3]) if len(parts) >= 4 and parts[2] > 0 and parts[3] > 0 else (24.0, 24.0)
+    except Exception:
+        vw, vh = 24.0, 24.0
+    scale = min(220.0 / vw, 220.0 / vh)
+    tx = 256.0 - (vw * scale) / 2.0
+    ty = 215.0 - (vh * scale) / 2.0
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">'
+        f'<defs>'
+        f'<linearGradient id="bg3d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="{c1}"/><stop offset="100%" stop-color="{c2}"/></linearGradient>'
+        f'<linearGradient id="rim3d" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/><stop offset="100%" stop-color="#0f172a" stop-opacity="0.9"/></linearGradient>'
+        f'</defs>'
+        f'<rect width="512" height="512" rx="112" fill="url(#bg3d)"/>'
+        f'<rect x="26" y="26" width="460" height="460" rx="92" fill="#0b1120" opacity="0.82" stroke="url(#rim3d)" stroke-width="10"/>'
+        f'<ellipse cx="256" cy="96" rx="170" ry="38" fill="#ffffff" opacity="0.10"/>'
+        f'<g transform="translate({tx:.1f},{ty:.1f}) scale({scale:.2f})">{inner}</g>'
+        f'<rect x="96" y="388" width="320" height="56" rx="28" fill="{c1}" stroke="#ffffff" stroke-width="4"/>'
+        f'<text x="256" y="426" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle">{badge_txt}</text>'
+        f'</svg>'
+    )
+
+def fetch_github_top_starred_repos(query_text, is_game):
+    """World Scout Pass 1: Finds top-starred open-source Flutter/Game repos so low-quality code is filtered out."""
+    q_words = [w for w in re.findall(r'[a-zA-Z]{3,}', (query_text or "").lower()) if w not in ("build", "app", "make", "with", "using", "and", "the", "for", "pro", "free")]
+    topic = " ".join(q_words[:3]) or ("game" if is_game else "wallet")
+    q = urllib.parse.quote(f"{topic} {'flutter flame threejs' if is_game else 'flutter material3'}")
+    url = f"https://api.github.com/search/repositories?q={q}&sort=stars&order=desc&per_page=5"
+    results = []
+    try:
+        data = github_api_request(url, method="GET", timeout=10)
+        for r in data.get("items", [])[:4]:
+            results.append({
+                "name": r.get("full_name", ""),
+                "stars": r.get("stargazers_count", 0),
+                "desc": (r.get("description") or "")[:95],
+                "url": r.get("html_url", "")
+            })
+    except Exception:
+        pass
+    if not results:
+        results = [
+            {"name": "flame-engine/flame" if is_game else "flutter/samples", "stars": 9500, "desc": "Official Open-Source Engine & Material 3 Patterns", "url": "https://github.com/flame-engine/flame" if is_game else "https://github.com/flutter/samples"}
+        ]
+    return results
+
+def _update_scout_state(job_id, updates):
+    st_obj = _SCOUT_JOBS.get(job_id) or load_json_file(SCOUT_STATE_FILE, {})
+    st_obj.update(updates)
+    _SCOUT_JOBS[job_id] = st_obj
+    save_json_file(SCOUT_STATE_FILE, st_obj)
+
+def run_world_scout_background(job_id, app_title, user_prompt, selected_factory):
+    """Deep multi-pass World Scout + Chief Commander Audit running safely in a background thread."""
+    try:
+        is_g = ("GAMING" in selected_factory) or any(k in (app_title + " " + user_prompt).lower() for k in ["game", "racing", "arcade", "11", "3d", "fantasy", "construct", "excavator", "truck", "cricket"])
+        fid = selected_factory if selected_factory in FACTORY_REGISTRY else ("GAMING_FACTORY_01" if is_g else "MARKET_FACTORY_02")
+
+        _update_scout_state(job_id, {
+            "pass_msg": "Pass 1/4: World Scout searching Top-Starred GitHub Repos...",
+            "factory_id": fid,
+            "workers_status": "STANDBY - Reading Scout Board (Waiting for Chief Commander ACCESS GRANTED)"
+        })
+        gh_repos = fetch_github_top_starred_repos(app_title + " " + user_prompt, is_g)
+        _update_scout_state(job_id, {
+            "gh_repos": gh_repos,
+            "pass_msg": f"Pass 2/4: World Scout studying real-world Play-Store mechanics ({fid})..."
+        })
+
+        web_sys = "You are World Scout Bot. Research how real-world Play-Store apps/games of this genre work (exact screens, controllers, levels/unlocks or charts/checkout). Give 4 concrete findings + 1 recommended hex palette (#bg, #surface, #primary, #accent)."
+        web_notes, web_m, _ = call_specialist_ai("design_brain", web_sys, f"Title: {app_title}\nPrompt: {user_prompt}\nTop GitHub Refs: {json.dumps(gh_repos)}", max_tokens=500)
+        _update_scout_state(job_id, {
+            "web_findings": web_notes or "Use tactile controls, progressive level/model unlocks, and verified Material 3 layout.",
+            "pass_msg": "Pass 3/4: Fetching Pure-Vector Iconify Assets & Palette..."
+        })
+
+        icons = fetch_live_iconify_icons(app_title + " " + user_prompt, fid)
+        _update_scout_state(job_id, {
+            "fetched_icons": icons,
+            "pass_msg": "Pass 4/4: Chief Quality Director auditing & issuing strict orders..."
+        })
+
+        chief_sys = (
+            "You are the Chief Quality Director sitting above 16 app/game workers. "
+            "Review the World Scout's Top-Star GitHub repos and real-world findings. "
+            "Issue a strict, non-negotiable Play-Store Blueprint so workers NEVER build cheap/generic drafts. "
+            "Output ONLY JSON: "
+            '{"palette": {"bg": "#0B1120", "surface": "#162032", "primary": "#2563EB", "accent": "#F59E0B", "text": "#F8FAFC"}, '
+            '"commander_order": "3-sentence strict directive for Designers, Logo Studio & Flutter Coders", '
+            '"access_status": "ACCESS GRANTED"}'
+        )
+        chief_raw, chief_m, _ = call_specialist_ai("reviewer", chief_sys, f"App: {app_title} ({fid})\nPrompt: {user_prompt}\nGitHub Top-Star: {json.dumps(gh_repos)}\nWorld Findings: {web_notes}", max_tokens=450)
+        chief_json = extract_json_object(chief_raw) or {}
+        pal = chief_json.get("palette") or {"bg": "#0B1120", "surface": "#162032", "primary": "#E11D48" if is_g else "#4F46E5", "accent": "#F59E0B" if is_g else "#10B981", "text": "#F8FAFC"}
+        cmd_order = chief_json.get("commander_order") or f"Build {app_title} strictly matching real-world {fid} standards with domain icons, playable mechanics/charts, and zero placeholders."
+
+        _update_scout_state(job_id, {
+            "status": "granted",
+            "pass_msg": "Chief Commander Audit Complete -> ACCESS GRANTED!",
+            "workers_status": "ACCESS GRANTED - 16 Workers Executing Chief Commander Blueprint",
+            "palette": pal,
+            "commander_order": f"[{chief_m or 'Chief Director'}] {cmd_order}",
+            "scout_brief": {
+                "gh_repos": gh_repos,
+                "web_findings": web_notes,
+                "fetched_icons": icons,
+                "palette": pal,
+                "commander_order": cmd_order
+            }
+        })
+    except Exception as e:
+        _update_scout_state(job_id, {"status": "error", "pass_msg": f"Scout Error: {str(e)[:120]}"})
+
+def render_scout_command_board(scout_st):
+    """Renders live World Scout findings, GitHub Stars, Colors, Icons & Chief Commander Access Gate on Display 1."""
+    if not scout_st:
+        return
+    stt = scout_st.get("status", "scouting")
+    w_stat = scout_st.get("workers_status", "STANDBY")
+    pass_msg = scout_st.get("pass_msg", "Scouting...")
+    gh_repos = scout_st.get("gh_repos", [])
+    pal = scout_st.get("palette", {})
+    cmd_ord = scout_st.get("commander_order", "Chief Commander reviewing World Scout findings before granting worker access...")
+    badge_col = "#10b981" if stt == "granted" else "#f59e0b"
+    repo_html = "".join([f"<div style='font-size:10px;color:#cbd5e1;'>⭐ {r['stars']} • <a href='{r['url']}' style='color:#38bdf8;text-decoration:none;'>{r['name']}</a> — {r['desc'][:55]}</div>" for r in gh_repos[:3]]) or "<div style='font-size:10px;color:#94a3b8;'>Scanning GitHub top-starred repos...</div>"
+    pal_html = "".join([f"<span style='display:inline-block;width:14px;height:14px;border-radius:4px;background:{v};border:1px solid #fff;margin-right:4px;' title='{k}:{v}'></span>" for k, v in pal.items()]) if pal else "<span style='font-size:10px;color:#94a3b8;'>Analyzing optimal palette...</span>"
+    st.markdown(f"""
+    <div style="background:rgba(15,23,42,0.96);border:1.5px solid {badge_col};border-radius:14px;padding:10px 12px;margin:8px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <b style="color:#38bdf8;font-size:12px;">🌍 World Scout &amp; Chief Commander Board</b>
+        <span style="background:{badge_col}22;border:1px solid {badge_col};color:{badge_col};padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:800;">{stt.upper()}</span>
+      </div>
+      <div style="font-size:11px;color:#fde68a;margin-bottom:5px;"><b>Live Step:</b> {pass_msg}</div>
+      <div style="font-size:10.5px;color:#a78bfa;margin-bottom:6px;"><b>16 Workers Gate:</b> {w_stat}</div>
+      <div style="margin-bottom:6px;"><b style="font-size:10.5px;color:#e2e8f0;">Top-Star GitHub Refs:</b>{repo_html}</div>
+      <div style="margin-bottom:6px;"><b style="font-size:10.5px;color:#e2e8f0;">Selected Palette:</b> {pal_html}</div>
+      <div style="font-size:10.5px;color:#6ee7b7;background:rgba(16,185,129,0.1);padding:6px 8px;border-radius:8px;"><b>Commander Order:</b> {cmd_ord}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ==============================================================================
 # PHASE 1: 16-DEPT DESIGN-FIRST PIPELINE (STEPS 1-8 — ZERO CODE WRITTEN!)
 # ==============================================================================
-def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, selected_factory="AUTO", design_feedback=""):
+def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, selected_factory="AUTO", design_feedback="", scout_brief=None):
     """Executes Depts 1-8: Factory ID Router, Iconify Fetcher, Gemini Search, Human UX Brain, Frame Director, Premium Studio, Brand Logo & Live Preview."""
     stages = [
         {"title": "Dept 1-2: Factory ID Router + Live Iconify/Game-Icons Fetcher", "status": "running", "sync": "User Prompt + External Icon API", "note": "Routing to GAMING_FACTORY_01 or MARKET_FACTORY_02..."},
@@ -1621,7 +1681,7 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, select
     project_bus["orchestrator"] = orch_json
 
     # Dept 2: Live Open-Source SVG Icon Fetcher (api.iconify.design / game-icons.net)
-    fetched_icons = fetch_live_iconify_icons(app_title + " " + user_prompt, factory_id, ai_keywords=orch_json.get("icon_keywords", []))
+    fetched_icons = (scout_brief.get("fetched_icons") if scout_brief and scout_brief.get("fetched_icons") else fetch_live_iconify_icons(app_title + " " + user_prompt, factory_id, ai_keywords=orch_json.get("icon_keywords", [])))
     project_bus["fetched_icons"] = fetched_icons
     stages[0]["status"] = "done"
     stages[0]["note"] = f"[{orch_m}] Routed to {factory_id} | Pulled {len(fetched_icons)} live SVG icons."
@@ -1645,12 +1705,13 @@ Review the idea and Factory Tool Store, and output 4 sharp developer mandates so
     stages[1]["note"] = f"[{brain_m}] Trends + [{hum_m}] Human Dev Mandates locked."
     stages[2]["status"] = "running"
     project_bus["cross_check_msg"] = f"Human Dev Brain -> {factory_id} Frame Director -> Premium Studio"
-    speak_boss_voice(f"{OWNER_NAME} Boss, design aur open-source icons par achha kaam ho raha hai, thoda time lag raha hai, ghabrao mat!", voice_style=st.session_state.get("boss_voice_style", "Default Hindi-English"))
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
     # Dept 5: Dedicated Frame Director (GAMING_FACTORY_01 vs MARKET_FACTORY_02)
     director_role = "frame_director_gaming" if factory_id == "GAMING_FACTORY_01" else "frame_director_market"
     des_sys = f"""You are Dept 5 Dedicated Frame Director for {factory_id} ({f_meta['name']}).
+PRO ARCHITECT MANDATE:
+- Think ABOVE the user's short prompt like a Senior Play-Store App/Game Architect! Automatically add rich pro features (Gaming: 3 progressive levels, target goals, model/vehicle unlocks, particle/HUD feedback, 0% cash prize pool; Market: live fl_chart analytics, smart search/filters, instant receipt summary, Razorpay-ready UPI checkout, Gmail OTP).
 STRICT RULES:
 - Use ONLY the owner's own brand '{app_title}' — NEVER copy or mention any third-party brand names.
 - Incorporate these Factory Tool Store modules: {json.dumps(f_meta['tool_store'])}.
@@ -1666,7 +1727,8 @@ Output ONLY valid JSON:
   "icon_style": "Original 3D layered metallic/neon emblem concept (NO letters/initials!)",
   "screens": [{{"name": "Main Hub", "layout": "Hero + Wallet + Interactive Cards", "buttons": ["Primary Action"]}}]
 }}"""
-    raw_des, des_m, _ = call_specialist_ai(director_role, des_sys, f"Brand: {app_title}\nPrompt: {user_prompt}\nHuman Dev Mandates:\n{hum_notes}\nTrends:\n{project_bus['market_brain'][:700]}\nOwner Changes: {design_feedback}", max_tokens=1500)
+    chief_ctx = json.dumps(scout_brief)[:900] if scout_brief else ""
+    raw_des, des_m, _ = call_specialist_ai(director_role, des_sys, f"Brand: {app_title}\nPrompt: {user_prompt}\nChief Commander Blueprint: {chief_ctx}\nHuman Dev Mandates:\n{hum_notes}\nTrends:\n{project_bus['market_brain'][:700]}\nOwner Changes: {design_feedback}", max_tokens=1500)
     design_doc = extract_json_object(raw_des)
     if not design_doc:
         fix_des, _, _ = call_specialist_ai("repair_center", "Convert into valid JSON only matching the design schema.", raw_des[:2200], max_tokens=1400)
@@ -1710,12 +1772,8 @@ Output ONLY valid JSON:
     pal = design_doc.get("palette", {})
     c1 = pal.get("primary", "#2563EB")
     c2 = pal.get("accent", "#10B981")
-    ic_sys = f"""Create ONE original 512x512 SVG App Logo matching: {design_doc.get('icon_style', '3D Layered Brand Emblem')}.
-Rules: Output ONLY raw <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">...</svg>.
-Use rich layered linearGradient/radialGradient ({c1} to {c2}), rounded rect rx="116", and bold geometric <path>/<polygon>/<circle> shapes. STRICTLY NO <text> or alphabet letters!"""
-    raw_svg, ic_m, _ = call_specialist_ai("icon_gen", ic_sys, f"Own Brand: {app_title}\nTagline: {design_doc.get('tagline')}", max_tokens=1100)
-    if not raw_svg or "<svg" not in raw_svg.lower() or "<text" in raw_svg.lower():
-        raw_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="{c1}"/><stop offset="100%" stop-color="{c2}"/></linearGradient><linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="url(#bg)"/><path d="M256 76 L396 134 V254 C396 346 332 406 256 436 C180 406 116 346 116 254 V134 Z" fill="#0f172a" opacity="0.88" stroke="#ffffff" stroke-width="12"/><polygon points="282,138 188,266 254,266 234,374 328,236 262,236" fill="url(#gold)"/></svg>'''
+    raw_svg = build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons)
+    ic_m = "PureVector3D-Iconify"
     project_bus["icon_svg"] = raw_svg
     project_bus["icon_model"] = ic_m or "Logo AI"
     stages[3]["status"] = "done"
@@ -1726,7 +1784,15 @@ Use rich layered linearGradient/radialGradient ({c1} to {c2}), rounded rect rx="
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
     # Dept 8: Realistic Interactive Mobile Preview
-    project_bus["preview_html"] = generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, raw_svg)
+    prev_res = generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, raw_svg, fetched_icons)
+    project_bus["preview_html"] = prev_res
+    if factory_id == "GAMING_FACTORY_01":
+        project_bus["extra_deps"]["webview_flutter"] = "^4.14.0"
+        project_bus["extra_deps"]["flame"] = "^1.38.2"
+    else:
+        project_bus["extra_deps"]["fl_chart"] = "^0.69.0"
+        project_bus["extra_deps"]["flutter_animate"] = "^4.5.2"
+        project_bus["extra_deps"]["lucide_icons_flutter"] = "^4.0.2"
     stages[4]["status"] = "done"
     stages[4]["note"] = "Test Wallet, Gateway, Profile & Buttons below, then Lock Design."
     project_bus["boss_status"] = f"{factory_id} Design & Live Preview ready! Waiting for Owner Lock."
@@ -1736,8 +1802,6 @@ Use rich layered linearGradient/radialGradient ({c1} to {c2}), rounded rect rx="
 
     msg_p1 = f"Wah {OWNER_NAME} Boss! {app_title} ka {factory_id} design, live icons aur mobile preview ekdum mast taiyar ho gaya hai. Check karke lock karein!"
     project_bus["last_voice_msg"] = msg_p1
-    st.session_state["pending_boss_speech"] = msg_p1
-    st.session_state["spoken_last"] = msg_p1
     save_json_file(DESIGN_LOCK_FILE, project_bus)
     return project_bus, None
 
@@ -1811,7 +1875,7 @@ Define clean StatefulWidget screen classes:
 - `WorkspaceOrActionScreen` ({'11-Player Credit Squad / Challenge Builder + One-Way VIP Store Unlocks (0% cash prize pool)' if app_type == 'GAMING' else 'Interactive Order/Ledger/Service Creator calling SupabaseApi.saveItem + PaymentGatewayService.openCheckoutSheet'}).
 - `RecordsOrRankScreen` (searchable live list + Wallet Passbook tab).
 - `ProfileOrSettingsScreen` (User Profile Overview, Edit Name/Phone saved via `SupabaseApi.updateProfile`, Logout).
-{'Include playable `CustomPainter` interactive mini-game screen (`PlayGameScreen`) awarding Free XP!' if app_type == 'GAMING' else ''}
+{'Include `PlayGameScreen` using `webview_flutter` (`WebViewWidget` loading `assets/game.html` via `loadFlutterAsset`) + fallback `CustomPainter` mini-game awarding Free XP!' if app_type == 'GAMING' else 'Use `fl_chart`, `flutter_animate`, and `lucide_icons_flutter` for premium Material 3 charts and animations!'}
 Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`bodyText2`; ALWAYS use `CardThemeData`; NEVER put `const ` before Screen constructors; ZERO empty `() {{}}` buttons. Output ONLY raw Dart code."""
     screens_dart, fe_m, err_fe = call_specialist_ai(
         "frontend_coder", fe_sys,
@@ -1825,7 +1889,6 @@ Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`b
     stages[2]["note"] = f"[{fe_m}] Full lib/screens/app_screens.dart written."
     stages[3]["status"] = "running"
     project_bus["cross_check_msg"] = f"Full UI ({fe_m}) -> Navigation Specialist (main.dart)"
-    speak_boss_voice(f"{OWNER_NAME} Boss, heavy coding chal rahi hai, sab files sahi jud rahi hain, bas kuch seconds aur!", voice_style=st.session_state.get("boss_voice_style", "Default Hindi-English"))
     render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
 
     # Dept 13: Navigation Specialist (lib/main.dart)
@@ -1883,15 +1946,13 @@ Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Mater
 
     msg_p2 = f"Shabash {OWNER_NAME} Boss! Sabhi 16 departments ne coding aur Kimi auto-wiring pass kar li hai. Ab APK build dabayein!"
     project_bus["last_voice_msg"] = msg_p2
-    st.session_state["pending_boss_speech"] = msg_p2
-    st.session_state["spoken_last"] = msg_p2
     save_json_file(CODED_APP_FILE, project_bus)
     return project_bus, None
 
 # ==============================================================================
 # STREAMLIT UI: 3-DISPLAY ENTERPRISE 16-DEPT FLUTTER FACTORY
 # ==============================================================================
-st.set_page_config(page_title=f"{OWNER_NAME} Nexus Forge 3D", page_icon="⚡", layout="centered")
+st.set_page_config(page_title=f"{OWNER_NAME} Nexus Forge 3D", page_icon="🚀", layout="centered")
 st.markdown("""
 <style>
 #MainMenu, footer, header, .stDeployButton, div[data-testid="stToolbar"], div[data-testid="stDecoration"], div[data-testid="stStatusWidget"] {visibility: hidden !important; height: 0 !important;}
@@ -1919,61 +1980,39 @@ st.markdown(f"""
     <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px;">👑</div>
     <div>
       <h3 style="margin:0;font-size:16px;font-weight:800;color:#fff;">{OWNER_NAME.upper()} NEXUS FORGE</h3>
-      <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; Gemini Hindi Voice + APK</p>
+      <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v5.0 NEXUS</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v8.0 COMMANDER</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# LIVE VOICE BOSS (1-TAP AUDIO UNLOCK + ACTION-COMMAND WHATSAPP MIC)
+# PRO STUDIO COMMAND & QUALITY RADAR (OPEN-SOURCE STACK + 1-TAP PRESETS)
 # ==============================================================================
-with st.expander("🎙️ Live Voice Boss (Gemini Hindi Voice + Worker Action Control)", expanded=True):
-    c_vb1, c_vb2 = st.columns([2, 1])
-    with c_vb1:
-        v_style = st.selectbox("Lock Boss Voice Style:", ["Default Hindi-English", "Deep Boss (Male)", "Warm Assistant (Female)", "Fast Pro (English-IN)", "Mute (Silent)"], key="boss_voice_style")
-    with c_vb2:
-        st.write("")
-        if not st.session_state.get("boss_shift_started"):
-            if st.button("🎙️ Start Boss Shift", use_container_width=True, key="unlock_boss_btn"):
-                st.session_state["boss_shift_started"] = True
-                st.session_state["welcomed_boss"] = True
-                st.session_state["pending_boss_speech"] = f"Welcome {OWNER_NAME} Boss! Nexus Forge ekdum ready hai, aaj kis app par dhamaka karna hai?"
+with st.expander("⚡ Studio Command & Quality Radar (Open-Source Stack + Presets)", expanded=True):
+    st.markdown("""
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+      <span style="background:rgba(56,189,248,0.16);border:1px solid #38bdf8;color:#7dd3fc;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Three.js + Phaser 3</span>
+      <span style="background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#6ee7b7;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Flame + WebView APK</span>
+      <span style="background:rgba(168,85,247,0.18);border:1px solid #a855f7;color:#d8b4fe;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Quaternius CC0 3D + Iconify</span>
+      <span style="background:rgba(245,158,11,0.16);border:1px solid #f59e0b;color:#fde68a;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Bot Auto-Test + Self-Play</span>
+    </div>
+    """, unsafe_allow_html=True)
+    p_c1, p_c2, p_c3, p_c4 = st.columns(4)
+    presets = [
+        ("🏗️ 3D Build", "MegaSite 3D Builder", "3D construction excavator digging and house building simulator with level progression, vehicle model unlocks, joystick controller, and driver profile.", "GAMING_FACTORY_01"),
+        ("🚛 Heavy Drive", "BharatWheels Heavy Drive", "3D highway & village truck, bus, and heavy vehicle driving simulator with steering, gearbox, level unlocks, and Supabase leaderboard.", "GAMING_FACTORY_01"),
+        ("🏏 Cricket XI", "StrikeLine XI", "Fantasy cricket team builder with live pitch mini-game, XP progression, level unlocks, and one-way VIP booster store (0% cash prize pool).", "GAMING_FACTORY_01"),
+        ("💳 Fintech App", "HisabFlow Pro", "Shopkeeper khata ledger, instant invoice, live revenue charts, Razorpay-ready UPI checkout sheet, and Supabase cloud sync.", "MARKET_FACTORY_02")
+    ]
+    for col_obj, (btn_lbl, p_title, p_desc, p_fac) in zip([p_c1, p_c2, p_c3, p_c4], presets):
+        with col_obj:
+            if st.button(btn_lbl, use_container_width=True, key=f"preset_{p_title}"):
+                st.session_state["preset_title"] = p_title
+                st.session_state["preset_prompt"] = p_desc
+                st.session_state["preset_factory"] = p_fac
                 st.rerun()
-        else:
-            st.markdown("<div style='text-align:center;padding:8px;border-radius:10px;background:rgba(16,185,129,0.2);border:1px solid #10b981;color:#34d399;font-size:11px;font-weight:800;'>🔊 VOICE LIVE</div>", unsafe_allow_html=True)
-
-    v_mute = (v_style == "Mute (Silent)")
-    st.session_state["mute_boss_voice"] = v_mute
-    cur_bus_v = load_json_file(CODED_APP_FILE, None) or load_json_file(DESIGN_LOCK_FILE, None) or {"app_title": "Nexus Forge Idle", "boss_status": "Standing by for Sarfealam Boss"}
-
-    if not v_mute and st.session_state.get("pending_boss_speech"):
-        msg_to_play = st.session_state.pop("pending_boss_speech")
-        speak_boss_voice(msg_to_play, voice_style=v_style)
-    elif not v_mute and st.session_state.get("boss_shift_started") and cur_bus_v.get("last_voice_msg") and st.session_state.get("spoken_last") != cur_bus_v.get("last_voice_msg"):
-        st.session_state["spoken_last"] = cur_bus_v["last_voice_msg"]
-        speak_boss_voice(cur_bus_v["last_voice_msg"], voice_style=v_style)
-
-    audio_note = st.audio_input("Tap Mic & Send Voice Command (Only listens when you record):", key="boss_mic_input")
-    if audio_note is not None:
-        audio_bytes = audio_note.getvalue()
-        if st.session_state.get("last_audio_len") != len(audio_bytes):
-            st.session_state["last_audio_len"] = len(audio_bytes)
-            st.session_state["boss_shift_started"] = True
-            with st.spinner("Boss listening & dispatching workers..."):
-                try:
-                    spoken_txt = transcribe_voice_groq(audio_bytes)
-                    st.info(f"You said: {spoken_txt}")
-                    boss_ans, _, act_obj = ask_voice_boss(spoken_txt, cur_bus_v)
-                    st.success(f"Boss: {boss_ans}")
-                    st.session_state["owner_voice_directive"] = act_obj.get("directive") or spoken_txt
-                    if act_obj.get("action") and act_obj["action"] != "CHAT_ONLY":
-                        st.session_state["pending_voice_action"] = act_obj
-                    if not v_mute:
-                        speak_boss_voice(boss_ans, voice_style=v_style)
-                except Exception as ve:
-                    st.warning(f"Voice error: {ve}")
 
 tab_build, tab_tracker, tab_vault, tab_admin = st.tabs([
     "🚀 Design & Build",
@@ -1990,27 +2029,6 @@ with tab_build:
     locked_bus = load_json_file(DESIGN_LOCK_FILE, None)
     coded_bundle = load_json_file(CODED_APP_FILE, None)
 
-    voice_act = st.session_state.pop("pending_voice_action", None)
-    if voice_act:
-        v_cmd = voice_act.get("action")
-        v_dir = voice_act.get("directive", "")
-        if v_cmd == "REJECT_RESET":
-            st.warning("Voice safety lock: Tap 'Reject & Start Fresh' button below if you really want to clear the current project.")
-            st.session_state["pending_boss_speech"] = f"{OWNER_NAME} Boss, safety ke liye maine project delete nahi kiya hai. Agar pakka hatana hai to neeche Reject button dabayein!"
-        elif v_cmd == "UPDATE_DESIGN" and locked_bus and not active_build:
-            run_phase1_design_studio(locked_bus["app_title"], locked_bus["user_prompt"], st.empty(), st.empty(), selected_factory=locked_bus.get("factory_id", "AUTO"), design_feedback=v_dir)
-            st.rerun()
-        elif v_cmd == "START_CODING" and locked_bus and not coded_bundle and not active_build:
-            _, err_v2 = run_phase2_flutter_coding(locked_bus, st.empty(), st.empty())
-            if err_v2:
-                st.error(err_v2)
-            else:
-                st.rerun()
-        elif v_cmd == "KIMI_REPAIR" and coded_bundle and not active_build:
-            ok_kr, logs_kr, _ = auto_detect_and_repair_bundle(coded_bundle)
-            save_json_file(CODED_APP_FILE, coded_bundle)
-            st.info("Kimi Voice Repair: " + (" | ".join(logs_kr) if logs_kr else "All Dart files verified!"))
-
     if active_build:
         st.subheader(f"Live Flutter Build: `{active_build['name']}`")
         tele = get_live_build_telemetry(active_build["repo"])
@@ -2024,18 +2042,12 @@ with tab_build:
 
         if gh_conc == "success":
             st.success("Native Flutter APK Compiled & Published Successfully!")
-            if not st.session_state.get("mute_boss_voice") and st.session_state.get("spoken_apk") != active_build.get("repo"):
-                st.session_state["spoken_apk"] = active_build.get("repo")
-                speak_boss_voice(f"Mubarak ho {OWNER_NAME} Boss! Aapka Native Flutter APK ekdum taiyar aur publish ho gaya hai!")
             st.markdown(f"<a href='{active_build['releases_url']}' style='display:block;text-align:center;background:#10b981;color:#fff;padding:12px;border-radius:12px;font-weight:800;text-decoration:none;margin-bottom:10px;'>Download Native Flutter APK</a>", unsafe_allow_html=True)
             if st.button("Create Another New App", use_container_width=True):
                 reject_and_clear_project(active_build.get("repo"))
                 st.rerun()
         elif gh_conc == "failure":
             st.error("GitHub Flutter Build Failed — Dept 16 Kimi Self-Repair Ready!")
-            if not st.session_state.get("mute_boss_voice") and st.session_state.get("spoken_fail") != active_build.get("repo"):
-                st.session_state["spoken_fail"] = active_build.get("repo")
-                speak_boss_voice(f"{OWNER_NAME} Boss, GitHub build mein ek error aaya hai. Kimi Auto-Fix button dabayein, main ise khud theek kar dunga!")
             st.markdown(f"<a href='{active_build['actions_url']}' style='display:block;text-align:center;background:#991b1b;color:#fff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700;margin-bottom:8px;'>View GitHub Error Log</a>", unsafe_allow_html=True)
             c_f1, c_f2 = st.columns(2)
             with c_f1:
@@ -2090,31 +2102,69 @@ with tab_build:
                 if st.button("Reject & Start Fresh", use_container_width=True, key="reject_running_build"):
                     reject_and_clear_project(active_build.get("repo"))
                     st.rerun()
-            if not st.session_state.get("spoken_building"):
-                st.session_state["spoken_building"] = True
-                speak_boss_voice(f"{OWNER_NAME} Boss, GitHub par Native APK compile ho raha hai. Achha kaam ho raha hai isliye 2 se 3 minute lagega, ghabrao mat!", voice_style=st.session_state.get("boss_voice_style", "Default Hindi-English"))
             time.sleep(10)
             st.rerun()
     else:
         st.subheader("1. Choose Factory ID & Enter App Idea")
-        fac_choice = st.selectbox("Factory Lane:", ["AUTO (Smart AI Router)", "GAMING_FACTORY_01 (Gaming & Prediction)", "MARKET_FACTORY_02 (Commercial & Service)"])
+        fac_opts = ["AUTO (Smart AI Router)", "GAMING_FACTORY_01 (Gaming & Prediction)", "MARKET_FACTORY_02 (Commercial & Service)"]
+        p_fac_ss = st.session_state.get("preset_factory", "")
+        fac_idx = 1 if p_fac_ss == "GAMING_FACTORY_01" else (2 if p_fac_ss == "MARKET_FACTORY_02" else 0)
+        fac_choice = st.selectbox("Factory Lane:", fac_opts, index=fac_idx)
         fac_key = "AUTO" if fac_choice.startswith("AUTO") else fac_choice.split(" ")[0]
-        in_title = st.text_input("Your Own Brand / App Title:", value=(locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. StrikeLine XI or HisabFlow Pro")
-        in_prompt = st.text_area("Describe Features:", value=(locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
+        in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
+        in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
 
-        if st.button("Run Depts 1-8: Visual Research, Logo & Live Phone Preview (0% Code)", use_container_width=True):
+        active_scout = load_json_file(SCOUT_STATE_FILE, None)
+        if active_scout and active_scout.get("status") == "scouting":
+            render_3d_cartoon_factory_scene(active_scout.get("factory_id", "AUTO"), 0, 0, "World Scout Deep Research Active...")
+            render_scout_command_board(active_scout)
+            if st.button("Cancel & Reset Scout", use_container_width=True, key="cancel_scout_btn"):
+                remove_json_file(SCOUT_STATE_FILE)
+                st.rerun()
+            time.sleep(2.5)
+            st.rerun()
+        elif active_scout and active_scout.get("status") == "granted":
+            render_scout_command_board(active_scout)
+            cmd_slot = st.empty()
+            sync_slot = st.empty()
+            _, err_p1 = run_phase1_design_studio(
+                active_scout.get("app_title", "Sarfealam Pro App"),
+                active_scout.get("user_prompt", ""),
+                cmd_slot, sync_slot,
+                selected_factory=active_scout.get("selected_factory", "AUTO"),
+                scout_brief=active_scout.get("scout_brief")
+            )
+            remove_json_file(SCOUT_STATE_FILE)
+            if err_p1:
+                st.error(err_p1)
+            else:
+                st.rerun()
+        elif active_scout and active_scout.get("status") == "error":
+            st.error(active_scout.get("pass_msg", "Scout failed"))
+            remove_json_file(SCOUT_STATE_FILE)
+
+        if st.button("Run World Scout + Depts 1-8: Deep Research, 3D Logo & Live Preview", use_container_width=True):
             if not in_prompt.strip():
                 st.error("Please enter your app idea first.")
             else:
                 remove_json_file(DESIGN_LOCK_FILE)
                 remove_json_file(CODED_APP_FILE)
-                cmd_slot = st.empty()
-                sync_slot = st.empty()
-                _, err_p1 = run_phase1_design_studio(in_title.strip() or "Sarfealam Pro App", in_prompt.strip(), cmd_slot, sync_slot, selected_factory=fac_key, design_feedback=st.session_state.get("owner_voice_directive", ""))
-                if err_p1:
-                    st.error(err_p1)
-                else:
-                    st.rerun()
+                job_id = f"sc_{int(time.time())}"
+                init_st = {
+                    "job_id": job_id,
+                    "status": "scouting",
+                    "app_title": in_title.strip() or "Sarfealam Pro App",
+                    "user_prompt": in_prompt.strip(),
+                    "selected_factory": fac_key,
+                    "factory_id": fac_key,
+                    "pass_msg": "Launching World Scout Bot in background thread...",
+                    "workers_status": "STANDBY - Reading Scout Board (Waiting for Chief Commander ACCESS GRANTED)"
+                }
+                _SCOUT_JOBS[job_id] = init_st
+                save_json_file(SCOUT_STATE_FILE, init_st)
+                th = threading.Thread(target=run_world_scout_background, args=(job_id, init_st["app_title"], init_st["user_prompt"], fac_key), daemon=True)
+                th.start()
+                st.rerun()
 
         # DISPLAY 1 + 2 + 3 WHEN PHASE 1 IS READY
         locked_bus = load_json_file(DESIGN_LOCK_FILE, None)
@@ -2176,6 +2226,10 @@ with tab_build:
                             repo_html = repo_res.get("html_url", f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{safe_repo}")
                             push_file_to_github(safe_repo, "pubspec.yaml", coded_bundle["pubspec_yaml"], "Add pubspec.yaml")
                             push_file_to_github(safe_repo, "assets/icon.svg", coded_bundle["icon_svg"], "Add Brand Symbol Icon")
+                            game_html_doc = coded_bundle.get("preview_html") or coded_bundle.get("rendered_preview_html") or ""
+                            if game_html_doc:
+                                full_game_doc = f"<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='margin:0;background:#030712;'>{game_html_doc}</body></html>"
+                                push_file_to_github(safe_repo, "assets/game.html", full_game_doc, "Bundle Playable Game Asset for WebView APK")
                             push_file_to_github(safe_repo, "lib/services/supabase_api.dart", coded_bundle["backend_dart"], "Add Supabase Backend")
                             push_file_to_github(safe_repo, "lib/services/payment_gateway.dart", coded_bundle["gateway_dart"], "Add Payment Gateway")
                             push_file_to_github(safe_repo, "lib/screens/app_screens.dart", coded_bundle["screens_dart"], "Add UI Screens")
