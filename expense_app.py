@@ -144,6 +144,163 @@ jobs:
           prerelease: false
 """
 
+GODOT_APK_WORKFLOW = """name: Build Native Godot 4 3D Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  export-android:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Fetch Open-Source CC0 3D Vehicle Model
+        run: |
+          mkdir -p assets/models build/android
+          curl -sL "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb" -o assets/models/vehicle.glb || true
+
+      - name: Pre-heat Godot 4 Assets
+        run: |
+          godot --headless --quit --editor || true
+
+      - name: Export Native Godot 4 Release APK
+        run: |
+          godot --headless --export-release "Android" build/android/game-release.apk
+
+      - name: Publish Godot 4 3D APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: "Godot 4 3D Android APK v1.0.0"
+          files: build/android/*.apk
+          draft: false
+          prerelease: false
+"""
+
+def build_godot4_3d_project_files(app_title, pkg_slug, pal):
+    """Generates a Fullscreen Landscape Godot 4 3D VehicleBody3D + Touch Steering/Pedals + GLB Loader project."""
+    safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "bharat_drive"
+    proj_godot = f"""config_version=5
+
+[application]
+config/name="{app_title}"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.3", "Mobile")
+config/icon="res://assets/icon.svg"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/handheld/orientation=0
+window/size/mode=3
+
+[rendering]
+renderer/rendering_method="mobile"
+"""
+    export_cfg = f"""[preset.0]
+name="Android"
+platform="Android"
+runnable=true
+export_filter="all_resources"
+
+[preset.0.options]
+package/unique_name="com.sarfealam.{safe_pkg}"
+package/name="{app_title}"
+architectures/arm64-v8a=true
+"""
+    gd_script = """extends VehicleBody3D
+
+@export var max_steer := 0.48
+@export var engine_power := 320.0
+var steer_input := 0.0
+var gas_input := 0.0
+var reverse_gear := false
+
+func _ready() -> void:
+	if ResourceLoader.exists("res://assets/models/vehicle.glb"):
+		var glb = load("res://assets/models/vehicle.glb")
+		if glb:
+			add_child(glb.instantiate())
+
+func _physics_process(delta: float) -> void:
+	var h = Input.get_axis("ui_right", "ui_left")
+	var v = Input.get_axis("ui_down", "ui_up")
+	steering = move_toward(steering, (h + steer_input) * max_steer, delta * 3.2)
+	var dir = -1.0 if reverse_gear else 1.0
+	engine_force = (v + gas_input) * engine_power * dir
+	var hud = get_node_or_null("../TouchHUD/SpeedLabel")
+	if hud:
+		hud.text = str(int(linear_velocity.length() * 3.6)) + " km/h | " + ("R" if reverse_gear else "D")
+"""
+    tscn_scene = """[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/vehicle_controller.gd" id="1_veh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(2.2, 1.4, 5.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(2.2, 1.4, 5.2)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_road"]
+size = Vector2(500, 500)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(500, 0.2, 500)
+
+[node name="Main3DWorld" type="Node3D"]
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.35, 0.35, 0, 0.7, 0.7, -0.5, -0.6, 0.6, 0, 28, 0)
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="GroundMesh" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("PlaneMesh_road")
+
+[node name="GroundCol" type="CollisionShape3D" parent="Ground"]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="HeavyTruck" type="VehicleBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+script = ExtResource("1_veh")
+
+[node name="TruckMesh" type="MeshInstance3D" parent="HeavyTruck"]
+mesh = SubResource("BoxMesh_body")
+
+[node name="TruckCol" type="CollisionShape3D" parent="HeavyTruck"]
+shape = SubResource("BoxShape3D_body")
+
+[node name="ChaseCamera" type="Camera3D" parent="HeavyTruck"]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.34, 0, -0.34, 0.94, 0, 4.2, 8.5)
+current = true
+
+[node name="TouchHUD" type="CanvasLayer" parent="."]
+
+[node name="SpeedLabel" type="Label" parent="TouchHUD"]
+offset_left = 560.0
+offset_top = 650.0
+offset_right = 740.0
+offset_bottom = 690.0
+text = "0 km/h | D"
+"""
+    return {
+        "project.godot": proj_godot,
+        "export_presets.cfg": export_cfg,
+        "scripts/vehicle_controller.gd": gd_script,
+        "scenes/main.tscn": tscn_scene
+    }
+
 def make_flutter_build_script(app_title, pkg_slug):
     safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "smart_app"
     if not safe_pkg[0].isalpha():
@@ -1254,11 +1411,11 @@ def render_live_mobile_preview(locked_bus):
     b64_ic = base64.b64encode(locked_bus["icon_svg"].encode("utf-8")).decode("utf-8")
     low_p = (title + " " + locked_bus.get("user_prompt", "")).lower()
 
-    if any(k in low_p for k in ["construct", "excavator", "dig", "crane", "house", "site", "builder"]):
+    if re.search(r'\b(construction|excavator|digging|crane|mining|jcb|loader)\b', low_p):
         game_mode = "CONSTRUCTION"
-        models_js = '["Mini Excavator", "Heavy Dozer", "Mega Tower Crane"]'
-        action_lbl = "⛏️ DIG & BUILD"
-    elif any(k in low_p for k in ["truck", "bus", "wheel", "highway", "drive", "car", "race"]):
+        models_js = '["JCB Excavator", "Heavy Mining Dumper", "Mega Tower Crane"]'
+        action_lbl = "⛏️ DIG"
+    elif re.search(r'\b(truck|bus|wheel|wheels|highway|drive|driving|car|race|tipper|tractor)\b', low_p):
         game_mode = "DRIVE"
         models_js = '["Bharat Tipper", "Volvo Sleeper Bus", "18-Wheeler Rig"]'
         action_lbl = "⚡ NITRO BOOST"
@@ -1276,155 +1433,213 @@ def render_live_mobile_preview(locked_bus):
 
     fallback_html = f"""
     <div style="display:flex;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-      <div style="width:298px;height:555px;background:{bg};border:4px solid #334155;border-radius:34px;box-shadow:0 20px 45px rgba(0,0,0,0.75);overflow:hidden;display:flex;flex-direction:column;color:{txt};">
-        <div style="height:22px;background:#020617;display:flex;justify-content:center;align-items:center;"><div style="width:70px;height:10px;background:#1e293b;border-radius:999px;"></div></div>
-        <div style="padding:8px 10px;background:linear-gradient(135deg,{prim},{surf});display:flex;align-items:center;gap:7px;">
-          <img src="data:image/svg+xml;base64,{b64_ic}" width="32" height="32" style="border-radius:9px;border:1px solid rgba(255,255,255,0.3);"/>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{title}</div>
-            <div style="font-size:9px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{tagline}</div>
+      <div style="width:298px;height:560px;background:{bg};border:4px solid #334155;border-radius:34px;box-shadow:0 20px 45px rgba(0,0,0,0.78);overflow:hidden;display:flex;flex-direction:column;color:{txt};position:relative;">
+        <div id="topChrome" style="display:{'none' if is_game else 'block'};">
+          <div style="height:18px;background:#020617;display:flex;justify-content:center;align-items:center;"><div style="width:64px;height:8px;background:#1e293b;border-radius:999px;"></div></div>
+          <div style="padding:8px 10px;background:linear-gradient(135deg,{prim},{surf});display:flex;align-items:center;gap:7px;">
+            <img src="data:image/svg+xml;base64,{b64_ic}" width="30" height="30" style="border-radius:8px;border:1px solid rgba(255,255,255,0.3);"/>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{title}</div>
+              <div style="font-size:8.5px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{tagline}</div>
+            </div>
+            <button onclick="openSheet('wallet')" style="background:rgba(0,0,0,0.35);border:1px solid {acc};color:#fff;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:700;cursor:pointer;">₹<span id="topVal">2450</span></button>
+            <button onclick="openSheet('profile')" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:23px;height:23px;font-size:10px;cursor:pointer;">👤</button>
           </div>
-          <button onclick="openSheet('wallet')" style="background:rgba(0,0,0,0.35);border:1px solid {acc};color:#fff;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:700;cursor:pointer;">{'🏆 LVL ' if is_game else '₹'}<span id="topVal">{'1' if is_game else '2450'}</span></button>
-          <button onclick="openSheet('profile')" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:24px;height:24px;font-size:10px;cursor:pointer;">👤</button>
+          <div style="background:#0f172a;padding:4px 9px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;">
+            <span id="botBannerM" style="font-size:9px;font-weight:700;color:#34d399;">🤖 AI Bot Testing Flow...</span>
+            <button id="takeCtrlBtnM" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:2px 8px;font-size:9px;font-weight:800;cursor:pointer;">🎮 Self-Test</button>
+          </div>
         </div>
-        <div style="background:#0f172a;padding:5px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;">
-          <span id="botBanner" style="font-size:9.5px;font-weight:700;color:#34d399;">🤖 AI Bot Auto-Testing...</span>
-          <button id="takeCtrlBtn" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:3px 9px;font-size:9.5px;font-weight:800;cursor:pointer;">🎮 Self-Play</button>
-        </div>
-        <div id="phoneBody" style="flex:1;padding:8px;overflow-y:auto;"></div>
+        <div id="phoneBody" style="flex:1;padding:{'0' if is_game else '7px'};overflow-y:auto;position:relative;"></div>
         <div id="phoneNav" style="background:{surf};padding:7px 5px;display:{'none' if is_game else 'flex'};justify-content:space-around;border-top:1px solid rgba(255,255,255,0.1);"></div>
       </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
     <script>
       const isGame = {'true' if is_game else 'false'};
       const gameMode = '{game_mode}';
       const models = {models_js};
-      let autoBot = true, score = 0, level = 1, lives = 3, xp = 1000, bal = 2450, vip = false, tab = 0;
-      let px = 135, vx = 0, boost = 0, gameOver = false, tick = 0;
-      let items = [{{x:70,y:20,good:true}},{{x:195,y:-60,good:false}},{{x:130,y:-140,good:true}}];
-      let ledger = [{{title:'Opening Balance', amt:2450, t:'CR'}}];
+      let autoBot = true, score = 0, level = 1, lives = 3, xp = 1000, bal = 2450, vip = false, tab = 0, cat = 0;
+      let steerVal = 0, gasPressed = false, brakePressed = false, gear = 'D', camMode = 0, speed = 0;
+      let ledger = [{{title:'Opening Balance', amt:2450, t:'CR'}}, {{title:'Express Booking #1', amt:480, t:'CR'}}];
 
       function toggleSelfPlay() {{
         autoBot = !autoBot;
-        document.getElementById('botBanner').innerText = autoBot ? '🤖 AI Bot Auto-Testing...' : '🎮 Self-Play Active (Your Turn!)';
-        document.getElementById('botBanner').style.color = autoBot ? '#34d399' : '#fde047';
-        document.getElementById('takeCtrlBtn').innerText = autoBot ? '🎮 Self-Play' : '🤖 Resume Bot';
+        const b = document.getElementById('botBanner') || document.getElementById('botBannerM');
+        const btn = document.getElementById('takeCtrlBtn') || document.getElementById('takeCtrlBtnM');
+        if (b) {{ b.innerText = autoBot ? '🤖 Bot Auto-Play' : '🎮 Self-Play Active'; b.style.color = autoBot ? '#34d399' : '#fde047'; }}
+        if (btn) btn.innerText = autoBot ? '🎮 Self-Play' : '🤖 Bot';
       }}
 
       function renderGameShell() {{
         document.getElementById('phoneBody').innerHTML = `
-          <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;margin-bottom:4px;">
-            <span>Score: <b id="gScore" style="color:{acc};">0</b>/${{level*100}}</span>
-            <span>Model: <b id="gModel" style="color:#38bdf8;">${{models[Math.min(2,level-1)]}}</b></span>
-            <span id="gLives">❤️❤️❤️</span>
-          </div>
-          <canvas id="gameCv" width="272" height="235" style="width:100%;border-radius:12px;border:1.5px solid {prim};background:#060d1f;display:block;"></canvas>
-          <div style="display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:6px;margin-top:7px;">
-            <button onmousedown="vx=-4" ontouchstart="vx=-4" onmouseup="vx=0" ontouchend="vx=0" onclick="if(autoBot)toggleSelfPlay();px=Math.max(24,px-24);" style="padding:10px;border:none;border-radius:10px;background:{surf};color:#fff;font-weight:800;font-size:13px;cursor:pointer;">◀ LEFT</button>
-            <button onclick="if(autoBot)toggleSelfPlay();boost=12;score+=15;" style="padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,{prim},{acc});color:#fff;font-weight:800;font-size:11px;cursor:pointer;">{action_lbl}</button>
-            <button onmousedown="vx=4" ontouchstart="vx=4" onmouseup="vx=0" ontouchend="vx=0" onclick="if(autoBot)toggleSelfPlay();px=Math.min(248,px+24);" style="padding:10px;border:none;border-radius:10px;background:{surf};color:#fff;font-weight:800;font-size:13px;cursor:pointer;">RIGHT ▶</button>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <button onclick="openSheet('gateway')" style="flex:1;padding:7px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;font-size:10px;cursor:pointer;">👑 Unlock VIP (₹49)</button>
-            <button onclick="score=0;level=1;lives=3;gameOver=false;" style="padding:7px 10px;border:none;border-radius:9px;background:#334155;color:#fff;font-weight:700;font-size:10px;cursor:pointer;">🔄 Retry</button>
-          </div>
-          <div id="gBanner" style="margin-top:5px;text-align:center;font-size:10.5px;font-weight:800;color:#34d399;"></div>`;
-        requestAnimationFrame(gameLoop);
+          <div style="position:relative;width:100%;height:100%;background:#091124;overflow:hidden;">
+            <div id="threeWrap" style="width:100%;height:100%;"></div>
+            <div style="position:absolute;top:10px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:center;pointer-events:auto;">
+              <div style="display:flex;align-items:center;gap:5px;background:rgba(2,6,23,0.68);backdrop-filter:blur(4px);padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,0.2);">
+                <img src="data:image/svg+xml;base64,{b64_ic}" width="20" height="20" style="border-radius:5px;"/>
+                <span style="font-size:9.5px;font-weight:800;">LVL <b id="topVal">1</b> • <b id="gScore" style="color:{acc};">0</b> XP</span>
+              </div>
+              <div style="display:flex;gap:4px;">
+                <button id="takeCtrlBtn" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;cursor:pointer;">🎮 Self-Play</button>
+                <button onclick="openSheet('gateway')" style="background:rgba(2,6,23,0.72);color:#fde047;border:1px solid #fde047;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:800;cursor:pointer;">👑 VIP</button>
+              </div>
+            </div>
+            <div style="position:absolute;top:40px;left:10px;background:rgba(2,6,23,0.58);padding:2px 8px;border-radius:8px;font-size:9px;font-weight:700;">
+              <span id="botBanner" style="color:#34d399;">🤖 Bot Auto-Play</span> • <span id="gModel" style="color:#7dd3fc;">${{models[0]}}</span>
+            </div>
+            <button onclick="camMode=(camMode+1)%3;" style="position:absolute;top:40px;right:10px;background:rgba(2,6,23,0.65);color:#fff;border:1px solid rgba(255,255,255,0.35);border-radius:8px;padding:3px 7px;font-size:9px;font-weight:700;cursor:pointer;">🎥 Cam</button>
+            <div id="gBanner" style="position:absolute;top:66px;left:50%;transform:translateX(-50%);font-size:9.5px;font-weight:800;color:#fde047;text-shadow:0 1px 4px #000;white-space:nowrap;"></div>
+            <div style="position:absolute;bottom:14px;left:10px;display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <div id="wheelSvg" style="width:72px;height:72px;border-radius:50%;border:6px solid rgba(255,255,255,0.62);background:rgba(15,23,42,0.28);display:flex;align-items:center;justify-content:center;transition:transform 0.08s;">
+                <div style="width:100%;height:5px;background:rgba(255,255,255,0.65);"></div>
+              </div>
+              <div style="display:flex;gap:5px;">
+                <button onmousedown="if(autoBot)toggleSelfPlay();steerVal=-1;" ontouchstart="if(autoBot)toggleSelfPlay();steerVal=-1;" onmouseup="steerVal=0;" ontouchend="steerVal=0;" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.35);border-radius:8px;background:rgba(2,6,23,0.45);color:#fff;font-weight:800;font-size:11px;">◀</button>
+                <button onmousedown="if(autoBot)toggleSelfPlay();steerVal=1;" ontouchstart="if(autoBot)toggleSelfPlay();steerVal=1;" onmouseup="steerVal=0;" ontouchend="steerVal=0;" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.35);border-radius:8px;background:rgba(2,6,23,0.45);color:#fff;font-weight:800;font-size:11px;">▶</button>
+              </div>
+            </div>
+            <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(2,6,23,0.62);padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;color:#ffffff;border:1px solid rgba(255,255,255,0.25);"><span id="spdHud">0</span> km/h</div>
+            <div style="position:absolute;bottom:14px;right:10px;display:flex;align-items:flex-end;gap:5px;">
+              <button onclick="gear=(gear==='D'?'R':'D');this.innerText=gear;" style="width:28px;height:32px;border:1px solid rgba(255,255,255,0.5);border-radius:50%;background:rgba(2,6,23,0.52);color:{acc};font-weight:900;font-size:11px;">D</button>
+              <button onmousedown="if(autoBot)toggleSelfPlay();brakePressed=true;" ontouchstart="if(autoBot)toggleSelfPlay();brakePressed=true;" onmouseup="brakePressed=false;" ontouchend="brakePressed=false;" style="width:32px;height:40px;border:1px solid rgba(239,68,68,0.8);border-radius:7px;background:rgba(127,29,29,0.48);color:#fff;font-weight:800;font-size:9px;">BRK</button>
+              <button onmousedown="if(autoBot)toggleSelfPlay();gasPressed=true;" ontouchstart="if(autoBot)toggleSelfPlay();gasPressed=true;" onmouseup="gasPressed=false;" ontouchend="gasPressed=false;" style="width:34px;height:56px;border:1px solid rgba(16,185,129,0.85);border-radius:7px;background:rgba(6,95,70,0.52);color:#fff;font-weight:800;font-size:9px;">GAS</button>
+            </div>
+          </div>`;
+        initThreeScene();
       }}
 
-      function gameLoop() {{
-        const cv = document.getElementById('gameCv');
-        if (!cv) return;
-        const ctx = cv.getContext('2d');
-        tick++;
-        ctx.clearRect(0, 0, 272, 235);
+      function initThreeScene() {{
+        const wrap = document.getElementById('threeWrap');
+        if (!wrap || typeof THREE === 'undefined') return;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0b1a30);
+        scene.fog = new THREE.Fog(0x0b1a30, 18, 95);
+        const camera = new THREE.PerspectiveCamera(64, wrap.clientWidth / wrap.clientHeight, 0.1, 160);
+        const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+        renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+        wrap.innerHTML = '';
+        wrap.appendChild(renderer.domElement);
 
-        // 3D Perspective Ground / Road / Site
-        ctx.fillStyle = gameMode === 'CRICKET' ? '#064e3b' : (gameMode === 'CONSTRUCTION' ? '#292524' : '#0f172a');
-        ctx.fillRect(0, 0, 272, 235);
-        ctx.fillStyle = gameMode === 'CRICKET' ? '#d97706' : '#1e293b';
-        ctx.beginPath(); ctx.moveTo(100, 0); ctx.lineTo(172, 0); ctx.lineTo(252, 235); ctx.lineTo(20, 235); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
-        for (let y = (tick * 4) % 36; y < 235; y += 36) {{
-          ctx.beginPath(); ctx.moveTo(136, y); ctx.lineTo(136, y + 16); ctx.stroke();
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const sun = new THREE.DirectionalLight(0xfffbeb, 1.1);
+        sun.position.set(10, 22, 10);
+        scene.add(sun);
+
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 260), new THREE.MeshStandardMaterial({{ color: gameMode === 'CONSTRUCTION' ? 0x57432c : 0x1e3a2f }}));
+        ground.rotation.x = -Math.PI / 2; scene.add(ground);
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 260), new THREE.MeshStandardMaterial({{ color: 0x1f2937 }}));
+        road.rotation.x = -Math.PI / 2; road.position.y = 0.02; scene.add(road);
+
+        const dashes = [];
+        for (let z = -120; z < 40; z += 8) {{
+          const d = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 3.2), new THREE.MeshBasicMaterial({{ color: 0xfacc15 }}));
+          d.position.set(0, 0.04, z); scene.add(d); dashes.push(d);
+        }}
+        const props = [];
+        for (let z = -120; z < 30; z += 14) {{
+          for (let side of [-1, 1]) {{
+            const b = new THREE.Mesh(new THREE.BoxGeometry(4, 3 + (Math.abs(z)%6), 4), new THREE.MeshStandardMaterial({{ color: side > 0 ? 0x334155 : 0x15803d }}));
+            b.position.set(side * 9.5, 2, z); scene.add(b); props.push(b);
+          }}
         }}
 
-        if (!gameOver) {{
+        const truck = new THREE.Group();
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.8, 4.6), new THREE.MeshStandardMaterial({{ color: 0xe11d48 }}));
+        chassis.position.y = 0.9; truck.add(chassis);
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.3, 1.6), new THREE.MeshStandardMaterial({{ color: 0xf59e0b }}));
+        cab.position.set(0, 1.75, -1.2); truck.add(cab);
+        const wheels = [];
+        for (let wx of [-1.1, 1.1]) {{
+          for (let wz of [-1.4, 0.6, 1.8]) {{
+            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.35, 16), new THREE.MeshStandardMaterial({{ color: 0x0f172a }}));
+            w.rotation.z = Math.PI / 2; w.position.set(wx, 0.45, wz);
+            truck.add(w); wheels.push(w);
+          }}
+        }}
+        scene.add(truck);
+
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
+        crate.position.set(2, 0.7, -32); scene.add(crate);
+
+        let tx = 0;
+        function animate() {{
+          if (!document.getElementById('threeWrap')) return;
           if (autoBot) {{
-            const good = items.find(i => i.good && i.y > 0) || items[0];
-            const bad = items.find(i => !i.good && i.y > 120);
-            let targetX = bad ? (bad.x < 136 ? 205 : 65) : good.x;
-            px += (targetX - px) * 0.08;
+            speed = 62;
+            steerVal = Math.max(-1, Math.min(1, (crate.position.x - tx) * 0.4));
           }} else {{
-            px = Math.max(24, Math.min(248, px + vx));
+            if (gasPressed) speed = Math.min(95, speed + 2.2);
+            else if (brakePressed) speed = Math.max(0, speed - 4.0);
+            else speed = Math.max(0, speed - 0.8);
           }}
-          if (boost > 0) boost--;
+          const dir = (gear === 'R' ? -1 : 1);
+          const dz = (speed * 0.012) * dir;
+          tx = Math.max(-3.3, Math.min(3.3, tx + steerVal * 0.08));
+          truck.position.x = tx; truck.rotation.y = -steerVal * 0.14;
+          wheels.forEach(w => w.rotation.x -= dz * 0.8);
 
-          for (let it of items) {{
-            it.y += (2.4 + level * 0.55 + (boost > 0 ? 1.8 : 0));
-            if (it.y > 240) {{ it.y = -20; it.x = 40 + Math.random() * 190; it.good = Math.random() > 0.35; }}
-            ctx.fillStyle = it.good ? '#fbbf24' : '#ef4444';
-            ctx.beginPath(); ctx.arc(it.x, it.y, it.good ? 9 : 11, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#000'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-            ctx.fillText(it.good ? (gameMode==='CONSTRUCTION'?'🧱':'★') : '✖', it.x, it.y + 3);
-            if (Math.abs(it.y - 196) < 18 && Math.abs(it.x - px) < 22) {{
-              if (it.good) {{
-                score += 25; xp += 25;
-                if (score >= level * 100 && level < 3) {{
-                  level++;
-                  document.getElementById('gBanner').innerText = '🎉 LEVEL ' + level + ' UNLOCKED: ' + models[level-1] + '!';
-                }}
-              }} else {{
-                lives--;
-                if (lives <= 0) {{ gameOver = true; document.getElementById('gBanner').innerText = '💥 MISSION FAILED! Tap Retry.'; }}
-              }}
-              it.y = -25; it.x = 40 + Math.random() * 190;
-            }}
+          dashes.forEach(d => {{ d.position.z += dz; if (d.position.z > 25) d.position.z -= 160; if (d.position.z < -135) d.position.z += 160; }});
+          props.forEach(p => {{ p.position.z += dz; if (p.position.z > 25) p.position.z -= 154; if (p.position.z < -129) p.position.z += 154; }});
+          crate.position.z += dz; crate.rotation.y += 0.04;
+          if (Math.abs(crate.position.z) < 2.2 && Math.abs(crate.position.x - tx) < 1.8) {{
+            score += 25; xp += 25;
+            if (score >= level * 100 && level < 3) {{ level++; document.getElementById('gBanner').innerText = '🎉 UNLOCKED: ' + models[level-1]; }}
+            crate.position.z = -45; crate.position.x = (Math.random() - 0.5) * 6;
           }}
+          if (crate.position.z > 15) {{ crate.position.z = -45; crate.position.x = (Math.random() - 0.5) * 6; }}
+
+          if (camMode === 0) {{ camera.position.set(tx * 0.7, 4.2, 8.2); camera.lookAt(tx, 1.2, -10); }}
+          else if (camMode === 1) {{ camera.position.set(tx, 2.3, -1.3); camera.lookAt(tx, 1.6, -20); }}
+          else {{ camera.position.set(tx, 12, 10); camera.lookAt(tx, 0, -8); }}
+
+          const wh = document.getElementById('wheelSvg'); if (wh) wh.style.transform = `rotate(${{steerVal * 48}}deg)`;
+          const sh = document.getElementById('spdHud'); if (sh) sh.innerText = Math.round(speed);
+          const gs = document.getElementById('gScore'); if (gs) gs.innerText = score;
+          const gm = document.getElementById('gModel'); if (gm) gm.innerText = models[Math.min(2, level - 1)];
+          const tv = document.getElementById('topVal'); if (tv) tv.innerText = level;
+
+          renderer.render(scene, camera);
+          requestAnimationFrame(animate);
         }}
-
-        // Draw Player Vehicle / Rig / Character
-        ctx.fillStyle = '{prim}'; ctx.fillRect(px - 16, 182, 32, 28);
-        ctx.fillStyle = '{acc}'; ctx.fillRect(px - 12, 186, 24, 12);
-        ctx.fillStyle = '#38bdf8'; ctx.fillRect(px - 10, 176, 20, 6);
-        document.getElementById('gScore').innerText = score;
-        document.getElementById('gModel').innerText = models[Math.min(2, level - 1)];
-        document.getElementById('gLives').innerText = '❤️'.repeat(Math.max(0, lives)) || '💀';
-        document.getElementById('topVal').innerText = level;
-        requestAnimationFrame(gameLoop);
+        animate();
       }}
 
       function renderMarketShell() {{
-        const tabs = ['Home', 'Add', 'Wallet', 'Profile'];
+        const tabs = ['Home', 'Add', 'Passbook', 'Profile'];
         document.getElementById('phoneNav').innerHTML = tabs.map((t, i) => `<button onclick="if(autoBot)toggleSelfPlay();tab=${{i}};renderMarketShell();" style="background:${{tab===i?'{prim}':'transparent'}};color:{txt};border:none;padding:4px 8px;border-radius:8px;font-size:10px;font-weight:700;cursor:pointer;">${{t}}</button>`).join('');
         const b = document.getElementById('phoneBody');
         document.getElementById('topVal').innerText = bal;
         if (tab === 1) {{
           b.innerHTML = `<div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
-            <div style="font-size:13px;font-weight:800;margin-bottom:8px;">➕ Add New Entry / Order</div>
-            <input id="eTitle" value="Customer Order #${{ledger.length+1}}" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:6px;"/>
+            <div style="font-size:13px;font-weight:800;margin-bottom:8px;">➕ Add Entry / Order</div>
+            <input id="eTitle" value="Order #${{ledger.length+1}}" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:6px;"/>
             <input id="eAmt" type="number" value="450" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:8px;"/>
-            <button onclick="const t=document.getElementById('eTitle').value;const a=Number(document.getElementById('eAmt').value||0);bal+=a;ledger.unshift({{title:t,amt:a,t:'CR'}});tab=0;renderMarketShell();" style="width:100%;padding:9px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Save &amp; Update Chart</button>
+            <button onclick="const t=document.getElementById('eTitle').value;const a=Number(document.getElementById('eAmt').value||0);bal+=a;ledger.unshift({{title:t,amt:a,t:'CR'}});tab=0;renderMarketShell();" style="width:100%;padding:9px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Save &amp; Update Graph</button>
           </div>`;
           return;
         }}
+        const cats = ['All', 'Live', 'Deals', 'Vault'];
+        const catPills = cats.map((c, ci) => `<button onclick="cat=${{ci}};renderMarketShell();" style="flex:1;padding:4px 2px;border-radius:999px;border:1px solid ${{cat===ci?'{acc}':'rgba(255,255,255,0.18)'}};background:${{cat===ci?'{prim}':'{surf}'}};color:#fff;font-size:9.5px;font-weight:700;cursor:pointer;">${{c}}</button>`).join('');
         b.innerHTML = `
-          <div style="background:linear-gradient(135deg,{prim},{surf});border-radius:14px;padding:11px;margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div><div style="font-size:10px;opacity:0.85;">Live Balance</div><div style="font-size:20px;font-weight:800;">₹${{bal.toLocaleString()}}</div></div>
-              <img src="data:image/svg+xml;base64,{ic0_b64}" width="32" height="32"/>
-            </div>
-            <button onclick="if(autoBot)toggleSelfPlay();openSheet('gateway');" style="margin-top:6px;padding:6px 11px;border:none;border-radius:8px;background:{acc};color:#000;font-weight:800;font-size:10.5px;cursor:pointer;">+ Pay via UPI Gateway</button>
+          <div style="display:flex;gap:4px;margin-bottom:6px;">${{catPills}}</div>
+          <input placeholder="🔍 Search services, records, deals..." style="width:93%;padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:#0f172a;color:#fff;font-size:10px;margin-bottom:7px;"/>
+          <div style="background:linear-gradient(135deg,{prim},{acc});border-radius:12px;padding:9px 10px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;">
+            <div><div style="font-size:9px;font-weight:700;color:#0f172a;">LIVE WALLET &amp; OFFERS</div><div style="font-size:17px;font-weight:900;color:#fff;">₹${{bal.toLocaleString()}}</div></div>
+            <button onclick="if(autoBot)toggleSelfPlay();openSheet('gateway');" style="padding:5px 9px;border:none;border-radius:8px;background:#0f172a;color:#fff;font-weight:800;font-size:9.5px;cursor:pointer;">⚡ Pay UPI</button>
           </div>
-          <div style="background:{surf};border-radius:12px;padding:8px;margin-bottom:8px;">
-            <div style="font-size:10px;font-weight:700;color:#38bdf8;margin-bottom:4px;">📊 Live Revenue Chart (${{ledger.length}} txns)</div>
-            <div style="display:flex;align-items:flex-end;gap:6px;height:44px;">
-              ${{ledger.slice(0,5).map((x,idx)=>`<div style="flex:1;background:{acc};height:${{Math.min(42,14+idx*6)}}px;border-radius:4px;"></div>`).join('')}}
-            </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px;">
+            <div onclick="tab=1;renderMarketShell();" style="background:{surf};border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:7px;cursor:pointer;"><span style="font-size:8px;background:#10b981;color:#000;padding:1px 5px;border-radius:4px;font-weight:800;">FAST</span><div style="font-size:11px;font-weight:800;margin-top:3px;">➕ Quick Entry</div></div>
+            <div onclick="openSheet('wallet');" style="background:{surf};border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:7px;cursor:pointer;"><span style="font-size:8px;background:#f59e0b;color:#000;padding:1px 5px;border-radius:4px;font-weight:800;">UP TO 25% OFF</span><div style="font-size:11px;font-weight:800;margin-top:3px;">💳 Passbook</div></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <button onclick="if(autoBot)toggleSelfPlay();tab=1;renderMarketShell();" style="background:{surf};border:1px solid rgba(255,255,255,0.12);color:{txt};padding:9px;border-radius:10px;font-size:10.5px;font-weight:700;cursor:pointer;">➕ Add Entry</button>
-            <button onclick="if(autoBot)toggleSelfPlay();openSheet('wallet');" style="background:{surf};border:1px solid rgba(255,255,255,0.12);color:{txt};padding:9px;border-radius:10px;font-size:10.5px;font-weight:700;cursor:pointer;">💳 Passbook</button>
+          <div style="display:flex;gap:5px;margin-bottom:7px;">
+            <div style="flex:1;background:rgba(244,63,94,0.18);border:1px solid #f43f5e;border-radius:8px;padding:4px 6px;font-size:9px;font-weight:800;">🎟️ Flat ₹50 Off</div>
+            <div style="flex:1;background:rgba(16,185,129,0.18);border:1px solid #10b981;border-radius:8px;padding:4px 6px;font-size:9px;font-weight:800;">🚀 Zero Fee Cloud</div>
+          </div>
+          <div style="background:{surf};border-radius:10px;padding:7px;">
+            <div style="display:flex;justify-content:space-between;font-size:9.5px;font-weight:700;margin-bottom:4px;"><span>📊 Live Growth (${{ledger.length}} txns)</span><span style="color:#34d399;">78% Target</span></div>
+            <div style="height:6px;background:#0f172a;border-radius:999px;overflow:hidden;margin-bottom:5px;"><div style="width:78%;height:100%;background:linear-gradient(90deg,{prim},{acc});"></div></div>
+            <div style="display:flex;align-items:flex-end;gap:5px;height:30px;">${{ledger.slice(0,5).map((x,idx)=>`<div style="flex:1;background:{acc};height:${{Math.min(28,10+idx*4)}}px;border-radius:3px;"></div>`).join('')}}</div>
           </div>`;
       }}
 
@@ -1432,25 +1647,25 @@ def render_live_mobile_preview(locked_bus):
         const b = document.getElementById('phoneBody');
         const backFn = isGame ? 'renderGameShell()' : 'renderMarketShell()';
         if (kind === 'gateway') {{
-          b.innerHTML = `<div style="background:{surf};border:1.5px solid {acc};border-radius:14px;padding:12px;">
+          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1.5px solid {acc};border-radius:14px;padding:12px;">
             <div style="font-size:13px;font-weight:800;color:{acc};">🔒 Razorpay-Ready Checkout</div>
             <div style="font-size:11px;margin:6px 0;opacity:0.9;">Direct Owner Payment • UPI / Card / NetBanking</div>
             <button onclick="vip=true;bal+=500;xp+=200;${{backFn}};" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Pay Success</button>
             <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Back</button>
-          </div>`;
+          </div></div>`;
         }} else if (kind === 'profile') {{
-          b.innerHTML = `<div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
+          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
             <div style="font-size:14px;font-weight:800;">👤 Verified Profile</div>
             <div style="font-size:11px;margin:6px 0;">Level: ${{level}} | Supabase Cloud Synced</div>
             <button onclick="${{backFn}};" style="width:100%;padding:9px;border:none;border-radius:10px;background:{prim};color:#fff;font-weight:700;cursor:pointer;">Save &amp; Back</button>
-          </div>`;
+          </div></div>`;
         }} else {{
-          b.innerHTML = `<div style="background:{surf};border:1px solid {acc};border-radius:14px;padding:12px;">
+          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1px solid {acc};border-radius:14px;padding:12px;">
             <div style="font-size:14px;font-weight:800;">💳 Wallet &amp; Passbook</div>
             <div style="font-size:12px;margin:6px 0;">Balance: ${'{isGame ? xp + " XP" : "₹" + bal}'}</div>
             <button onclick="openSheet('gateway')" style="width:100%;padding:9px;border:none;border-radius:10px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Open Checkout Gateway</button>
             <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Close</button>
-          </div>`;
+          </div></div>`;
         }}
       }}
 
@@ -1485,8 +1700,8 @@ def _extract_svg_inner(svg_txt):
     inner = re.sub(r'currentColor', '#ffffff', inner)
     return vb, (inner or '<circle cx="12" cy="12" r="9" fill="#38bdf8"/>')
 
-def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons):
-    """Builds a 512x512 Pure-Vector 3D Metallic Brand Logo (no nested <image>, 100% ImageMagick APK safe) + 3D Badge Text."""
+def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=True):
+    """Play-Store-Grade 512x512 Pure-Vector 3D Emblem (Sunburst + Metallic Wings/Stars or Aurora Ring + Gloss + 3D Ribbon)."""
     badge_words = re.sub(r'[^A-Za-z0-9 ]', '', app_title or "PRO").upper().split()
     badge_txt = " ".join(badge_words[:2])[:11] or "PRO 3D"
     ic_svg = fetched_icons[0]["svg"] if fetched_icons else ""
@@ -1496,21 +1711,42 @@ def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons):
         vw, vh = (parts[2], parts[3]) if len(parts) >= 4 and parts[2] > 0 and parts[3] > 0 else (24.0, 24.0)
     except Exception:
         vw, vh = 24.0, 24.0
-    scale = min(220.0 / vw, 220.0 / vh)
+    scale = min(195.0 / vw, 195.0 / vh)
     tx = 256.0 - (vw * scale) / 2.0
-    ty = 215.0 - (vh * scale) / 2.0
+    ty = 232.0 - (vh * scale) / 2.0
+
+    wings_and_stars = (
+        '<polygon points="256,256 60,150 90,195 45,215 95,245 55,275 135,285" fill="url(#gold3d)" opacity="0.92"/>'
+        '<polygon points="256,256 452,150 422,195 467,215 417,245 457,275 377,285" fill="url(#gold3d)" opacity="0.92"/>'
+        '<polygon points="156,74 162,90 179,90 165,100 170,116 156,106 142,116 147,100 133,90 150,90" fill="#fde047"/>'
+        '<polygon points="206,56 212,72 229,72 215,82 220,98 206,88 192,98 197,82 183,72 200,72" fill="#fde047"/>'
+        '<polygon points="256,46 263,65 283,65 267,77 273,96 256,84 239,96 245,77 229,65 249,65" fill="#fef08a"/>'
+        '<polygon points="306,56 312,72 329,72 315,82 320,98 306,88 292,98 297,82 283,72 300,72" fill="#fde047"/>'
+        '<polygon points="356,74 362,90 379,90 365,100 370,116 356,106 342,116 347,100 333,90 350,90" fill="#fde047"/>'
+    ) if is_game else (
+        '<circle cx="256" cy="236" r="142" fill="none" stroke="url(#gold3d)" stroke-width="10" opacity="0.88"/>'
+        '<circle cx="256" cy="236" r="122" fill="#0f172a" opacity="0.72" stroke="#ffffff" stroke-opacity="0.35" stroke-width="4"/>'
+    )
+
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">'
         f'<defs>'
-        f'<linearGradient id="bg3d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="{c1}"/><stop offset="100%" stop-color="{c2}"/></linearGradient>'
-        f'<linearGradient id="rim3d" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/><stop offset="100%" stop-color="#0f172a" stop-opacity="0.9"/></linearGradient>'
+        f'<radialGradient id="aurora3d" cx="50%" cy="38%" r="65%"><stop offset="0%" stop-color="{c2}"/><stop offset="55%" stop-color="{c1}"/><stop offset="100%" stop-color="#090d1a"/></radialGradient>'
+        f'<linearGradient id="gold3d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#b45309"/></linearGradient>'
+        f'<linearGradient id="rib3d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0f172a"/><stop offset="50%" stop-color="{c1}"/><stop offset="100%" stop-color="#0f172a"/></linearGradient>'
         f'</defs>'
-        f'<rect width="512" height="512" rx="112" fill="url(#bg3d)"/>'
-        f'<rect x="26" y="26" width="460" height="460" rx="92" fill="#0b1120" opacity="0.82" stroke="url(#rim3d)" stroke-width="10"/>'
-        f'<ellipse cx="256" cy="96" rx="170" ry="38" fill="#ffffff" opacity="0.10"/>'
+        f'<rect width="512" height="512" rx="112" fill="url(#aurora3d)"/>'
+        f'<polygon points="256,236 0,60 95,0" fill="#ffffff" opacity="0.06"/><polygon points="256,236 512,60 417,0" fill="#ffffff" opacity="0.06"/>'
+        f'<polygon points="256,236 0,430 0,310" fill="#ffffff" opacity="0.05"/><polygon points="256,236 512,430 512,310" fill="#ffffff" opacity="0.05"/>'
+        f'<rect x="18" y="18" width="476" height="476" rx="98" fill="none" stroke="url(#gold3d)" stroke-width="8"/>'
+        f'{wings_and_stars}'
+        f'<circle cx="256" cy="236" r="108" fill="#0b1120" opacity="0.88" stroke="#ffffff" stroke-width="5"/>'
+        f'<g transform="translate({tx+4:.1f},{ty+6:.1f}) scale({scale:.2f})" opacity="0.45">{inner}</g>'
         f'<g transform="translate({tx:.1f},{ty:.1f}) scale({scale:.2f})">{inner}</g>'
-        f'<rect x="96" y="388" width="320" height="56" rx="28" fill="{c1}" stroke="#ffffff" stroke-width="4"/>'
-        f'<text x="256" y="426" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle">{badge_txt}</text>'
+        f'<path d="M58 112 Q256 32 454 112" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" opacity="0.18"/>'
+        f'<polygon points="62,386 450,386 430,446 82,446" fill="url(#rib3d)" stroke="url(#gold3d)" stroke-width="5"/>'
+        f'<text x="258" y="427" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#000000" opacity="0.55" text-anchor="middle">{badge_txt}</text>'
+        f'<text x="256" y="424" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#ffffff" text-anchor="middle">{badge_txt}</text>'
         f'</svg>'
     )
 
@@ -1772,7 +2008,7 @@ Output ONLY valid JSON:
     pal = design_doc.get("palette", {})
     c1 = pal.get("primary", "#2563EB")
     c2 = pal.get("accent", "#10B981")
-    raw_svg = build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons)
+    raw_svg = build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=(app_type == "GAMING"))
     ic_m = "PureVector3D-Iconify"
     project_bus["icon_svg"] = raw_svg
     project_bus["icon_model"] = ic_m or "Logo AI"
@@ -1875,7 +2111,7 @@ Define clean StatefulWidget screen classes:
 - `WorkspaceOrActionScreen` ({'11-Player Credit Squad / Challenge Builder + One-Way VIP Store Unlocks (0% cash prize pool)' if app_type == 'GAMING' else 'Interactive Order/Ledger/Service Creator calling SupabaseApi.saveItem + PaymentGatewayService.openCheckoutSheet'}).
 - `RecordsOrRankScreen` (searchable live list + Wallet Passbook tab).
 - `ProfileOrSettingsScreen` (User Profile Overview, Edit Name/Phone saved via `SupabaseApi.updateProfile`, Logout).
-{'Include `PlayGameScreen` using `webview_flutter` (`WebViewWidget` loading `assets/game.html` via `loadFlutterAsset`) + fallback `CustomPainter` mini-game awarding Free XP!' if app_type == 'GAMING' else 'Use `fl_chart`, `flutter_animate`, and `lucide_icons_flutter` for premium Material 3 charts and animations!'}
+{'Include `PlayGameScreen` using `webview_flutter` (`WebViewWidget` loading `assets/game.html` via `loadFlutterAsset`) + fallback `CustomPainter` mini-game awarding Free XP!' if app_type == 'GAMING' else 'Build Play-Store Super-App UI: Top Category Pill Switcher, Search Bar, Promo Hero Banner, 2x2 Service Grid with offer badges, Coupon Strip, `fl_chart` Live Progress/Graph, `flutter_animate`, and `lucide_icons_flutter`!'}
 Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`bodyText2`; ALWAYS use `CardThemeData`; NEVER put `const ` before Screen constructors; ZERO empty `() {{}}` buttons. Output ONLY raw Dart code."""
     screens_dart, fe_m, err_fe = call_specialist_ai(
         "frontend_coder", fe_sys,
@@ -1983,7 +2219,7 @@ st.markdown(f"""
       <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v8.0 COMMANDER</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v10.0 PLAYSTORE</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2217,7 +2453,8 @@ with tab_build:
 
             c_b1, c_b2 = st.columns(2)
             with c_b1:
-                if st.button("Approve & Build Native Flutter APK on GitHub", use_container_width=True):
+                apk_engine = st.radio("Select APK Build Engine:", ["Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)"], horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
+            if st.button("Approve & Build Native Android APK on GitHub", use_container_width=True):
                     safe_repo = re.sub(r'[^a-z0-9-]', '', coded_bundle["app_title"].lower().replace(" ", "-")) or "flutter-app"
                     safe_repo = f"{safe_repo}-{int(time.time()) % 100000}"
                     with st.spinner("Creating GitHub Repo & Pushing 16-Dept Flutter Project..."):
@@ -2235,7 +2472,13 @@ with tab_build:
                             push_file_to_github(safe_repo, "lib/screens/app_screens.dart", coded_bundle["screens_dart"], "Add UI Screens")
                             push_file_to_github(safe_repo, "lib/main.dart", coded_bundle["main_dart"], "Add Navigation Entry")
                             push_file_to_github(safe_repo, "build.sh", make_flutter_build_script(coded_bundle["app_title"], coded_bundle["pkg_slug"]), "Add Flutter APK Build Script")
-                            push_file_to_github(safe_repo, ".github/workflows/build_flutter_apk.yml", AUTOMATED_APK_WORKFLOW, "Activate Flutter APK Workflow")
+                            if "Godot 4" in apk_engine:
+                                g_files = build_godot4_3d_project_files(coded_bundle["app_title"], coded_bundle["pkg_slug"], coded_bundle.get("design_doc", {}).get("palette", {}))
+                                for gf_path, gf_body in g_files.items():
+                                    push_file_to_github(safe_repo, gf_path, gf_body, f"Add Godot 4 3D {gf_path}")
+                                push_file_to_github(safe_repo, ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, "Activate Godot 4 3D Android APK Workflow")
+                            else:
+                                push_file_to_github(safe_repo, ".github/workflows/build_flutter_apk.yml", AUTOMATED_APK_WORKFLOW, "Activate Flutter APK Workflow")
                             rec = {
                                 "id": f"APP-{int(time.time()) % 100000}",
                                 "name": coded_bundle["app_title"],
