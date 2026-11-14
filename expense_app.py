@@ -1411,14 +1411,14 @@ def render_live_mobile_preview(locked_bus):
     b64_ic = base64.b64encode(locked_bus["icon_svg"].encode("utf-8")).decode("utf-8")
     low_p = (title + " " + locked_bus.get("user_prompt", "")).lower()
 
-    if re.search(r'\b(construction|excavator|digging|crane|mining|jcb|loader)\b', low_p):
+    if re.search(r'\b(truck|bus|wheel|wheels|highway|drive|driving|car|race|tipper|tractor)\b', low_p):
+        game_mode = "DRIVE"
+        models_js = '["Bharat Cargo Truck", "Deluxe Sleeper Bus", "18-Wheeler Rig"]'
+        action_lbl = "⚡ NITRO BOOST"
+    elif re.search(r'\b(construction|excavator|digging|crane|mining|jcb|loader)\b', low_p):
         game_mode = "CONSTRUCTION"
         models_js = '["JCB Excavator", "Heavy Mining Dumper", "Mega Tower Crane"]'
         action_lbl = "⛏️ DIG"
-    elif re.search(r'\b(truck|bus|wheel|wheels|highway|drive|driving|car|race|tipper|tractor)\b', low_p):
-        game_mode = "DRIVE"
-        models_js = '["Bharat Tipper", "Volvo Sleeper Bus", "18-Wheeler Rig"]'
-        action_lbl = "⚡ NITRO BOOST"
     elif any(k in low_p for k in ["cricket", "bat", "xi", "pitch", "match"]):
         game_mode = "CRICKET"
         models_js = '["Street Bat", "Pro Willow", "Champion Gold Bat"]'
@@ -1454,7 +1454,8 @@ def render_live_mobile_preview(locked_bus):
         <div id="phoneNav" style="background:{surf};padding:7px 5px;display:{'none' if is_game else 'flex'};justify-content:space-around;border-top:1px solid rgba(255,255,255,0.1);"></div>
       </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
       const isGame = {'true' if is_game else 'false'};
       const gameMode = '{game_mode}';
@@ -1473,7 +1474,7 @@ def render_live_mobile_preview(locked_bus):
 
       function renderGameShell() {{
         document.getElementById('phoneBody').innerHTML = `
-          <div style="position:relative;width:100%;height:100%;background:#091124;overflow:hidden;">
+          <div oncontextmenu="return false;" style="position:relative;width:100%;height:100%;background:#38bdf8;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;">
             <div id="threeWrap" style="width:100%;height:100%;"></div>
             <div style="position:absolute;top:10px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:center;pointer-events:auto;">
               <div style="display:flex;align-items:center;gap:5px;background:rgba(2,6,23,0.68);backdrop-filter:blur(4px);padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,0.2);">
@@ -1513,87 +1514,157 @@ def render_live_mobile_preview(locked_bus):
         const wrap = document.getElementById('threeWrap');
         if (!wrap || typeof THREE === 'undefined') return;
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0b1a30);
-        scene.fog = new THREE.Fog(0x0b1a30, 18, 95);
-        const camera = new THREE.PerspectiveCamera(64, wrap.clientWidth / wrap.clientHeight, 0.1, 160);
+        scene.background = new THREE.Color(0x60a5fa);
+        scene.fog = new THREE.Fog(0x93c5fd, 28, 125);
+        const camera = new THREE.PerspectiveCamera(62, wrap.clientWidth / wrap.clientHeight, 0.1, 180);
         const renderer = new THREE.WebGLRenderer({{ antialias: true }});
         renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+        renderer.shadowMap.enabled = true;
         wrap.innerHTML = '';
         wrap.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        const sun = new THREE.DirectionalLight(0xfffbeb, 1.1);
-        sun.position.set(10, 22, 10);
+        scene.add(new THREE.HemisphereLight(0xe0f2fe, 0x365314, 0.95));
+        const sun = new THREE.DirectionalLight(0xfffbeb, 1.25);
+        sun.position.set(14, 28, 14);
+        sun.castShadow = true;
         scene.add(sun);
 
-        const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 260), new THREE.MeshStandardMaterial({{ color: gameMode === 'CONSTRUCTION' ? 0x57432c : 0x1e3a2f }}));
-        ground.rotation.x = -Math.PI / 2; scene.add(ground);
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 260), new THREE.MeshStandardMaterial({{ color: 0x1f2937 }}));
-        road.rotation.x = -Math.PI / 2; road.position.y = 0.02; scene.add(road);
+        // Daytime Ground, Textured Highway & Shoulders
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 280), new THREE.MeshStandardMaterial({{ color: gameMode === 'CONSTRUCTION' ? 0x78553a : 0x3f6212 }}));
+        ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 280), new THREE.MeshStandardMaterial({{ color: 0x334155, roughness: 0.85 }}));
+        road.rotation.x = -Math.PI / 2; road.position.y = 0.02; road.receiveShadow = true; scene.add(road);
+        for (let sx of [-5.6, 5.6]) {{
+          const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 280), new THREE.MeshBasicMaterial({{ color: 0xf8fafc }}));
+          edge.rotation.x = -Math.PI / 2; edge.position.set(sx, 0.03, 0); scene.add(edge);
+        }}
 
         const dashes = [];
-        for (let z = -120; z < 40; z += 8) {{
-          const d = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 3.2), new THREE.MeshBasicMaterial({{ color: 0xfacc15 }}));
+        for (let z = -130; z < 40; z += 8) {{
+          const d = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 3.4), new THREE.MeshBasicMaterial({{ color: 0xfacc15 }}));
           d.position.set(0, 0.04, z); scene.add(d); dashes.push(d);
         }}
+
+        // Distant 3D Mountains
+        for (let mx = -70; mx <= 70; mx += 28) {{
+          const mt = new THREE.Mesh(new THREE.ConeGeometry(18 + (Math.abs(mx)%7), 22 + (Math.abs(mx)%10), 5), new THREE.MeshStandardMaterial({{ color: 0x475569 }}));
+          mt.position.set(mx, 10, -110); scene.add(mt);
+        }}
+
+        // 3D Trees & Roadside Poles
         const props = [];
-        for (let z = -120; z < 30; z += 14) {{
+        for (let z = -120; z < 30; z += 12) {{
           for (let side of [-1, 1]) {{
-            const b = new THREE.Mesh(new THREE.BoxGeometry(4, 3 + (Math.abs(z)%6), 4), new THREE.MeshStandardMaterial({{ color: side > 0 ? 0x334155 : 0x15803d }}));
-            b.position.set(side * 9.5, 2, z); scene.add(b); props.push(b);
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 2.2, 8), new THREE.MeshStandardMaterial({{ color: 0x78350f }}));
+            trunk.position.y = 1.1; tree.add(trunk);
+            const crown = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.4, 8), new THREE.MeshStandardMaterial({{ color: 0x15803d }}));
+            crown.position.y = 3.2; tree.add(crown);
+            tree.position.set(side * (9 + (Math.abs(z)%3)), 0, z);
+            scene.add(tree); props.push(tree);
           }}
         }}
 
+        // Detailed Multi-Part Indian Cargo Truck (Immediate Frame 1 + Real GLB Upgrade via GLTFLoader)
         const truck = new THREE.Group();
-        const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.8, 4.6), new THREE.MeshStandardMaterial({{ color: 0xe11d48 }}));
-        chassis.position.y = 0.9; truck.add(chassis);
-        const cab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.3, 1.6), new THREE.MeshStandardMaterial({{ color: 0xf59e0b }}));
-        cab.position.set(0, 1.75, -1.2); truck.add(cab);
+        const fallbackRig = new THREE.Group();
+        const bed = new THREE.Mesh(new THREE.BoxGeometry(2.15, 1.25, 3.3), new THREE.MeshStandardMaterial({{ color: 0xea580c }}));
+        bed.position.set(0, 1.35, 0.75); bed.castShadow = true; fallbackRig.add(bed);
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(2.05, 1.45, 1.55), new THREE.MeshStandardMaterial({{ color: 0xdc2626 }}));
+        cab.position.set(0, 1.45, -1.7); cab.castShadow = true; fallbackRig.add(cab);
+        const glass = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.62, 0.1), new THREE.MeshStandardMaterial({{ color: 0x38bdf8, metalness: 0.6, roughness: 0.1 }}));
+        glass.position.set(0, 1.72, -2.46); fallbackRig.add(glass);
+        for (let hx of [-0.72, 0.72]) {{
+          const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.1), new THREE.MeshBasicMaterial({{ color: 0xfef08a }}));
+          hl.position.set(hx, 0.95, -2.48); fallbackRig.add(hl);
+        }}
         const wheels = [];
-        for (let wx of [-1.1, 1.1]) {{
-          for (let wz of [-1.4, 0.6, 1.8]) {{
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.35, 16), new THREE.MeshStandardMaterial({{ color: 0x0f172a }}));
-            w.rotation.z = Math.PI / 2; w.position.set(wx, 0.45, wz);
-            truck.add(w); wheels.push(w);
+        for (let wx of [-1.08, 1.08]) {{
+          for (let wz of [-1.75, 0.35, 1.65]) {{
+            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.36, 16), new THREE.MeshStandardMaterial({{ color: 0x0f172a }}));
+            w.rotation.z = Math.PI / 2; w.position.set(wx, 0.46, wz);
+            fallbackRig.add(w); wheels.push(w);
           }}
         }}
+        truck.add(fallbackRig);
         scene.add(truck);
 
-        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
-        crate.position.set(2, 0.7, -32); scene.add(crate);
+        // Load real Open-Source CC0 3D Truck GLB via GLTFLoader
+        if (typeof THREE.GLTFLoader !== 'undefined') {{
+          try {{
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb', function(gltf) {{
+              const model = gltf.scene;
+              model.scale.set(0.85, 0.85, 0.85);
+              model.rotation.y = Math.PI / 2;
+              truck.remove(fallbackRig);
+              truck.add(model);
+            }});
+          }} catch (e) {{}}
+        }}
 
-        let tx = 0;
+        // AI Oncoming Traffic Vehicle
+        const aiCar = new THREE.Group();
+        const aiBody = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 3.6), new THREE.MeshStandardMaterial({{ color: 0x2563eb }}));
+        aiBody.position.y = 0.85; aiCar.add(aiBody);
+        aiCar.position.set(-2.6, 0, -75);
+        scene.add(aiCar);
+
+        // Collectible 3D Gold Cargo Crate
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
+        crate.position.set(2.2, 0.7, -36); scene.add(crate);
+
+        // Draggable Touch Steering Wheel
+        const wheelEl = document.getElementById('wheelSvg');
+        if (wheelEl) {{
+          const handleWheel = (ev) => {{
+            ev.preventDefault();
+            if (autoBot) toggleSelfPlay();
+            const r = wheelEl.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const pxTouch = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            steerVal = Math.max(-1, Math.min(1, (pxTouch - cx) / 36));
+          }};
+          wheelEl.addEventListener('touchstart', handleWheel, {{ passive: false }});
+          wheelEl.addEventListener('touchmove', handleWheel, {{ passive: false }});
+          wheelEl.addEventListener('touchend', () => {{ steerVal = 0; }});
+        }}
+
+        let tx = 1.6;
         function animate() {{
           if (!document.getElementById('threeWrap')) return;
           if (autoBot) {{
-            speed = 62;
-            steerVal = Math.max(-1, Math.min(1, (crate.position.x - tx) * 0.4));
+            speed = 64;
+            steerVal = Math.max(-1, Math.min(1, (crate.position.x - tx) * 0.42));
           }} else {{
-            if (gasPressed) speed = Math.min(95, speed + 2.2);
-            else if (brakePressed) speed = Math.max(0, speed - 4.0);
+            if (gasPressed) speed = Math.min(98, speed + 2.4);
+            else if (brakePressed) speed = Math.max(0, speed - 4.2);
             else speed = Math.max(0, speed - 0.8);
           }}
           const dir = (gear === 'R' ? -1 : 1);
-          const dz = (speed * 0.012) * dir;
-          tx = Math.max(-3.3, Math.min(3.3, tx + steerVal * 0.08));
+          const dz = (speed * 0.013) * dir;
+          tx = Math.max(-3.6, Math.min(3.6, tx + steerVal * 0.09));
           truck.position.x = tx; truck.rotation.y = -steerVal * 0.14;
-          wheels.forEach(w => w.rotation.x -= dz * 0.8);
+          wheels.forEach(w => w.rotation.x -= dz * 0.85);
 
-          dashes.forEach(d => {{ d.position.z += dz; if (d.position.z > 25) d.position.z -= 160; if (d.position.z < -135) d.position.z += 160; }});
-          props.forEach(p => {{ p.position.z += dz; if (p.position.z > 25) p.position.z -= 154; if (p.position.z < -129) p.position.z += 154; }});
+          dashes.forEach(d => {{ d.position.z += dz; if (d.position.z > 25) d.position.z -= 170; if (d.position.z < -145) d.position.z += 170; }});
+          props.forEach(p => {{ p.position.z += dz; if (p.position.z > 25) p.position.z -= 150; if (p.position.z < -125) p.position.z += 150; }});
+          aiCar.position.z += (dz + 0.35);
+          if (aiCar.position.z > 20) {{ aiCar.position.z = -95; aiCar.position.x = -2.6; }}
+
           crate.position.z += dz; crate.rotation.y += 0.04;
-          if (Math.abs(crate.position.z) < 2.2 && Math.abs(crate.position.x - tx) < 1.8) {{
+          if (Math.abs(crate.position.z) < 2.4 && Math.abs(crate.position.x - tx) < 2.0) {{
             score += 25; xp += 25;
             if (score >= level * 100 && level < 3) {{ level++; document.getElementById('gBanner').innerText = '🎉 UNLOCKED: ' + models[level-1]; }}
-            crate.position.z = -45; crate.position.x = (Math.random() - 0.5) * 6;
+            crate.position.z = -48; crate.position.x = (Math.random() - 0.5) * 6;
           }}
-          if (crate.position.z > 15) {{ crate.position.z = -45; crate.position.x = (Math.random() - 0.5) * 6; }}
+          if (crate.position.z > 15) {{ crate.position.z = -48; crate.position.x = (Math.random() - 0.5) * 6; }}
 
-          if (camMode === 0) {{ camera.position.set(tx * 0.7, 4.2, 8.2); camera.lookAt(tx, 1.2, -10); }}
-          else if (camMode === 1) {{ camera.position.set(tx, 2.3, -1.3); camera.lookAt(tx, 1.6, -20); }}
-          else {{ camera.position.set(tx, 12, 10); camera.lookAt(tx, 0, -8); }}
+          if (camMode === 0) {{ camera.position.set(tx * 0.75, 4.3, 8.5); camera.lookAt(tx, 1.3, -12); }}
+          else if (camMode === 1) {{ camera.position.set(tx, 2.25, -1.6); camera.lookAt(tx, 1.6, -24); }}
+          else {{ camera.position.set(tx, 13, 10); camera.lookAt(tx, 0, -10); }}
 
-          const wh = document.getElementById('wheelSvg'); if (wh) wh.style.transform = `rotate(${{steerVal * 48}}deg)`;
+          const wh = document.getElementById('wheelSvg'); if (wh) wh.style.transform = `rotate(${{steerVal * 52}}deg)`;
           const sh = document.getElementById('spdHud'); if (sh) sh.innerText = Math.round(speed);
           const gs = document.getElementById('gScore'); if (gs) gs.innerText = score;
           const gm = document.getElementById('gModel'); if (gm) gm.innerText = models[Math.min(2, level - 1)];
@@ -2219,7 +2290,7 @@ st.markdown(f"""
       <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v10.0 PLAYSTORE</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v11.0 REAL-3D</span>
 </div>
 """, unsafe_allow_html=True)
 
