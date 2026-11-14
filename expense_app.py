@@ -40,6 +40,8 @@ OWNER_NAME = "Sarfealam"
 ADMIN_PASSWORD = _get_secret("ADMIN_PASSWORD", "SF" + "2026")
 SUPABASE_URL = _get_secret("SUPABASE_URL", "https://saexbzapfzfkzqkunsom.supabase.co")
 SUPABASE_KEY = _get_secret("SUPABASE_KEY", "sb_publishable_" + "3YZ2OA5MiOoVoLqFCXcsxw_JIjNlEjY")
+DEFAULT_UNITY_EMAIL = _get_secret("UNITY_EMAIL", "")
+DEFAULT_UNITY_PASSWORD = _get_secret("UNITY_PASSWORD", "")
 
 VAULT_FILE = "apps_vault.json"
 ACTIVE_BUILD_FILE = "active_build.json"
@@ -143,6 +145,233 @@ jobs:
           draft: false
           prerelease: false
 """
+
+UNITY_APK_WORKFLOW = """name: Build Native Unity 3D Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Activate Unity Personal License
+        uses: game-ci/activate-unity-license@v1
+        with:
+          license: personal
+          username: ${{ secrets.UNITY_EMAIL }}
+          password: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Build Unity 3D Android APK
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: Android
+          unityVersion: 2022.3.20f1
+          androidAppBundle: false
+          buildMethod: AutoBuildScene.PerformAndroidBuild
+
+      - name: Publish Unity 3D APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: "Unity 3D Android APK v1.0.0"
+          files: build/Android/*.apk
+          draft: false
+          prerelease: false
+"""
+
+def push_github_repo_secret(repo_name, secret_name, secret_value):
+    """Encrypts & pushes a secret to GitHub Repo Actions Secrets if PyNaCl is available."""
+    if not secret_value:
+        return False, "Empty secret"
+    try:
+        from nacl import encoding, public
+        pk_data = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/secrets/public-key", method="GET")
+        pk_b64 = pk_data.get("key", "")
+        key_id = pk_data.get("key_id", "")
+        if not pk_b64 or not key_id:
+            return False, "Missing GitHub repo public key"
+        pub_key = public.PublicKey(pk_b64.encode("utf-8"), encoding.Base64Encoder())
+        sealed = public.SealedBox(pub_key).encrypt(secret_value.encode("utf-8"))
+        enc_val = base64.b64encode(sealed).decode("utf-8")
+        github_api_request(
+            f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/secrets/{secret_name}",
+            method="PUT",
+            payload={"encrypted_value": enc_val, "key_id": key_id}
+        )
+        return True, "OK"
+    except Exception as e:
+        return False, str(e)[:120]
+
+def build_unity_3d_project_files(app_title, pkg_slug):
+    """Generates a Colorful Multi-Part Unity 2022.3 LTS 3D Highway/Vehicle Android project with Touch HUD."""
+    safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "bharat_drive"
+    ver_txt = """m_EditorVersion: 2022.3.20f1
+m_EditorVersionWithRevision: 2022.3.20f1 (1234567890ab)
+"""
+    veh_cs = """using UnityEngine;
+
+public class BharatVehicleController : MonoBehaviour
+{
+    public float speed = 0f;
+    public float maxSpeed = 26f;
+    public float turnSpeed = 52f;
+    public float steerInput = 0f;
+    public bool gasDown = true;
+    public bool brkDown = false;
+    public bool reverseGear = false;
+
+    void Update()
+    {
+        float h = Input.GetAxis("Horizontal") + steerInput;
+        float v = Input.GetAxis("Vertical");
+        if (Mathf.Abs(v) > 0.05f) speed = v * maxSpeed;
+        else if (gasDown) speed = Mathf.MoveTowards(speed, reverseGear ? -12f : maxSpeed, 14f * Time.deltaTime);
+        else if (brkDown) speed = Mathf.MoveTowards(speed, 0f, 24f * Time.deltaTime);
+        else speed = Mathf.MoveTowards(speed, 0f, 6f * Time.deltaTime);
+
+        transform.Translate(Vector3.forward * speed * Time.deltaTime);
+        transform.Rotate(Vector3.up * h * turnSpeed * (Mathf.Abs(speed) > 0.5f ? 1f : 0.2f) * Time.deltaTime);
+    }
+
+    AudioSource engSrc;
+    AudioSource hornSrc;
+
+    void Start()
+    {
+        engSrc = gameObject.AddComponent<AudioSource>();
+        engSrc.loop = true;
+        int sr = 22050;
+        var eClip = AudioClip.Create("Engine", sr, 1, sr, false);
+        float[] eData = new float[sr];
+        for (int i = 0; i < sr; i++) eData[i] = Mathf.Sin(2f * Mathf.PI * 58f * i / sr) * 0.25f + Mathf.Sin(2f * Mathf.PI * 116f * i / sr) * 0.12f;
+        eClip.SetData(eData, 0);
+        engSrc.clip = eClip;
+        engSrc.Play();
+
+        hornSrc = gameObject.AddComponent<AudioSource>();
+        var hClip = AudioClip.Create("Horn", sr / 2, 1, sr, false);
+        float[] hData = new float[sr / 2];
+        for (int i = 0; i < hData.Length; i++) hData[i] = (Mathf.Sin(2f * Mathf.PI * 340f * i / sr) + Mathf.Sin(2f * Mathf.PI * 425f * i / sr)) * 0.25f;
+        hClip.SetData(hData, 0);
+        hornSrc.clip = hClip;
+    }
+
+    void LateUpdate()
+    {
+        if (engSrc != null) engSrc.pitch = 0.75f + (Mathf.Abs(speed) / maxSpeed) * 1.15f;
+    }
+
+    void OnGUI()
+    {
+        float w = Screen.width, h = Screen.height;
+        GUIStyle st = new GUIStyle(GUI.skin.button);
+        st.fontSize = (int)(h * 0.038f);
+        if (GUI.RepeatButton(new Rect(25, h - 135, 110, 105), "LEFT", st)) steerInput = -1f;
+        else if (GUI.RepeatButton(new Rect(150, h - 135, 110, 105), "RIGHT", st)) steerInput = 1f;
+        else steerInput = 0f;
+
+        if (GUI.Button(new Rect(w - 415, h - 135, 95, 105), "HORN", st) && hornSrc != null) hornSrc.Play();
+        if (GUI.Button(new Rect(w - 310, h - 135, 85, 105), reverseGear ? "R" : "D", st)) reverseGear = !reverseGear;
+        brkDown = GUI.RepeatButton(new Rect(w - 215, h - 135, 95, 105), "BRK", st);
+        gasDown = GUI.RepeatButton(new Rect(w - 110, h - 155, 95, 125), "GAS", st);
+        GUI.Box(new Rect(w * 0.5f - 95, h - 75, 190, 50), Mathf.RoundToInt(Mathf.Abs(speed) * 3.6f) + " km/h", st);
+    }
+}
+"""
+    editor_cs = f"""using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using System.IO;
+
+public class AutoBuildScene
+{{
+    static void ColorObj(GameObject go, Color c)
+    {{
+        var r = go.GetComponent<Renderer>();
+        if (r != null) {{ var m = new Material(Shader.Find("Standard")); m.color = c; r.sharedMaterial = m; }}
+    }}
+
+    public static void PerformAndroidBuild()
+    {{
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        RenderSettings.fog = true;
+        RenderSettings.fogColor = new Color(0.55f, 0.78f, 0.98f);
+        RenderSettings.fogDensity = 0.012f;
+
+        var grass = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        grass.transform.localScale = new Vector3(30f, 1f, 60f);
+        ColorObj(grass, new Color(0.22f, 0.48f, 0.16f));
+
+        var road = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        road.transform.position = new Vector3(0f, 0.02f, 0f);
+        road.transform.localScale = new Vector3(1.3f, 1f, 60f);
+        ColorObj(road, new Color(0.18f, 0.21f, 0.26f));
+
+        for (int z = -200; z <= 200; z += 18)
+        {{
+            var dash = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            dash.transform.position = new Vector3(0f, 0.05f, z);
+            dash.transform.localScale = new Vector3(0.35f, 0.05f, 4.5f);
+            ColorObj(dash, new Color(0.98f, 0.8f, 0.15f));
+
+            foreach (int side in new[] {{ -1, 1 }})
+            {{
+                var tree = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                tree.transform.position = new Vector3(side * 10.5f, 2.5f, z);
+                tree.transform.localScale = new Vector3(1.6f, 2.5f, 1.6f);
+                ColorObj(tree, new Color(0.1f, 0.55f, 0.2f));
+            }}
+        }}
+
+        var truck = new GameObject("BharatTruck");
+        truck.transform.position = new Vector3(0f, 0.8f, 0f);
+        var bed = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        bed.transform.SetParent(truck.transform);
+        bed.transform.localPosition = new Vector3(0f, 0.7f, -0.8f);
+        bed.transform.localScale = new Vector3(2.2f, 1.3f, 3.4f);
+        ColorObj(bed, new Color(0.92f, 0.35f, 0.08f));
+
+        var cab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cab.transform.SetParent(truck.transform);
+        cab.transform.localPosition = new Vector3(0f, 0.85f, 1.6f);
+        cab.transform.localScale = new Vector3(2.1f, 1.5f, 1.6f);
+        ColorObj(cab, new Color(0.85f, 0.14f, 0.16f));
+
+        truck.AddComponent<BharatVehicleController>();
+        if (Camera.main != null)
+        {{
+            Camera.main.backgroundColor = new Color(0.38f, 0.68f, 0.98f);
+            Camera.main.transform.SetParent(truck.transform);
+            Camera.main.transform.localPosition = new Vector3(0f, 3.6f, -8.5f);
+            Camera.main.transform.LookAt(truck.transform);
+        }}
+        Directory.CreateDirectory("Assets/Scenes");
+        EditorSceneManager.SaveScene(scene, "Assets/Scenes/Main.unity");
+        PlayerSettings.applicationIdentifier = "com.sarfealam.{safe_pkg}";
+        PlayerSettings.productName = "{app_title}";
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        Directory.CreateDirectory("build/Android");
+        BuildPipeline.BuildPlayer(new[] {{ "Assets/Scenes/Main.unity" }}, "build/Android/game-release.apk", BuildTarget.Android, BuildOptions.None);
+    }}
+}}
+"""
+    return {
+        "ProjectSettings/ProjectVersion.txt": ver_txt,
+        "Assets/Scripts/BharatVehicleController.cs": veh_cs,
+        "Assets/Editor/AutoBuildScene.cs": editor_cs
+    }
 
 GODOT_APK_WORKFLOW = """name: Build Native Godot 4 3D Android APK
 
@@ -435,41 +664,42 @@ def save_to_vault(record):
 # LIVE OPEN-SOURCE ICON FETCHER (ICONIFY API + GAME-ICONS.NET — ZERO KEYS)
 # ==============================================================================
 def fetch_live_iconify_icons(prompt_text, factory_id, accent_hex="#38bdf8", ai_keywords=None):
-    """Fetches real domain-matched open-source SVG icons live from api.iconify.design (mdi + lucide + game-icons)."""
+    """Fetches Colorful Digital 3D/Flat SVGs (fluent-emoji + noto) — 1 exact icon per vehicle/entity in prompt."""
     is_game = (factory_id == "GAMING_FACTORY_01")
     low = (prompt_text or "").lower()
-    smart_map = [
-        (["truck", "bus", "vehicle", "lorry", "highway", "drive", "transport", "tractor"], ["truck", "bus", "steering", "highway", "road"]),
-        (["cricket", "ipl", "bat", "wicket", "pitch", "match"], ["cricket", "trophy", "stadium", "medal", "timer"]),
-        (["hisab", "khata", "ledger", "shop", "dukan", "billing", "invoice", "gst"], ["wallet", "receipt", "store", "calculator", "coins"]),
-        (["food", "delivery", "order", "restaurant", "kitchen"], ["utensils", "truck", "shopping-bag", "map-pin", "clock"]),
-        (["taxi", "cab", "ride", "auto", "bike"], ["car", "map-pin", "navigation", "wallet", "shield"])
+    ordered_entities = [
+        ("truck", ["truck", "tipper", "lorry", "rig", "wheeler"]),
+        ("bus", ["bus", "coach", "sleeper"]),
+        ("tractor", ["tractor", "trailer", "farm"]),
+        ("crane", ["crane", "excavator", "jcb", "construct", "digging"]),
+        ("car", ["car", "taxi", "cab", "race"]),
+        ("cricket", ["cricket", "bat", "pitch"]),
+        ("trophy", ["trophy", "leaderboard", "champion", "rank"]),
+        ("coin", ["wallet", "xp", "coin", "vip", "booster"]),
+        ("shop", ["shop", "store", "dukan", "mart"]),
+        ("receipt", ["ledger", "khata", "invoice", "bill", "hisab"])
     ]
-    ctx_words = []
-    for triggers, targets in smart_map:
-        if any(t in low for t in triggers):
-            ctx_words.extend(targets)
+    matched_queries = []
+    for icon_q, triggers in ordered_entities:
+        if any(re.search(r'\b' + t + r'\b', low) for t in triggers):
+            matched_queries.append(icon_q)
 
     clean_ai_kw = [re.sub(r'[^a-z0-9-]', '', str(k).lower()) for k in (ai_keywords or []) if k]
-    raw_words = re.findall(r'[a-zA-Z]{3,}', low)
-    stop_w = {"build", "app", "make", "with", "using", "and", "the", "for", "pro", "free", "smart", "super", "ultra", "best", "real", "new", "high", "profile", "option", "player", "driver"}
-    other_w = [w for w in raw_words if w not in stop_w]
+    for k in clean_ai_kw + (["truck", "bus", "trophy", "coin"] if is_game else ["shop", "wallet", "receipt", "trophy"]):
+        if k and k not in matched_queries:
+            matched_queries.append(k)
 
-    base_queries = []
-    for w in (clean_ai_kw + ctx_words + other_w + (["trophy", "gamepad", "crown", "shield"] if is_game else ["wallet", "store", "user", "shield"])):
-        if w and w not in base_queries:
-            base_queries.append(w)
-
-    prefixes = ["mdi", "lucide", "game-icons"] if any(k in low for k in ["truck", "bus", "car", "vehicle", "drive", "highway", "shop", "ledger"]) else (["game-icons", "mdi"] if is_game else ["lucide", "mdi"])
+    # Multi-color digital sets first (NO &color= param so full colors stay intact!)
+    color_prefixes = ["fluent-emoji", "noto", "twemoji"]
     fetched = []
     seen = set()
-    clean_col = urllib.parse.quote(accent_hex)
 
-    for q in base_queries[:5]:
+    for q in matched_queries[:6]:
         if len(fetched) >= 6:
             break
-        for pref in prefixes:
-            if len(fetched) >= 6:
+        got_one = False
+        for pref in color_prefixes:
+            if got_one:
                 break
             try:
                 s_url = f"https://api.iconify.design/search?query={urllib.parse.quote(q)}&prefix={pref}&limit=2"
@@ -477,26 +707,27 @@ def fetch_live_iconify_icons(prompt_text, factory_id, accent_hex="#38bdf8", ai_k
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 for ic_name in data.get("icons", []):
-                    if ic_name in seen or len(fetched) >= 6:
+                    if ic_name in seen:
                         continue
-                    seen.add(ic_name)
                     if ":" in ic_name:
                         p_name, i_slug = ic_name.split(":", 1)
-                        svg_url = f"https://api.iconify.design/{p_name}/{i_slug}.svg?color={clean_col}"
+                        svg_url = f"https://api.iconify.design/{p_name}/{i_slug}.svg"
                         req2 = urllib.request.Request(svg_url, headers={"User-Agent": "Sarfealam-Nexus-Forge"})
                         with urllib.request.urlopen(req2, timeout=5) as resp2:
                             svg_txt = resp2.read().decode("utf-8", errors="ignore")
                         if "<svg" in svg_txt.lower():
+                            seen.add(ic_name)
                             fetched.append({"name": ic_name, "svg": svg_txt})
+                            got_one = True
+                            break
             except Exception:
                 continue
 
     if not fetched:
         fallback_svgs = [
-            ("mdi:truck", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>'),
-            ("lucide:shield-check", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>'),
-            ("lucide:wallet", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M16 12h2"/></svg>'),
-            ("lucide:trophy", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{accent_hex}" stroke-width="2"><path d="M6 9H4a2 2 0 0 1 0-4h2m12 4h2a2 2 0 0 0 0-4h-2M6 4h12v6a6 6 0 0 1-12 0V4z"/><path d="M12 16v5m-4 0h8"/></svg>')
+            ("fluent-emoji:delivery-truck", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect x="2" y="10" width="20" height="14" rx="2" fill="#f97316"/><path d="M22 14h7l5 5v5H22z" fill="#ef4444"/><rect x="24" y="16" width="5" height="4" fill="#38bdf8"/><circle cx="9" cy="26" r="4" fill="#1e293b"/><circle cx="27" cy="26" r="4" fill="#1e293b"/></svg>'),
+            ("fluent-emoji:bus", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect x="3" y="8" width="30" height="17" rx="4" fill="#facc15"/><rect x="6" y="11" width="7" height="6" fill="#38bdf8"/><rect x="15" y="11" width="7" height="6" fill="#38bdf8"/><rect x="24" y="11" width="6" height="6" fill="#38bdf8"/><circle cx="10" cy="27" r="3.5" fill="#1e293b"/><circle cx="26" cy="27" r="3.5" fill="#1e293b"/></svg>'),
+            ("fluent-emoji:trophy", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M9 6h18v10a9 9 0 0 1-18 0z" fill="#fbbf24"/><rect x="15" y="24" width="6" height="6" fill="#d97706"/><rect x="11" y="29" width="14" height="4" rx="2" fill="#92400e"/></svg>')
         ]
         fetched = [{"name": n, "svg": s} for n, s in fallback_svgs]
     return fetched
@@ -1170,12 +1401,12 @@ def auto_detect_and_repair_bundle(project_bus):
 # DISPLAY 1: FILM-STYLE LIVE CONNECTION BOARD + VISUAL RESEARCH ICONS
 # ==============================================================================
 def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
-    """60-FPS Hi-Fi Google-Style 3D Tech Studio: Glass Cabins, Dual-Monitor Coding Desks & Human Handover."""
-    safe_cc = json.dumps(cross_check[:44])
+    """60-FPS Film-Style Real Human Office Studio: All 8 Named AI Devs, World Scout First, Done Corner Side-Line!"""
+    safe_cc = json.dumps(cross_check[:42])
     safe_fid = json.dumps(factory_id)
     scene_html = f"""
     <div style="background:#030712;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(56,189,248,0.24);">
-      <canvas id="factory3d" width="520" height="242" style="width:100%;height:auto;display:block;"></canvas>
+      <canvas id="factory3d" width="520" height="252" style="width:100%;height:auto;display:block;"></canvas>
     </div>
     <script>
     (function() {{
@@ -1188,137 +1419,114 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
       const fid = {safe_fid};
       const msg = {safe_cc};
 
-      const team = [
-        {{ deskX: 92,  name: 'Scout Dev',  shirt: '#0284c7', hair: '#1e293b', talk: 'Bhai, 3D & Iconify ready! Tu UX dekh' }},
-        {{ deskX: 202, name: 'UX Architect', shirt: '#7c3aed', hair: '#0f172a', talk: 'Pro UX lock bhai, ab tu code likh' }},
-        {{ deskX: 314, name: 'Flutter Dev', shirt: '#d97706', hair: '#334155', talk: 'APK code done bhai, tu verify kar' }},
-        {{ deskX: 426, name: 'Kimi Lead',   shirt: '#059669', hair: '#111827', talk: '16/16 PASS! Real APK Ready hai!' }}
+      // All 8 AI Developers with their real names above their heads!
+      const devs = [
+        {{ id: 0, name: 'World Scout',  shirt: '#0284c7', hair: '#0f172a', deskX: 62,  deskY: 132, talk: 'Dev photo & assets ready!' }},
+        {{ id: 1, name: 'Chief Cmdr',   shirt: '#059669', hair: '#1e293b', deskX: 142, deskY: 132, talk: 'Strict Play-Store order!' }},
+        {{ id: 2, name: 'Gemini Web',   shirt: '#2563eb', hair: '#334155', deskX: 222, deskY: 132, talk: 'Live trends synced!' }},
+        {{ id: 3, name: 'GPT-OSS UX',   shirt: '#7c3aed', hair: '#0f172a', deskX: 302, deskY: 132, talk: 'UX & controls locked!' }},
+        {{ id: 4, name: 'Logo 3D',      shirt: '#db2777', hair: '#1e293b', deskX: 62,  deskY: 196, talk: '3D Wings Logo ready!' }},
+        {{ id: 5, name: 'Three/Unity',  shirt: '#d97706', hair: '#0f172a', deskX: 152, deskY: 196, talk: '3D scene & sound wired!' }},
+        {{ id: 6, name: 'APK Coder',    shirt: '#0d9488', hair: '#334155', deskX: 242, deskY: 196, talk: 'Dart/C# files built!' }},
+        {{ id: 7, name: 'Kimi Fix',     shirt: '#e11d48', hair: '#111827', deskX: 332, deskY: 196, talk: 'All checks 100% PASS!' }}
       ];
 
-      function drawGlassCabin(x, glowCol, isAct) {{
-        // Sleek Glass Studio Bay behind each workstation
-        ctx.fillStyle = isAct ? 'rgba(56,189,248,0.09)' : 'rgba(15,23,42,0.55)';
-        ctx.strokeStyle = isAct ? glowCol : 'rgba(148,163,184,0.22)';
-        ctx.lineWidth = isAct ? 1.6 : 1;
-        ctx.beginPath(); ctx.roundRect(x - 42, 42, 84, 152, 8); ctx.fill(); ctx.stroke();
-        // Ambient Ceiling Light Strip
-        ctx.fillStyle = isAct ? glowCol : 'rgba(56,189,248,0.35)';
-        ctx.fillRect(x - 24, 46, 48, 3);
-      }}
-
-      function drawDualMonitorDesk(x, y, glowCol) {{
-        ctx.fillStyle = '#0f172a'; ctx.fillRect(x - 32, y + 6, 64, 18);
-        ctx.fillStyle = '#1e293b';
-        ctx.beginPath();
-        ctx.moveTo(x - 32, y + 6); ctx.lineTo(x - 24, y - 3);
-        ctx.lineTo(x + 40, y - 3); ctx.lineTo(x + 32, y + 6);
-        ctx.closePath(); ctx.fill();
-        // Dual Monitors with Live Scrolling Code Lines
-        for (let m = -1; m <= 1; m += 2) {{
-          const mx = x + m * 15 - 12;
-          ctx.fillStyle = '#020617'; ctx.fillRect(mx, y - 23, 24, 18);
-          ctx.strokeStyle = glowCol; ctx.lineWidth = 1.4; ctx.strokeRect(mx, y - 23, 24, 18);
-          for (let l = 0; l < 3; l++) {{
-            ctx.fillStyle = l === 0 ? '#34d399' : glowCol;
-            const lw = 7 + ((t * 0.4 + l * 5 + m * 3) % 12);
-            ctx.fillRect(mx + 3, y - 19 + l * 4.5, lw, 2);
-          }}
-        }}
-      }}
-
-      function drawSpeechBubble(x, y, txt, col) {{
-        ctx.font = 'bold 8.5px sans-serif';
-        const w = Math.min(182, Math.max(88, ctx.measureText(txt).width + 14));
-        const bx = Math.max(8, Math.min(512 - w, x - w / 2));
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-        ctx.strokeStyle = col; ctx.lineWidth = 1.4;
-        ctx.beginPath(); ctx.roundRect(bx, y - 28, w, 18, 7); ctx.fill(); ctx.stroke();
+      function drawSpeech(x, y, txt, col) {{
+        ctx.font = 'bold 8px sans-serif';
+        const w = Math.min(138, Math.max(66, ctx.measureText(txt).width + 10));
+        const bx = Math.max(6, Math.min(388 - w, x - w / 2));
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.roundRect(bx, y - 42, w, 14, 5); ctx.fill(); ctx.stroke();
         ctx.fillStyle = col; ctx.textAlign = 'center';
-        ctx.fillText(txt, bx + w / 2, y - 16);
+        ctx.fillText(txt, bx + w / 2, y - 32);
       }}
 
-      function drawHumanEngineer(eng, x, y, walking, holdingFile, isActive, isDone) {{
-        const glow = isActive ? '#fbbf24' : (isDone ? '#34d399' : '#38bdf8');
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.beginPath(); ctx.ellipse(x, y + 32, 14, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+      function drawHuman(d, x, y, walking, isActive, isDone) {{
+        const badgeCol = isDone ? '#34d399' : (isActive ? '#fbbf24' : '#94a3b8');
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.beginPath(); ctx.ellipse(x, y + 23, 10, 3.5, 0, 0, Math.PI * 2); ctx.fill();
 
-        const stride = walking ? Math.sin(t * 0.22) * 7 : 0;
-        ctx.strokeStyle = '#334155'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(x - 4, y + 14); ctx.lineTo(x - 5 + stride, y + 31); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + 4, y + 14); ctx.lineTo(x + 5 - stride, y + 31); ctx.stroke();
+        const stride = walking ? Math.sin(t * 0.22 + d.id) * 5.5 : 0;
+        ctx.strokeStyle = '#334155'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x - 3, y + 10); ctx.lineTo(x - 4 + stride, y + 22); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 3, y + 10); ctx.lineTo(x + 4 - stride, y + 22); ctx.stroke();
 
-        ctx.fillStyle = eng.shirt;
-        ctx.beginPath(); ctx.roundRect(x - 10, y - 6, 20, 22, 5); ctx.fill();
+        ctx.fillStyle = d.shirt;
+        ctx.beginPath(); ctx.roundRect(x - 7.5, y - 4, 15, 16, 4); ctx.fill();
 
         ctx.fillStyle = '#fcd34d';
-        ctx.beginPath(); ctx.arc(x, y - 16, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eng.hair;
-        ctx.beginPath(); ctx.arc(x, y - 19, 9, Math.PI, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = glow; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(x, y - 16, 10.5, Math.PI * 0.85, Math.PI * 2.15); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y - 11, 6.8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = d.hair;
+        ctx.beginPath(); ctx.arc(x, y - 13.5, 6.8, Math.PI, Math.PI * 2); ctx.fill();
 
-        const armAng = holdingFile ? -6 : Math.sin(t * 0.14) * 3;
-        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(x - 10, y - 2); ctx.lineTo(x - 17, y + 7); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + 10, y - 2); ctx.lineTo(x + 19, y + 2 + armAng); ctx.stroke();
+        const armW = isActive ? Math.sin(t * 0.2 + d.id) * 5 : 1;
+        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(x - 7.5, y - 1); ctx.lineTo(x - 13, y + 5 - armW); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 7.5, y - 1); ctx.lineTo(x + 13, y + 5 + armW); ctx.stroke();
 
-        if (holdingFile) {{
-          ctx.fillStyle = '#38bdf8'; ctx.fillRect(x + 16, y - 5 + armAng, 11, 13);
-          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(x + 16, y - 5 + armAng, 11, 13);
-        }}
-
-        ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(eng.name, x, y + 44);
+        // Name Tag ABOVE Head!
+        ctx.font = 'bold 7.5px sans-serif';
+        const nw = ctx.measureText(d.name + (isDone ? ' ✓' : '')).width + 8;
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+        ctx.beginPath(); ctx.roundRect(x - nw / 2, y - 28, nw, 11, 4); ctx.fill();
+        ctx.strokeStyle = badgeCol; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = badgeCol; ctx.textAlign = 'center';
+        ctx.fillText(d.name + (isDone ? ' ✓' : ''), x, y - 20);
       }}
 
       function frame() {{
         t += 1;
-        ctx.clearRect(0, 0, 520, 242);
-        const grd = ctx.createLinearGradient(0, 0, 0, 242);
+        ctx.clearRect(0, 0, 520, 252);
+        const grd = ctx.createLinearGradient(0, 0, 0, 252);
         grd.addColorStop(0, '#0a1329'); grd.addColorStop(1, '#020617');
-        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 242);
+        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 252);
 
-        // 3D Glass Floor Grid
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)'; ctx.lineWidth = 1;
-        for (let gx = 0; gx < 520; gx += 40) {{
-          ctx.beginPath(); ctx.moveTo(gx, 150); ctx.lineTo(gx - 34, 242); ctx.stroke();
+        // Main Office Floor + Right-Side DONE CORNER
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)'; ctx.lineWidth = 1;
+        ctx.strokeRect(8, 34, 384, 210);
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+        ctx.fillRect(398, 34, 114, 210);
+        ctx.strokeStyle = '#10b981'; ctx.strokeRect(398, 34, 114, 210);
+        ctx.fillStyle = '#34d399'; ctx.font = 'bold 8.5px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('✅ DONE CORNER', 455, 48);
+
+        // Draw Office Desks
+        for (let d of devs) {{
+          ctx.fillStyle = '#0f172a'; ctx.fillRect(d.deskX - 20, d.deskY + 12, 40, 12);
+          ctx.strokeStyle = 'rgba(56,189,248,0.35)'; ctx.strokeRect(d.deskX - 20, d.deskY + 12, 40, 12);
         }}
-        ctx.beginPath(); ctx.moveTo(0, 194); ctx.lineTo(520, 194); ctx.stroke();
 
-        for (let i = 0; i < team.length; i++) {{
-          const isAct = (activeStage === i) || (activeStage >= 4 && i === 3);
-          const isDn = (doneCount > i);
-          const gCol = isAct ? '#fbbf24' : (isDn ? '#34d399' : '#38bdf8');
-          drawGlassCabin(team[i].deskX, gCol, isAct);
-          drawDualMonitorDesk(team[i].deskX, 178, gCol);
-        }}
-
-        const curIdx = Math.min(2, Math.max(0, activeStage));
-        const walkProgress = (Math.sin(t * 0.032) * 0.5 + 0.5);
-        const walkerX = (team[curIdx].deskX + 16) + ((team[curIdx + 1].deskX - 28) - (team[curIdx].deskX + 16)) * walkProgress;
-
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)'; ctx.lineWidth = 2;
-        ctx.setLineDash([5, 4]); ctx.lineDashOffset = -t * 1.1;
-        ctx.beginPath(); ctx.moveTo(team[curIdx].deskX, 146); ctx.lineTo(team[curIdx + 1].deskX, 146); ctx.stroke();
-        ctx.setLineDash([]);
-
-        for (let i = 0; i < team.length; i++) {{
-          const isHanding = (i === curIdx);
-          const ex = isHanding ? walkerX : team[i].deskX;
-          const isDn = (doneCount > i);
-          drawHumanEngineer(team[i], ex, 134, isHanding, isHanding, isHanding, isDn);
-          if (isHanding) {{
-            drawSpeechBubble(ex, 92, team[i].talk, '#fde047');
-          }} else if (isDn) {{
-            drawSpeechBubble(team[i].deskX, 92, 'VERIFIED ✓', '#34d399');
+        // Determine Done vs Active vs Standby for all 8 AI Devs
+        const doneThreshold = Math.min(8, doneCount * 2);
+        let doneSlot = 0;
+        for (let i = 0; i < devs.length; i++) {{
+          const d = devs[i];
+          const isDone = (i < doneThreshold);
+          const isActive = (!isDone && i <= doneThreshold + 1);
+          if (isDone) {{
+            const col = doneSlot % 2;
+            const row = Math.floor(doneSlot / 2);
+            const sx = 428 + col * 54;
+            const sy = 78 + row * 44;
+            drawHuman(d, sx, sy, false, false, true);
+            doneSlot++;
+          }} else if (isActive) {{
+            const wx = d.deskX + Math.sin(t * 0.04 + i) * 26;
+            const wy = d.deskY + Math.cos(t * 0.03 + i) * 6;
+            drawHuman(d, wx, wy, true, true, false);
+            drawSpeech(wx, wy, d.talk, '#fde047');
+          }} else {{
+            drawHuman(d, d.deskX, d.deskY, false, false, false);
           }}
         }}
 
+        // Top HUD Banner
         ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-        ctx.fillRect(10, 6, 500, 22);
-        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(10, 6, 500, 22);
+        ctx.fillRect(8, 6, 504, 22);
+        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(8, 6, 504, 22);
         ctx.fillStyle = '#fde68a'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('NEXUS TECH STUDIO | ' + fid + ' | ' + msg, 18, 20);
+        ctx.fillText('HUMAN AI STUDIO | ' + fid + ' | ' + msg, 16, 20);
 
         requestAnimationFrame(frame);
       }}
@@ -1326,7 +1534,7 @@ def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
     }})();
     </script>
     """
-    components.html(scene_html, height=250)
+    components.html(scene_html, height=260)
 
 def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
     """Display 1 (3D Cartoon Factory Movie + Live Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
@@ -1462,6 +1670,55 @@ def render_live_mobile_preview(locked_bus):
       const models = {models_js};
       let autoBot = true, score = 0, level = 1, lives = 3, xp = 1000, bal = 2450, vip = false, tab = 0, cat = 0;
       let steerVal = 0, gasPressed = false, brakePressed = false, gear = 'D', camMode = 0, speed = 0;
+      let audioCtx = null, engOsc = null, engGain = null;
+      function _ensureAudio() {{
+        if (!audioCtx) {{
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) audioCtx = new AC();
+        }}
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        return audioCtx;
+      }}
+      function updateEngineAudio(spd) {{
+        if (autoBot || !audioCtx || audioCtx.state !== 'running') {{
+          if (engGain) engGain.gain.value = 0;
+          return;
+        }}
+        if (!engOsc) {{
+          engOsc = audioCtx.createOscillator();
+          engGain = audioCtx.createGain();
+          engOsc.type = 'sawtooth';
+          engOsc.frequency.value = 52;
+          engGain.gain.value = 0.03;
+          engOsc.connect(engGain); engGain.connect(audioCtx.destination);
+          engOsc.start();
+        }}
+        engOsc.frequency.value = 48 + spd * 0.95;
+        engGain.gain.value = spd > 2 ? 0.045 : 0.015;
+      }}
+      function playTruckHorn() {{
+        const ac = _ensureAudio();
+        if (!ac) return;
+        for (let f of [340, 425]) {{
+          const o = ac.createOscillator(), g = ac.createGain();
+          o.type = 'sawtooth'; o.frequency.value = f;
+          g.gain.setValueAtTime(0.11, ac.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.38);
+          o.connect(g); g.connect(ac.destination);
+          o.start(); o.stop(ac.currentTime + 0.4);
+        }}
+      }}
+      function playUpiDing() {{
+        const ac = _ensureAudio();
+        if (!ac) return;
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(880, ac.currentTime);
+        o.frequency.exponentialRampToValueAtTime(1320, ac.currentTime + 0.14);
+        g.gain.setValueAtTime(0.14, ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+        o.connect(g); g.connect(ac.destination);
+        o.start(); o.stop(ac.currentTime + 0.36);
+      }}
       let ledger = [{{title:'Opening Balance', amt:2450, t:'CR'}}, {{title:'Express Booking #1', amt:480, t:'CR'}}];
 
       function toggleSelfPlay() {{
@@ -1491,20 +1748,18 @@ def render_live_mobile_preview(locked_bus):
             </div>
             <button onclick="camMode=(camMode+1)%3;" style="position:absolute;top:40px;right:10px;background:rgba(2,6,23,0.65);color:#fff;border:1px solid rgba(255,255,255,0.35);border-radius:8px;padding:3px 7px;font-size:9px;font-weight:700;cursor:pointer;">🎥 Cam</button>
             <div id="gBanner" style="position:absolute;top:66px;left:50%;transform:translateX(-50%);font-size:9.5px;font-weight:800;color:#fde047;text-shadow:0 1px 4px #000;white-space:nowrap;"></div>
-            <div style="position:absolute;bottom:14px;left:10px;display:flex;flex-direction:column;align-items:center;gap:4px;">
-              <div id="wheelSvg" style="width:72px;height:72px;border-radius:50%;border:6px solid rgba(255,255,255,0.62);background:rgba(15,23,42,0.28);display:flex;align-items:center;justify-content:center;transition:transform 0.08s;">
-                <div style="width:100%;height:5px;background:rgba(255,255,255,0.65);"></div>
-              </div>
-              <div style="display:flex;gap:5px;">
-                <button onmousedown="if(autoBot)toggleSelfPlay();steerVal=-1;" ontouchstart="if(autoBot)toggleSelfPlay();steerVal=-1;" onmouseup="steerVal=0;" ontouchend="steerVal=0;" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.35);border-radius:8px;background:rgba(2,6,23,0.45);color:#fff;font-weight:800;font-size:11px;">◀</button>
-                <button onmousedown="if(autoBot)toggleSelfPlay();steerVal=1;" ontouchstart="if(autoBot)toggleSelfPlay();steerVal=1;" onmouseup="steerVal=0;" ontouchend="steerVal=0;" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.35);border-radius:8px;background:rgba(2,6,23,0.45);color:#fff;font-weight:800;font-size:11px;">▶</button>
+            <div style="position:absolute;bottom:16px;left:12px;">
+              <div id="wheelSvg" style="width:82px;height:82px;border-radius:50%;border:7px solid rgba(255,255,255,0.72);background:rgba(15,23,42,0.25);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.4);cursor:grab;">
+                <div style="width:100%;height:6px;background:rgba(255,255,255,0.75);"></div>
+                <div style="position:absolute;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,0.85);"></div>
               </div>
             </div>
             <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(2,6,23,0.62);padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;color:#ffffff;border:1px solid rgba(255,255,255,0.25);"><span id="spdHud">0</span> km/h</div>
             <div style="position:absolute;bottom:14px;right:10px;display:flex;align-items:flex-end;gap:5px;">
+              <button onclick="playTruckHorn();" style="width:34px;height:32px;border:1px solid #f59e0b;border-radius:50%;background:rgba(2,6,23,0.58);color:#fde047;font-weight:900;font-size:11px;">📢</button>
               <button onclick="gear=(gear==='D'?'R':'D');this.innerText=gear;" style="width:28px;height:32px;border:1px solid rgba(255,255,255,0.5);border-radius:50%;background:rgba(2,6,23,0.52);color:{acc};font-weight:900;font-size:11px;">D</button>
               <button onmousedown="if(autoBot)toggleSelfPlay();brakePressed=true;" ontouchstart="if(autoBot)toggleSelfPlay();brakePressed=true;" onmouseup="brakePressed=false;" ontouchend="brakePressed=false;" style="width:32px;height:40px;border:1px solid rgba(239,68,68,0.8);border-radius:7px;background:rgba(127,29,29,0.48);color:#fff;font-weight:800;font-size:9px;">BRK</button>
-              <button onmousedown="if(autoBot)toggleSelfPlay();gasPressed=true;" ontouchstart="if(autoBot)toggleSelfPlay();gasPressed=true;" onmouseup="gasPressed=false;" ontouchend="gasPressed=false;" style="width:34px;height:56px;border:1px solid rgba(16,185,129,0.85);border-radius:7px;background:rgba(6,95,70,0.52);color:#fff;font-weight:800;font-size:9px;">GAS</button>
+              <button onmousedown="_ensureAudio();if(autoBot)toggleSelfPlay();gasPressed=true;" ontouchstart="_ensureAudio();if(autoBot)toggleSelfPlay();gasPressed=true;" onmouseup="gasPressed=false;" ontouchend="gasPressed=false;" style="width:34px;height:56px;border:1px solid rgba(16,185,129,0.85);border-radius:7px;background:rgba(6,95,70,0.52);color:#fff;font-weight:800;font-size:9px;">GAS</button>
             </div>
           </div>`;
         initThreeScene();
@@ -1596,7 +1851,7 @@ def render_live_mobile_preview(locked_bus):
             gltfLoader.load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb', function(gltf) {{
               const model = gltf.scene;
               model.scale.set(0.85, 0.85, 0.85);
-              model.rotation.y = Math.PI / 2;
+              model.rotation.y = Math.PI;
               truck.remove(fallbackRig);
               truck.add(model);
             }});
@@ -1614,21 +1869,37 @@ def render_live_mobile_preview(locked_bus):
         const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
         crate.position.set(2.2, 0.7, -36); scene.add(crate);
 
-        // Draggable Touch Steering Wheel
+        // Window-Tracked Smooth Finger Steering Wheel + 360-Degree Touch Orbit Camera
+        let wheelActive = false, wheelCx = 0, orbitYaw = 0, orbitPitch = 0.35, orbitDrag = false, lastOx = 0, lastOy = 0;
         const wheelEl = document.getElementById('wheelSvg');
         if (wheelEl) {{
-          const handleWheel = (ev) => {{
-            ev.preventDefault();
+          const startWheel = (ev) => {{
+            ev.preventDefault(); ev.stopPropagation();
             if (autoBot) toggleSelfPlay();
+            wheelActive = true;
             const r = wheelEl.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const pxTouch = ev.touches ? ev.touches[0].clientX : ev.clientX;
-            steerVal = Math.max(-1, Math.min(1, (pxTouch - cx) / 36));
+            wheelCx = r.left + r.width / 2;
           }};
-          wheelEl.addEventListener('touchstart', handleWheel, {{ passive: false }});
-          wheelEl.addEventListener('touchmove', handleWheel, {{ passive: false }});
-          wheelEl.addEventListener('touchend', () => {{ steerVal = 0; }});
+          wheelEl.addEventListener('touchstart', startWheel, {{ passive: false }});
+          wheelEl.addEventListener('mousedown', startWheel);
         }}
+        wrap.addEventListener('touchstart', (ev) => {{
+          orbitDrag = true;
+          lastOx = ev.touches[0].clientX; lastOy = ev.touches[0].clientY;
+        }}, {{ passive: true }});
+        wrap.addEventListener('mousedown', (ev) => {{ orbitDrag = true; lastOx = ev.clientX; lastOy = ev.clientY; }});
+        window.addEventListener('touchmove', (ev) => {{
+          const cx = ev.touches[0].clientX, cy = ev.touches[0].clientY;
+          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (cx - wheelCx) / 42)); }}
+          else if (orbitDrag) {{ orbitYaw -= (cx - lastOx) * 0.012; orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (cy - lastOy) * 0.008)); lastOx = cx; lastOy = cy; }}
+        }}, {{ passive: true }});
+        window.addEventListener('mousemove', (ev) => {{
+          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (ev.clientX - wheelCx) / 42)); }}
+          else if (orbitDrag) {{ orbitYaw -= (ev.clientX - lastOx) * 0.012; orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (ev.clientY - lastOy) * 0.008)); lastOx = ev.clientX; lastOy = ev.clientY; }}
+        }});
+        const stopAll = () => {{ wheelActive = false; steerVal = 0; orbitDrag = false; }};
+        window.addEventListener('touchend', stopAll);
+        window.addEventListener('mouseup', stopAll);
 
         let tx = 1.6;
         function animate() {{
@@ -1660,9 +1931,18 @@ def render_live_mobile_preview(locked_bus):
           }}
           if (crate.position.z > 15) {{ crate.position.z = -48; crate.position.x = (Math.random() - 0.5) * 6; }}
 
-          if (camMode === 0) {{ camera.position.set(tx * 0.75, 4.3, 8.5); camera.lookAt(tx, 1.3, -12); }}
-          else if (camMode === 1) {{ camera.position.set(tx, 2.25, -1.6); camera.lookAt(tx, 1.6, -24); }}
-          else {{ camera.position.set(tx, 13, 10); camera.lookAt(tx, 0, -10); }}
+          if (camMode === 0) {{
+            const dist = 9.0;
+            const camX = tx + Math.sin(orbitYaw) * dist;
+            const camZ = Math.cos(orbitYaw) * dist;
+            const camY = 1.6 + orbitPitch * 7.5;
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(tx, 1.2, -2);
+          }} else if (camMode === 1) {{
+            camera.position.set(tx, 2.25, -1.6); camera.lookAt(tx, 1.6, -24);
+          }} else {{
+            camera.position.set(tx, 14, 10); camera.lookAt(tx, 0, -10);
+          }}
 
           const wh = document.getElementById('wheelSvg'); if (wh) wh.style.transform = `rotate(${{steerVal * 52}}deg)`;
           const sh = document.getElementById('spdHud'); if (sh) sh.innerText = Math.round(speed);
@@ -1670,6 +1950,7 @@ def render_live_mobile_preview(locked_bus):
           const gm = document.getElementById('gModel'); if (gm) gm.innerText = models[Math.min(2, level - 1)];
           const tv = document.getElementById('topVal'); if (tv) tv.innerText = level;
 
+          if (typeof updateEngineAudio === 'function') updateEngineAudio(speed);
           renderer.render(scene, camera);
           requestAnimationFrame(animate);
         }}
@@ -1721,7 +2002,7 @@ def render_live_mobile_preview(locked_bus):
           b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1.5px solid {acc};border-radius:14px;padding:12px;">
             <div style="font-size:13px;font-weight:800;color:{acc};">🔒 Razorpay-Ready Checkout</div>
             <div style="font-size:11px;margin:6px 0;opacity:0.9;">Direct Owner Payment • UPI / Card / NetBanking</div>
-            <button onclick="vip=true;bal+=500;xp+=200;${{backFn}};" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Pay Success</button>
+            <button onclick="playUpiDing();vip=true;bal+=500;xp+=200;${{backFn}};" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Pay Success</button>
             <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Back</button>
           </div></div>`;
         }} else if (kind === 'profile') {{
@@ -1811,7 +2092,7 @@ def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=True):
         f'<polygon points="256,236 0,430 0,310" fill="#ffffff" opacity="0.05"/><polygon points="256,236 512,430 512,310" fill="#ffffff" opacity="0.05"/>'
         f'<rect x="18" y="18" width="476" height="476" rx="98" fill="none" stroke="url(#gold3d)" stroke-width="8"/>'
         f'{wings_and_stars}'
-        f'<circle cx="256" cy="236" r="108" fill="#0b1120" opacity="0.88" stroke="#ffffff" stroke-width="5"/>'
+        f'<polygon points="256,118 358,176 358,294 256,352 154,294 154,176" fill="#0b1120" opacity="0.92" stroke="url(#gold3d)" stroke-width="9"/><circle cx="256" cy="236" r="96" fill="#0f172a" opacity="0.85" stroke="#ffffff" stroke-opacity="0.4" stroke-width="3"/>'
         f'<g transform="translate({tx+4:.1f},{ty+6:.1f}) scale({scale:.2f})" opacity="0.45">{inner}</g>'
         f'<g transform="translate({tx:.1f},{ty:.1f}) scale({scale:.2f})">{inner}</g>'
         f'<path d="M58 112 Q256 32 454 112" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" opacity="0.18"/>'
@@ -1822,26 +2103,36 @@ def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=True):
     )
 
 def fetch_github_top_starred_repos(query_text, is_game):
-    """World Scout Pass 1: Finds top-starred open-source Flutter/Game repos so low-quality code is filtered out."""
+    """World Scout Pass 1: Finds top-starred open-source Unity/Three.js/Flame/Material3 repos + real developer avatars."""
     q_words = [w for w in re.findall(r'[a-zA-Z]{3,}', (query_text or "").lower()) if w not in ("build", "app", "make", "with", "using", "and", "the", "for", "pro", "free")]
-    topic = " ".join(q_words[:3]) or ("game" if is_game else "wallet")
-    q = urllib.parse.quote(f"{topic} {'flutter flame threejs' if is_game else 'flutter material3'}")
+    topic = " ".join(q_words[:2]) or ("truck" if is_game else "wallet")
+    q = urllib.parse.quote(f"{topic} {'unity threejs game' if is_game else 'flutter material3'}")
     url = f"https://api.github.com/search/repositories?q={q}&sort=stars&order=desc&per_page=5"
     results = []
     try:
         data = github_api_request(url, method="GET", timeout=10)
         for r in data.get("items", [])[:4]:
+            own = r.get("owner") or {}
             results.append({
                 "name": r.get("full_name", ""),
                 "stars": r.get("stargazers_count", 0),
-                "desc": (r.get("description") or "")[:95],
-                "url": r.get("html_url", "")
+                "desc": (r.get("description") or "")[:90],
+                "url": r.get("html_url", ""),
+                "owner_login": own.get("login", "dev"),
+                "owner_avatar": own.get("avatar_url", "")
             })
     except Exception:
         pass
     if not results:
         results = [
-            {"name": "flame-engine/flame" if is_game else "flutter/samples", "stars": 9500, "desc": "Official Open-Source Engine & Material 3 Patterns", "url": "https://github.com/flame-engine/flame" if is_game else "https://github.com/flutter/samples"}
+            {
+                "name": "mrdoob/three.js" if is_game else "flutter/samples",
+                "stars": 104000 if is_game else 17500,
+                "desc": "Open-Source 3D WebGL & Material 3 Architecture",
+                "url": "https://github.com/mrdoob/three.js" if is_game else "https://github.com/flutter/samples",
+                "owner_login": "mrdoob" if is_game else "flutter",
+                "owner_avatar": "https://avatars.githubusercontent.com/u/97088?v=4" if is_game else "https://avatars.githubusercontent.com/u/14101776?v=4"
+            }
         ]
     return results
 
@@ -1923,7 +2214,13 @@ def render_scout_command_board(scout_st):
     pal = scout_st.get("palette", {})
     cmd_ord = scout_st.get("commander_order", "Chief Commander reviewing World Scout findings before granting worker access...")
     badge_col = "#10b981" if stt == "granted" else "#f59e0b"
-    repo_html = "".join([f"<div style='font-size:10px;color:#cbd5e1;'>⭐ {r['stars']} • <a href='{r['url']}' style='color:#38bdf8;text-decoration:none;'>{r['name']}</a> — {r['desc'][:55]}</div>" for r in gh_repos[:3]]) or "<div style='font-size:10px;color:#94a3b8;'>Scanning GitHub top-starred repos...</div>"
+    repo_cards = []
+    for r in gh_repos[:3]:
+        av = r.get("owner_avatar") or ""
+        lg = r.get("owner_login") or r.get("name", "").split("/")[0]
+        img_tag = f"<img src='{av}' width='26' height='26' style='border-radius:50%;border:1.5px solid #38bdf8;object-fit:cover;'/>" if av else "<span style='font-size:16px;'>👨‍💻</span>"
+        repo_cards.append(f"<div style='display:flex;align-items:center;gap:8px;background:rgba(30,41,59,0.7);padding:5px 7px;border-radius:9px;margin-top:4px;'>{img_tag}<div style='min-width:0;'><div style='font-size:10px;color:#f8fafc;font-weight:700;'>@{lg} • ⭐ {r['stars']}</div><div style='font-size:9.5px;color:#38bdf8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'><a href='{r['url']}' style='color:#38bdf8;text-decoration:none;'>{r['name']}</a></div></div></div>")
+    repo_html = "".join(repo_cards) or "<div style='font-size:10px;color:#94a3b8;'>Scanning GitHub top-starred developers...</div>"
     pal_html = "".join([f"<span style='display:inline-block;width:14px;height:14px;border-radius:4px;background:{v};border:1px solid #fff;margin-right:4px;' title='{k}:{v}'></span>" for k, v in pal.items()]) if pal else "<span style='font-size:10px;color:#94a3b8;'>Analyzing optimal palette...</span>"
     st.markdown(f"""
     <div style="background:rgba(15,23,42,0.96);border:1.5px solid {badge_col};border-radius:14px;padding:10px 12px;margin:8px 0;">
@@ -2290,7 +2587,7 @@ st.markdown(f"""
       <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v11.0 REAL-3D</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v14.0 CINEMA-STUDIO</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2524,7 +2821,7 @@ with tab_build:
 
             c_b1, c_b2 = st.columns(2)
             with c_b1:
-                apk_engine = st.radio("Select APK Build Engine:", ["Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)"], horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
+                apk_engine = st.radio("Select APK Build Engine:", ["Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)", "Unity 3D Engine (game-ci Personal APK)"], horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
             if st.button("Approve & Build Native Android APK on GitHub", use_container_width=True):
                     safe_repo = re.sub(r'[^a-z0-9-]', '', coded_bundle["app_title"].lower().replace(" ", "-")) or "flutter-app"
                     safe_repo = f"{safe_repo}-{int(time.time()) % 100000}"
@@ -2543,7 +2840,14 @@ with tab_build:
                             push_file_to_github(safe_repo, "lib/screens/app_screens.dart", coded_bundle["screens_dart"], "Add UI Screens")
                             push_file_to_github(safe_repo, "lib/main.dart", coded_bundle["main_dart"], "Add Navigation Entry")
                             push_file_to_github(safe_repo, "build.sh", make_flutter_build_script(coded_bundle["app_title"], coded_bundle["pkg_slug"]), "Add Flutter APK Build Script")
-                            if "Godot 4" in apk_engine:
+                            if "Unity 3D" in apk_engine:
+                                u_files = build_unity_3d_project_files(coded_bundle["app_title"], coded_bundle["pkg_slug"])
+                                for uf_path, uf_body in u_files.items():
+                                    push_file_to_github(safe_repo, uf_path, uf_body, f"Add Unity 3D {uf_path}")
+                                push_github_repo_secret(safe_repo, "UNITY_EMAIL", DEFAULT_UNITY_EMAIL)
+                                push_github_repo_secret(safe_repo, "UNITY_PASSWORD", DEFAULT_UNITY_PASSWORD)
+                                push_file_to_github(safe_repo, ".github/workflows/build_unity_apk.yml", UNITY_APK_WORKFLOW, "Activate Unity 3D Android APK Workflow")
+                            elif "Godot 4" in apk_engine:
                                 g_files = build_godot4_3d_project_files(coded_bundle["app_title"], coded_bundle["pkg_slug"], coded_bundle.get("design_doc", {}).get("palette", {}))
                                 for gf_path, gf_body in g_files.items():
                                     push_file_to_github(safe_repo, gf_path, gf_body, f"Add Godot 4 3D {gf_path}")
