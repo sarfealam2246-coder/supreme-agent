@@ -3,6 +3,8 @@ import streamlit.components.v1 as components
 import json
 import os
 import re
+import io
+import wave
 import time
 import base64
 import urllib.request
@@ -689,15 +691,109 @@ def run_live_engine_diagnostics():
 
 
 # ==============================================================================
-# LIVE VOICE BOSS (AUTO-SPEAK ON EVERY STEP + WHATSAPP-STYLE GROQ WHISPER MIC)
+# LIVE VOICE BOSS (GEMINI HINDI/HINGLISH TTS + ACTION ROUTER + WHATSAPP MIC)
 # ==============================================================================
+def _pcm_to_wav_bytes(pcm_bytes, sample_rate=24000):
+    """Wraps raw 16-bit mono PCM audio from Gemini TTS into a playable RIFF WAV."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
+
+def _fetch_gemini_tts_audio(text, voice_name="Puck"):
+    """Fetches natural Hindi/Hinglish WAV audio via Google Gemini TTS (existing AI Studio key)."""
+    cache = st.session_state.setdefault("tts_audio_cache", {})
+    key = f"gem:{voice_name}:{text[:110]}"
+    if key in cache:
+        return cache[key]
+    for model_id in ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview"]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+            payload = {
+                "contents": [{"parts": [{"text": f"Speak warmly and energetically in natural Indian Hinglish: {text[:360]}"}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "temperature": 1.0,
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {"voiceName": voice_name}
+                        }
+                    }
+                }
+            }
+            headers = {
+                "x-goog-api-key": DEFAULT_GEMINI_KEY,
+                "Content-Type": "application/json",
+                "User-Agent": "Sarfealam-Nexus-Forge"
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                for p in parts:
+                    inline = p.get("inlineData", {})
+                    b64 = inline.get("data", "")
+                    if b64:
+                        raw_bytes = base64.b64decode(b64)
+                        wav_bytes = raw_bytes if raw_bytes[:4] == b"RIFF" else _pcm_to_wav_bytes(raw_bytes, 24000)
+                        if len(wav_bytes) > 500:
+                            cache[key] = wav_bytes
+                            return wav_bytes
+        except Exception:
+            continue
+    return None
+
+def _fetch_groq_tts_audio(text, voice_name="autumn"):
+    """Fallback WAV audio via Groq Orpheus TTS API."""
+    cache = st.session_state.setdefault("tts_audio_cache", {})
+    key = f"groq:{voice_name}:{text[:100]}"
+    if key in cache:
+        return cache[key]
+    for model_id, v_id in [("canopylabs/orpheus-v1-english", voice_name)]:
+        try:
+            payload = {"model": model_id, "input": text[:350], "voice": v_id, "response_format": "wav"}
+            headers = {
+                "Authorization": f"Bearer {DEFAULT_GROQ_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": "Sarfealam-Nexus-Forge"
+            }
+            req = urllib.request.Request("https://api.groq.com/openai/v1/audio/speech", data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                audio_bytes = resp.read()
+                if audio_bytes and len(audio_bytes) > 500:
+                    cache[key] = audio_bytes
+                    return audio_bytes
+        except Exception:
+            continue
+    return None
+
 def speak_boss_voice(message_text, voice_style="Default Hindi-English", unlock_on_touch=False):
-    """Auto-speaks Factory Boss updates in Factory UI ONLY (never inside generated APKs)."""
+    """Plays Gemini Native Hindi/Hinglish WAV audio (Groq fallback) with autoplay=True."""
     if not message_text or voice_style == "Mute (Silent)":
         return
-    rate_val = 1.03
-    pitch_val = 1.0
-    lang_val = "hi-IN"
+    gem_voice_map = {
+        "Default Hindi-English": "Puck",
+        "Deep Boss (Male)": "Charon",
+        "Warm Assistant (Female)": "Kore",
+        "Fast Pro (English-IN)": "Fenrir"
+    }
+    groq_voice_map = {
+        "Default Hindi-English": "autumn",
+        "Deep Boss (Male)": "daniel",
+        "Warm Assistant (Female)": "diana",
+        "Fast Pro (English-IN)": "troy"
+    }
+    audio_bytes = _fetch_gemini_tts_audio(message_text, gem_voice_map.get(voice_style, "Puck"))
+    if not audio_bytes:
+        audio_bytes = _fetch_groq_tts_audio(message_text, groq_voice_map.get(voice_style, "autumn"))
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/wav", autoplay=True)
+        return
+
+    rate_val, pitch_val, lang_val = 1.03, 1.0, "hi-IN"
     if voice_style == "Deep Boss (Male)":
         pitch_val, rate_val = 0.85, 0.98
     elif voice_style == "Warm Assistant (Female)":
@@ -706,41 +802,34 @@ def speak_boss_voice(message_text, voice_style="Default Hindi-English", unlock_o
         lang_val, pitch_val, rate_val = "en-IN", 1.0, 1.12
 
     safe_msg = json.dumps(message_text)
-    touch_js = ""
-    if unlock_on_touch:
-        touch_js = f"""
-        let spokenOnce = false;
-        function trySpeakNow() {{
-          if (spokenOnce) return;
-          spokenOnce = true;
-          const u2 = new SpeechSynthesisUtterance({safe_msg});
-          u2.lang = '{lang_val}'; u2.rate = {rate_val}; u2.pitch = {pitch_val};
-          window.speechSynthesis.speak(u2);
-        }}
-        window.parent.document.addEventListener('touchstart', trySpeakNow, {{ once: true }});
-        window.parent.document.addEventListener('click', trySpeakNow, {{ once: true }});
-        """
+    short_lbl = (message_text[:64] + "...") if len(message_text) > 64 else message_text
     components.html(f"""
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:linear-gradient(135deg,#0f172a,#1e293b);border:1px solid #38bdf8;border-radius:10px;padding:6px 10px;font-family:sans-serif;">
+      <div style="color:#e2e8f0;font-size:11.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><b>Boss:</b> {short_lbl}</div>
+      <button onclick="playBoss()" style="background:#0284c7;color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🔊 Hear Boss</button>
+    </div>
     <script>
-      try {{
-        if ('speechSynthesis' in window) {{
-          window.speechSynthesis.cancel();
-          const u = new SpeechSynthesisUtterance({safe_msg});
-          u.lang = '{lang_val}';
-          u.rate = {rate_val};
-          u.pitch = {pitch_val};
-          window.speechSynthesis.speak(u);
-          {touch_js}
-        }}
-      }} catch (e) {{}}
+      function playBoss() {{
+        try {{
+          if ('speechSynthesis' in window) {{
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance({safe_msg});
+            u.lang = '{lang_val}'; u.rate = {rate_val}; u.pitch = {pitch_val};
+            window.speechSynthesis.speak(u);
+          }}
+        }} catch (e) {{}}
+      }}
+      playBoss();
     </script>
-    """, height=0)
+    """, height=48)
 
 def transcribe_voice_groq(audio_bytes, filename="voice.wav"):
-    """Transcribes WhatsApp-style voice note via Groq Whisper (existing gsk_ key, $0)."""
+    """Transcribes WhatsApp-style Hindi/Hinglish voice note cleanly via Groq Whisper ($0)."""
     boundary = "----SarfealamBoundary7MA4YWxkTrZu0gW"
     parts = []
     parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n".encode("utf-8"))
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nhi\r\n".encode("utf-8"))
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nSarfealam Boss, Nexus Forge, Design, Coding, Worker, Kimi Repair, APK, Reject\r\n".encode("utf-8"))
     parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: audio/wav\r\n\r\n".encode("utf-8"))
     parts.append(audio_bytes)
     parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
@@ -748,28 +837,71 @@ def transcribe_voice_groq(audio_bytes, filename="voice.wav"):
     headers = {
         "Authorization": f"Bearer {DEFAULT_GROQ_KEY}",
         "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "User-Agent": "Sarfealam-Flutter-Factory"
+        "User-Agent": "Sarfealam-Nexus-Forge"
     }
     req = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions", data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=20) as resp:
         res = json.loads(resp.read().decode("utf-8"))
         return res.get("text", "").strip()
 
+def _infer_voice_action_fallback(text):
+    t = (text or "").lower()
+    if any(k in t for k in ["reject", "hatao", "cancel", "fresh", "naya shuru", "band karo"]):
+        return "REJECT_RESET"
+    if any(k in t for k in ["repair", "fix", "error", "kimi", "theek kar"]):
+        return "KIMI_REPAIR"
+    if any(k in t for k in ["apk", "github", "compile", "release", "publish"]):
+        return "BUILD_APK"
+    if any(k in t for k in ["coding", "code", "worker", "dart", "banwa", "karwa"]):
+        return "START_CODING"
+    if any(k in t for k in ["design", "color", "rang", "theme", "ui", "screen", "layout", "badlo", "change"]):
+        return "UPDATE_DESIGN"
+    return "CHAT_ONLY"
+
 def ask_voice_boss(owner_instruction, project_bus):
-    """Boss AI reads live Shared Project Bus + Owner's voice command and replies in warm Hinglish."""
+    """Action-capable Voice Boss: NEVER says No; dispatches workers + replies in energetic Hinglish."""
     bus_snap = {
         "app_title": project_bus.get("app_title", "None"),
         "factory_id": project_bus.get("factory_id", "None"),
         "boss_status": project_bus.get("boss_status", ""),
-        "repair_status": project_bus.get("repair_status", ""),
-        "human_brain_note": project_bus.get("human_brain_note", "")
+        "repair_status": project_bus.get("repair_status", "")
     }
     boss_sys = (
-        f"You are the Live Factory Voice Boss speaking directly to {OWNER_NAME} Boss in natural, warm Hinglish (Roman Hindi + English, NO Devanagari). "
-        "Address him as 'Sarfealam Boss'. Report any errors honestly, confirm if Kimi Self-Repair can fix them, and follow his new instructions concisely in 2-3 spoken sentences."
+        f"You are the Live Voice Director of {OWNER_NAME} Nexus Forge speaking directly to {OWNER_NAME} Boss in energetic Indian Hinglish (Roman Hindi + English, ZERO Devanagari). "
+        "CRITICAL RULE: NEVER say 'No', 'I cannot', or 'do it yourself'. If Boss asks you to make other workers code, change design/colors, fix errors via Kimi, build APK, or reset project, ALWAYS say 'Thik hai Boss, main abhi worker bots se kara raha hoon!' and pick the matching action. "
+        "Output ONLY valid JSON: "
+        '{"action": "CHAT_ONLY|UPDATE_DESIGN|START_CODING|KIMI_REPAIR|BUILD_APK|REJECT_RESET", "reply": "2 enthusiastic spoken Hinglish sentences calling him Sarfealam Boss", "directive": "short English instruction for workers"}'
     )
-    reply, m_used, err = call_specialist_ai("human_architect", boss_sys, f"Live Factory State: {json.dumps(bus_snap)}\nOwner Voice Command: {owner_instruction}", max_tokens=260)
-    return reply or f"Sarfealam Boss, aapka nirdesh note kar liya hai. ({err})", m_used
+    usr_p = f"Studio State: {json.dumps(bus_snap)}\nSarfealam Boss Said: {owner_instruction}"
+    fast_routes = [
+        ("groq", "llama-3.3-70b-versatile"),
+        ("gemini", "gemini-2.5-flash"),
+        ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b")
+    ]
+    for prov, m_id in fast_routes:
+        try:
+            if prov == "groq":
+                out = _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", DEFAULT_GROQ_KEY, m_id, boss_sys, usr_p, max_tokens=220)
+            elif prov == "gemini":
+                out = _call_gemini_api(m_id, boss_sys, usr_p, max_tokens=220)
+            else:
+                out = _call_openai_compat("https://integrate.api.nvidia.com/v1/chat/completions", DEFAULT_NVIDIA_KEY, m_id, boss_sys, usr_p, max_tokens=220)
+            parsed = extract_json_object(out)
+            if isinstance(parsed, dict) and parsed.get("reply"):
+                act = str(parsed.get("action", "CHAT_ONLY")).upper()
+                if act not in ("CHAT_ONLY", "UPDATE_DESIGN", "START_CODING", "KIMI_REPAIR", "BUILD_APK", "REJECT_RESET"):
+                    act = _infer_voice_action_fallback(owner_instruction)
+                return parsed["reply"], f"{prov.upper()}:{m_id}", {"action": act, "directive": parsed.get("directive", owner_instruction)}
+            cleaned = strip_markdown_fences(out)
+            if cleaned:
+                act = _infer_voice_action_fallback(owner_instruction)
+                return cleaned, f"{prov.upper()}:{m_id}", {"action": act, "directive": owner_instruction}
+        except Exception:
+            continue
+    act = _infer_voice_action_fallback(owner_instruction)
+    if act != "CHAT_ONLY":
+        return f"Thik hai {OWNER_NAME} Boss! Maine worker bots ko turant kaam par laga diya hai, abhi ho raha hai!", "LOCAL_ACTION", {"action": act, "directive": owner_instruction}
+    return f"Wah {OWNER_NAME} Boss! Nexus Forge mein aapka swagat hai, sabhi 16 workers ekdum ready hain!", "LOCAL_FAST", {"action": "CHAT_ONLY", "directive": ""}
 
 # ==============================================================================
 # DART SYNTAX & FLUTTER 3.50 DETERMINISTIC AUTO-FIXER + KIMI REPAIR
@@ -1016,8 +1148,146 @@ def auto_detect_and_repair_bundle(project_bus):
 # ==============================================================================
 # DISPLAY 1: FILM-STYLE LIVE CONNECTION BOARD + VISUAL RESEARCH ICONS
 # ==============================================================================
+def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
+    """60-FPS 3D-Isometric Animated Cartoon Studio showing Drone, Neon Pads, Speech Bubbles & Bots."""
+    safe_cc = json.dumps(cross_check[:62])
+    safe_fid = json.dumps(factory_id)
+    scene_html = f"""
+    <div style="background:#050a18;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(56,189,248,0.18);">
+      <canvas id="factory3d" width="520" height="220" style="width:100%;height:auto;display:block;"></canvas>
+    </div>
+    <script>
+    (function() {{
+      const c = document.getElementById('factory3d');
+      if (!c) return;
+      const ctx = c.getContext('2d');
+      let t = 0;
+      const activeStage = {run_idx};
+      const doneCount = {done_cnt};
+      const fid = {safe_fid};
+      const msg = {safe_cc};
+
+      function draw3DBox(x, y, w, h, d, topC, leftC, rightC) {{
+        ctx.fillStyle = leftC;
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = topC;
+        ctx.beginPath();
+        ctx.moveTo(x, y); ctx.lineTo(x + d, y - d * 0.55);
+        ctx.lineTo(x + w + d, y - d * 0.55); ctx.lineTo(x + w, y);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = rightC;
+        ctx.beginPath();
+        ctx.moveTo(x + w, y); ctx.lineTo(x + w + d, y - d * 0.55);
+        ctx.lineTo(x + w + d, y + h - d * 0.55); ctx.lineTo(x + w, y + h);
+        ctx.closePath(); ctx.fill();
+      }}
+
+      function drawBubble(x, y, txt, col) {{
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(x - 36, y - 28, 72, 16, 6);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.font = 'bold 8.5px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(txt, x, y - 17);
+      }}
+
+      function drawBot(x, y, label, bubbleTxt, active, done, bob) {{
+        // Neon Workstation Pad
+        ctx.fillStyle = active ? 'rgba(245,158,11,0.2)' : (done ? 'rgba(16,185,129,0.16)' : 'rgba(56,189,248,0.08)');
+        ctx.beginPath(); ctx.ellipse(x + 2, y + 20, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+        const by = y + Math.sin(bob) * (active ? 4.5 : 1.5);
+        const glow = active ? '#f59e0b' : (done ? '#10b981' : '#64748b');
+        draw3DBox(x - 16, by - 14, 32, 26, 9, glow, '#1e293b', '#0f172a');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(x - 6, by - 4, 3.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + 6, by - 4, 3.2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = glow; ctx.lineWidth = 3;
+        const armAng = active ? Math.sin(t * 0.25) * 8 : 0;
+        ctx.beginPath(); ctx.moveTo(x - 16, by); ctx.lineTo(x - 24, by + 6 + armAng); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 16, by); ctx.lineTo(x + 24, by + 6 - armAng); ctx.stroke();
+        ctx.fillStyle = '#f1f5f9'; ctx.font = 'bold 9.5px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(label, x + 2, y + 34);
+        if (active) {{
+          drawBubble(x + 2, by - 14, bubbleTxt, '#fde047');
+          ctx.fillStyle = '#fde047';
+          for (let s = 0; s < 4; s++) {{
+            ctx.fillRect(x + (Math.random()-0.5)*28, by - 18 - Math.random()*12, 2.5, 2.5);
+          }}
+        }} else if (done) {{
+          drawBubble(x + 2, by - 12, 'DONE ✓', '#34d399');
+        }}
+      }}
+
+      function frame() {{
+        t += 1;
+        ctx.clearRect(0, 0, 520, 220);
+        const grd = ctx.createLinearGradient(0, 0, 0, 220);
+        grd.addColorStop(0, '#0b142c'); grd.addColorStop(1, '#020617');
+        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 220);
+
+        // 3D Isometric Floor Grid
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)'; ctx.lineWidth = 1;
+        for (let gx = 0; gx < 520; gx += 38) {{
+          ctx.beginPath(); ctx.moveTo(gx, 142); ctx.lineTo(gx - 34, 220); ctx.stroke();
+        }}
+        ctx.beginPath(); ctx.moveTo(0, 172); ctx.lineTo(520, 172); ctx.stroke();
+
+        // Web Cloud Portal on Left
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
+        ctx.beginPath(); ctx.arc(46, 58, 26 + Math.sin(t*0.08)*2, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('WEB CLOUD', 46, 55);
+        ctx.fillText('Iconify+AI', 46, 66);
+
+        // 3D Conveyor Belt
+        draw3DBox(75, 146, 412, 16, 18, '#1e293b', '#0f172a', '#020617');
+        for (let rx = 85; rx < 476; rx += 22) {{
+          const shift = (rx + (t * 1.8) % 22);
+          ctx.fillStyle = '#38bdf8'; ctx.fillRect(shift, 140, 8, 3);
+        }}
+
+        // 4 Animated 3D Cartoon Studio Worker Bots
+        drawBot(130, 114, '1. Scout+SVG', 'Icon Fetch!', activeStage===0, doneCount>0, t*0.1);
+        drawBot(225, 114, '2. Human+UI', 'UX Polish!', activeStage===1||activeStage===2, doneCount>2, t*0.1+1);
+        drawBot(325, 114, '3. 3D Coders', 'Dart Code!', activeStage===3, doneCount>3, t*0.1+2);
+        drawBot(425, 114, '4. Boss+Kimi', 'APK Check!', activeStage>=4, doneCount>=5, t*0.1+3);
+
+        // Moving 3D Phone Chassis on Belt
+        const phoneX = 110 + ((activeStage * 85) + (t * 0.65) % 45);
+        draw3DBox(Math.min(phoneX, 445), 120, 22, 26, 7, '#38bdf8', '#2563eb', '#1d4ed8');
+
+        // Flying 3D Research Drone bringing Icon Crates
+        const dx = 46 + (Math.sin(t * 0.04) * 0.5 + 0.5) * 165;
+        const dy = 40 + Math.sin(t * 0.12) * 8;
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath(); ctx.ellipse(dx, dy, 13, 6, 0, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(dx-16, dy-6); ctx.lineTo(dx-5, dy-6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(dx+5, dy-6); ctx.lineTo(dx+16, dy-6); ctx.stroke();
+        ctx.fillStyle = '#10b981'; ctx.fillRect(dx-5, dy+6, 10, 8);
+
+        // Top HUD Banner
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(88, 6, 424, 24);
+        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(88, 6, 424, 24);
+        ctx.fillStyle = '#fde68a'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('NEXUS FORGE 3D | ' + fid + ' | ' + msg, 96, 21);
+
+        requestAnimationFrame(frame);
+      }}
+      frame();
+    }})();
+    </script>
+    """
+    components.html(scene_html, height=230)
+
 def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
-    """Display 1 (Live Tool Connection Board + Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
+    """Display 1 (3D Cartoon Factory Movie + Live Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
     factory_id = project_bus.get("factory_id", "AUTO")
     boss_msg = project_bus.get("boss_status", "Standing by...")
     radar_msg = project_bus.get("radar_status", "Scanning pipeline...")
@@ -1028,72 +1298,18 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
     done_cnt = sum(1 for s in stages if s.get("status") == "done")
     run_idx = next((i for i, s in enumerate(stages) if s.get("status") == "running"), done_cnt)
 
-    def _st(idx):
-        if idx < done_cnt:
-            return "#10b981", "#064e3b", "HANDOFF DONE"
-        if idx == run_idx:
-            return "#f59e0b", "#451a03", "CONNECTED"
-        return "#64748b", "#0f172a", "STANDBY"
-
-    c0, b0, l0 = _st(0)
-    c1, b1, l1 = _st(1)
-    c2, b2, l2 = _st(2)
-    c3, b3, l3 = _st(3)
-    c4, b4, l4 = _st(4)
-    c5, b5, l5 = _st(5)
-
-    svg_board = (
-        '<svg viewBox="0 0 540 102" width="100%" style="display:block;margin-bottom:6px;">'
-        '<defs><marker id="ah" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#38bdf8"/></marker></defs>'
-        f'<rect x="4" y="14" width="76" height="44" rx="8" fill="{b0}" stroke="{c0}" stroke-width="2"/>'
-        f'<text x="42" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">1. ID &amp; Icons</text>'
-        f'<text x="42" y="42" fill="{c0}" font-size="7" font-weight="bold" text-anchor="middle">{l0}</text>'
-        '<line x1="80" y1="36" x2="96" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>'
-        f'<rect x="98" y="14" width="80" height="44" rx="8" fill="{b1}" stroke="{c1}" stroke-width="2"/>'
-        f'<text x="138" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">2. Human UX</text>'
-        f'<text x="138" y="42" fill="{c1}" font-size="7" font-weight="bold" text-anchor="middle">{l1}</text>'
-        '<line x1="178" y1="36" x2="194" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>'
-        f'<rect x="196" y="14" width="82" height="44" rx="8" fill="{b2}" stroke="{c2}" stroke-width="2"/>'
-        f'<text x="237" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">3. Frame+Studio</text>'
-        f'<text x="237" y="42" fill="{c2}" font-size="7" font-weight="bold" text-anchor="middle">{l2}</text>'
-        '<line x1="278" y1="36" x2="294" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>'
-        f'<rect x="296" y="14" width="76" height="44" rx="8" fill="{b3}" stroke="{c3}" stroke-width="2"/>'
-        f'<text x="334" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">4. Coders</text>'
-        f'<text x="334" y="42" fill="{c3}" font-size="7" font-weight="bold" text-anchor="middle">{l3}</text>'
-        '<line x1="372" y1="36" x2="388" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>'
-        f'<rect x="390" y="14" width="68" height="44" rx="8" fill="{b4}" stroke="{c4}" stroke-width="2"/>'
-        f'<text x="424" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">5. Boss</text>'
-        f'<text x="424" y="42" fill="{c4}" font-size="7" font-weight="bold" text-anchor="middle">{l4}</text>'
-        '<line x1="458" y1="36" x2="472" y2="36" stroke="#38bdf8" stroke-width="2" class="flow-arrow" marker-end="url(#ah)"/>'
-        f'<rect x="474" y="14" width="62" height="44" rx="8" fill="{b5}" stroke="{c5}" stroke-width="2"/>'
-        f'<text x="505" y="30" fill="#f8fafc" font-size="8.5" font-weight="bold" text-anchor="middle">6. APK</text>'
-        f'<text x="505" y="42" fill="{c5}" font-size="7" font-weight="bold" text-anchor="middle">{l5}</text>'
-        '<path d="M 424 58 Q 280 90 138 60" fill="none" stroke="#10b981" stroke-width="1.5" class="flow-arrow" marker-end="url(#ah)"/>'
-        '<text x="280" y="92" fill="#34d399" font-size="8" font-weight="bold" text-anchor="middle">Boss + Human UX + Radar Live Cross-Check Loop</text>'
-        '</svg>'
-    )
-
-    fetched_icons = project_bus.get("fetched_icons", [])
-    icons_html = ""
-    if fetched_icons:
-        cards = []
-        for ic in fetched_icons[:6]:
-            b64_s = base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8")
-            short_n = ic["name"].split(":")[-1][:12]
-            cards.append(f'<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;text-align:center;min-width:58px;"><img src="data:image/svg+xml;base64,{b64_s}" width="26" height="26"/><div style="font-size:8.5px;color:#cbd5e1;margin-top:2px;">{short_n}</div></div>')
-        icons_html = f'<div style="margin-top:8px;"><div style="font-size:10.5px;color:#38bdf8;font-weight:700;margin-bottom:4px;">Live Open-Source Icons Pulled From External Web ({factory_id}):</div><div style="display:flex;gap:6px;overflow-x:auto;">{"".join(cards)}</div></div>'
-
-    cmd_slot.markdown(f"""<style>@keyframes arrowFlow {{ 0% {{ stroke-dashoffset: 24; }} 100% {{ stroke-dashoffset: 0; }} }} .flow-arrow {{ stroke-dasharray: 6 4; animation: arrowFlow 1s linear infinite; }}</style>
-<div style="background:rgba(10,16,30,0.97);border:1.5px solid #38bdf8;border-radius:14px;padding:10px;margin-bottom:10px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-    <span style="color:#38bdf8;font-size:11.5px;font-weight:800;">DISPLAY 1: LIVE CONNECTION &amp; VISUAL RESEARCH BOARD</span>
-    <span style="background:#1e40af;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700;">{factory_id}</span>
-  </div>
-  {svg_board}
-  <div style="background:rgba(30,41,59,0.9);border-left:3px solid #f59e0b;border-radius:6px;padding:6px 8px;font-size:11px;color:#fde68a;"><b>Active Handoff:</b> {cross_check}</div>
-  {icons_html}
-</div>
-<div style="display:grid;grid-template-columns:1fr;gap:7px;margin-bottom:10px;">
+    with cmd_slot.container():
+        render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check)
+        fetched_icons = project_bus.get("fetched_icons", [])
+        icons_html = ""
+        if fetched_icons:
+            cards = []
+            for ic in fetched_icons[:6]:
+                b64_s = base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8")
+                short_n = ic["name"].split(":")[-1][:12]
+                cards.append(f'<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;text-align:center;min-width:58px;"><img src="data:image/svg+xml;base64,{b64_s}" width="26" height="26"/><div style="font-size:8.5px;color:#cbd5e1;margin-top:2px;">{short_n}</div></div>')
+            icons_html = f'<div style="margin:6px 0 8px 0;"><div style="font-size:10.5px;color:#38bdf8;font-weight:700;margin-bottom:4px;">Live Open-Source Icons Pulled From Web ({factory_id}):</div><div style="display:flex;gap:6px;overflow-x:auto;">{"".join(cards)}</div></div>'
+        st.markdown(f"""{icons_html}<div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:8px;">
   <div style="background:rgba(15,23,42,0.95);border:1px solid #8b5cf6;border-radius:10px;padding:8px 10px;font-size:11px;color:#ddd6fe;"><strong style="color:#a78bfa;">Chief Human Dev Brain (GPT-OSS 120B / Llama 90B):</strong> {human_note}</div>
   <div style="background:rgba(15,23,42,0.95);border:1px solid #38bdf8;border-radius:10px;padding:8px 10px;font-size:11px;color:#bae6fd;"><strong style="color:#38bdf8;">Boss + Radar:</strong> {boss_msg} | {radar_msg}</div>
   <div style="background:rgba(15,23,42,0.95);border:1px solid #f59e0b;border-radius:10px;padding:8px 10px;font-size:11px;color:#fef3c7;"><strong style="color:#fbbf24;">Kimi Step 16 Self-Repair:</strong> {repair_msg}</div>
@@ -1109,9 +1325,6 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
         rows += f"<div style='background:rgba(15,23,42,0.9);border:1px solid #1e293b;border-radius:10px;padding:7px 10px;margin-bottom:4px;display:flex;gap:8px;align-items:flex-start;'><span style='font-size:14px;'>{ic}</span><div><div style='font-size:11.5px;font-weight:700;color:{col};'>{stg['title']}</div>{sync_tag}{note}</div></div>"
     sync_slot.markdown(rows, unsafe_allow_html=True)
 
-# ==============================================================================
-# DISPLAY 2: REALISTIC INTERACTIVE MOBILE PHONE PREVIEW (OWN BRAND + WALLET + GATEWAY)
-# ==============================================================================
 def generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, icon_svg):
     """Uses Nemotron VL / Gemini to build a realistic interactive mobile HTML preview with NO external brand names."""
     b64_ic = base64.b64encode(icon_svg.encode("utf-8")).decode("utf-8")
@@ -1553,7 +1766,7 @@ Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Mater
 # ==============================================================================
 # STREAMLIT UI: 3-DISPLAY ENTERPRISE 16-DEPT FLUTTER FACTORY
 # ==============================================================================
-st.set_page_config(page_title=f"{OWNER_NAME} Flutter AI Factory", page_icon="👑", layout="centered")
+st.set_page_config(page_title=f"{OWNER_NAME} Nexus Forge 3D", page_icon="⚡", layout="centered")
 st.markdown("""
 <style>
 #MainMenu, footer, header, .stDeployButton, div[data-testid="stToolbar"], div[data-testid="stDecoration"], div[data-testid="stStatusWidget"] {visibility: hidden !important; height: 0 !important;}
@@ -1567,6 +1780,8 @@ textarea, input[type="text"], input[type="password"] {background-color: #1e293b 
 .stButton > button:hover {background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important; color: #ffffff !important;}
 .factory-header {background: linear-gradient(135deg, rgba(30,58,138,0.65), rgba(17,24,39,0.92)); border: 1px solid rgba(59,130,246,0.4); border-radius: 16px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;}
 .step-card {background: rgba(17,24,39,0.85); border: 1px solid rgba(59,130,246,0.28); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;}
+div[data-testid="stExpander"] {background: rgba(15,23,42,0.94) !important; border: 1px solid #38bdf8 !important; border-radius: 12px !important;}
+div[data-testid="stExpander"] summary, div[data-testid="stExpander"] summary p {color: #38bdf8 !important; font-weight: 700 !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1577,42 +1792,58 @@ st.markdown(f"""
   <div style="display:flex;align-items:center;gap:10px;">
     <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px;">👑</div>
     <div>
-      <h3 style="margin:0;font-size:16px;font-weight:800;color:#fff;">{OWNER_NAME.upper()} FLUTTER FACTORY</h3>
-      <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 2 Factory IDs &bull; Live Iconify + APK</p>
+      <h3 style="margin:0;font-size:16px;font-weight:800;color:#fff;">{OWNER_NAME.upper()} NEXUS FORGE</h3>
+      <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; Gemini Hindi Voice + APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v4.0 PRO</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v5.0 NEXUS</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# HANDS-FREE AUTO-SPEAKING VOICE BOSS + WHATSAPP-STYLE VOICE COMMAND BAR
+# LIVE VOICE BOSS (1-TAP AUDIO UNLOCK + ACTION-COMMAND WHATSAPP MIC)
 # ==============================================================================
-with st.expander("🎙️ Live Voice Boss (Welcome + Auto-Speak + WhatsApp Mic)", expanded=False):
-    v_style = st.selectbox("Lock Boss Voice Style:", ["Default Hindi-English", "Deep Boss (Male)", "Warm Assistant (Female)", "Fast Pro (English-IN)", "Mute (Silent)"], key="boss_voice_style")
+with st.expander("🎙️ Live Voice Boss (Gemini Hindi Voice + Worker Action Control)", expanded=True):
+    c_vb1, c_vb2 = st.columns([2, 1])
+    with c_vb1:
+        v_style = st.selectbox("Lock Boss Voice Style:", ["Default Hindi-English", "Deep Boss (Male)", "Warm Assistant (Female)", "Fast Pro (English-IN)", "Mute (Silent)"], key="boss_voice_style")
+    with c_vb2:
+        st.write("")
+        if not st.session_state.get("boss_shift_started"):
+            if st.button("🎙️ Start Boss Shift", use_container_width=True, key="unlock_boss_btn"):
+                st.session_state["boss_shift_started"] = True
+                st.session_state["welcomed_boss"] = True
+                st.session_state["pending_boss_speech"] = f"Welcome {OWNER_NAME} Boss! Nexus Forge ekdum ready hai, aaj kis app par dhamaka karna hai?"
+                st.rerun()
+        else:
+            st.markdown("<div style='text-align:center;padding:8px;border-radius:10px;background:rgba(16,185,129,0.2);border:1px solid #10b981;color:#34d399;font-size:11px;font-weight:800;'>🔊 VOICE LIVE</div>", unsafe_allow_html=True)
+
     v_mute = (v_style == "Mute (Silent)")
     st.session_state["mute_boss_voice"] = v_mute
-    cur_bus_v = load_json_file(CODED_APP_FILE, None) or load_json_file(DESIGN_LOCK_FILE, None) or {"app_title": "Factory Idle", "boss_status": "Standing by for Sarfealam Boss"}
+    cur_bus_v = load_json_file(CODED_APP_FILE, None) or load_json_file(DESIGN_LOCK_FILE, None) or {"app_title": "Nexus Forge Idle", "boss_status": "Standing by for Sarfealam Boss"}
 
-    if not v_mute and not st.session_state.get("welcomed_boss"):
-        st.session_state["welcomed_boss"] = True
-        speak_boss_voice(f"Welcome {OWNER_NAME} Boss! Aaj ka din kaisa ja raha hai? Aapki 16-department AI Factory ekdum ready hai!", voice_style=v_style, unlock_on_touch=True)
-    elif not v_mute and cur_bus_v.get("last_voice_msg") and st.session_state.get("spoken_last") != cur_bus_v.get("last_voice_msg"):
+    if not v_mute and st.session_state.get("pending_boss_speech"):
+        msg_to_play = st.session_state.pop("pending_boss_speech")
+        speak_boss_voice(msg_to_play, voice_style=v_style)
+    elif not v_mute and st.session_state.get("boss_shift_started") and cur_bus_v.get("last_voice_msg") and st.session_state.get("spoken_last") != cur_bus_v.get("last_voice_msg"):
         st.session_state["spoken_last"] = cur_bus_v["last_voice_msg"]
         speak_boss_voice(cur_bus_v["last_voice_msg"], voice_style=v_style)
 
-    audio_note = st.audio_input("Tap Mic to Send Voice Instruction (WhatsApp Style):", key="boss_mic_input")
+    audio_note = st.audio_input("Tap Mic & Send Voice Command (Only listens when you record):", key="boss_mic_input")
     if audio_note is not None:
         audio_bytes = audio_note.getvalue()
         if st.session_state.get("last_audio_len") != len(audio_bytes):
             st.session_state["last_audio_len"] = len(audio_bytes)
-            with st.spinner("Boss listening & replying..."):
+            st.session_state["boss_shift_started"] = True
+            with st.spinner("Boss listening & dispatching workers..."):
                 try:
                     spoken_txt = transcribe_voice_groq(audio_bytes)
                     st.info(f"You said: {spoken_txt}")
-                    boss_ans, _ = ask_voice_boss(spoken_txt, cur_bus_v)
+                    boss_ans, _, act_obj = ask_voice_boss(spoken_txt, cur_bus_v)
                     st.success(f"Boss: {boss_ans}")
-                    st.session_state["owner_voice_directive"] = spoken_txt
+                    st.session_state["owner_voice_directive"] = act_obj.get("directive") or spoken_txt
+                    if act_obj.get("action") and act_obj["action"] != "CHAT_ONLY":
+                        st.session_state["pending_voice_action"] = act_obj
                     if not v_mute:
                         speak_boss_voice(boss_ans, voice_style=v_style)
                 except Exception as ve:
@@ -1632,6 +1863,28 @@ with tab_build:
     active_build = recover_active_build_if_needed()
     locked_bus = load_json_file(DESIGN_LOCK_FILE, None)
     coded_bundle = load_json_file(CODED_APP_FILE, None)
+
+    voice_act = st.session_state.pop("pending_voice_action", None)
+    if voice_act:
+        v_cmd = voice_act.get("action")
+        v_dir = voice_act.get("directive", "")
+        if v_cmd == "REJECT_RESET":
+            reject_and_clear_project(active_build.get("repo") if active_build else None)
+            st.session_state["pending_boss_speech"] = f"Thik hai {OWNER_NAME} Boss, purana project hata diya hai. Naya shuru karein!"
+            st.rerun()
+        elif v_cmd == "UPDATE_DESIGN" and locked_bus and not active_build:
+            run_phase1_design_studio(locked_bus["app_title"], locked_bus["user_prompt"], st.empty(), st.empty(), selected_factory=locked_bus.get("factory_id", "AUTO"), design_feedback=v_dir)
+            st.rerun()
+        elif v_cmd == "START_CODING" and locked_bus and not coded_bundle and not active_build:
+            _, err_v2 = run_phase2_flutter_coding(locked_bus, st.empty(), st.empty())
+            if err_v2:
+                st.error(err_v2)
+            else:
+                st.rerun()
+        elif v_cmd == "KIMI_REPAIR" and coded_bundle and not active_build:
+            ok_kr, logs_kr, _ = auto_detect_and_repair_bundle(coded_bundle)
+            save_json_file(CODED_APP_FILE, coded_bundle)
+            st.info("Kimi Voice Repair: " + (" | ".join(logs_kr) if logs_kr else "All Dart files verified!"))
 
     if active_build:
         st.subheader(f"Live Flutter Build: `{active_build['name']}`")
