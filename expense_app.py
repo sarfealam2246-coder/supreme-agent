@@ -12,7 +12,7 @@ import urllib.error
 from datetime import datetime
 
 # ==============================================================================
-# SARFEALAM ENTERPRISE AI APP FACTORY v19.0 REAL-3D-LIVE 16-DEPT 2-FACTORY SYSTEM
+# SARFEALAM ENTERPRISE AI APP FACTORY v23.0 FINAL-STUDIO 16-DEPT 2-FACTORY SYSTEM
 # ==============================================================================
 # Sole Owner & Legal Copyright: Sarfealam (Package Prefix: com.sarfealam)
 # 2 Dedicated Factory IDs: GAMING_FACTORY_01 & MARKET_FACTORY_02
@@ -715,7 +715,7 @@ jobs:
       - name: Fetch Open-Source CC0 3D Vehicle Model
         run: |
           mkdir -p assets/models build/android
-          curl -sL "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb" -o assets/models/vehicle.glb || true
+          curl -fsL "https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/vehicle.glb" -o assets/models/vehicle.glb || true
 
       - name: Setup Android Debug Keystore & Godot Cache
         run: |
@@ -1142,6 +1142,88 @@ def create_github_repo(repo_name, description):
         "private": False,
         "auto_init": True
     })
+
+
+def push_binary_to_github(repo_name, file_path, raw_bytes, commit_msg, owner=DEFAULT_GITHUB_USERNAME):
+    """Pushes binary .glb/.png assets directly to GitHub repo using base64 content."""
+    api_url = f"https://api.github.com/repos/{owner}/{repo_name}/contents/{file_path}"
+    sha = None
+    cur = github_api_request(api_url, method="GET", timeout=10)
+    if isinstance(cur, dict) and cur.get("sha"):
+        sha = cur["sha"]
+    b64_data = base64.b64encode(raw_bytes).decode("utf-8")
+    payload = {"message": commit_msg, "content": b64_data}
+    if sha:
+        payload["sha"] = sha
+    return github_api_request(api_url, method="PUT", payload=payload, timeout=30)
+
+OPEN_SOURCE_GLB_CATALOG = {
+    "GM-35.glb": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb",
+    "GM-01.glb": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb",
+}
+
+
+def run_autonomous_world_asset_bot(factory_id, user_prompt):
+    """Stage-0 Autonomous Asset Bot: Searches GitHub + Open-Source .glb repos, syncs to 3d-assets, and returns selectable 3D items."""
+    if factory_id != "GAMING_FACTORY_01":
+        return {"status": "skipped", "assets": [], "msg": "Market Lane active — MK-xx 3D Play-Store UI selected."}
+    spec = resolve_lane_id_and_specs(user_prompt, "GAMING_FACTORY_01")
+    spec_id = spec.get("id", "GM-01")
+    target_fn = f"{spec_id}.glb"
+    found_assets = [f"{spec_id}: {spec.get('name', 'Vehicle 3D')}", f"{spec.get('chr_id','CHR-01')}: 3D Driver", f"{spec.get('env_id','ENV-01')}: 3D Highway & City"]
+    try:
+        # 1) Live search public GitHub 3D glb repos matching prompt
+        q_kw = re.sub(r"[^a-zA-Z0-9 ]", " ", (user_prompt or "truck")).strip().split()[:2]
+        q_str = "+".join(q_kw) if q_kw else "truck"
+        gh_res = github_api_request(f"https://api.github.com/search/repositories?q={q_str}+glb+3d&sort=stars&per_page=3", method="GET", timeout=8)
+        if isinstance(gh_res, dict) and gh_res.get("items"):
+            for item in gh_res["items"][:2]:
+                found_assets.append(f"GitHub 3D: {item.get('full_name', '')}")
+        # 2) Check or sync .glb into user's 3d-assets repo
+        existing = github_api_request(
+            f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets/contents/models/{target_fn}",
+            method="GET", timeout=8
+        )
+        if isinstance(existing, dict) and existing.get("download_url"):
+            return {"status": "ready", "spec_id": spec_id, "assets": found_assets, "msg": f"3d-assets/models/{target_fn} synced & ready!"}
+        src_url = OPEN_SOURCE_GLB_CATALOG.get(target_fn) or OPEN_SOURCE_GLB_CATALOG.get("GM-01.glb")
+        if src_url:
+            r = requests.get(src_url, timeout=20)
+            if r.status_code == 200 and len(r.content) > 1024:
+                repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets", method="GET", timeout=8)
+                if not isinstance(repo_info, dict) or not repo_info.get("id"):
+                    create_github_repo("3d-assets", "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
+                push_binary_to_github("3d-assets", f"models/{target_fn}", r.content, f"Auto-Bot: sync {target_fn}")
+                push_binary_to_github("3d-assets", "models/vehicle.glb", r.content, f"Auto-Bot: sync vehicle.glb for {spec_id}")
+                return {"status": "synced", "spec_id": spec_id, "assets": found_assets, "msg": f"Auto-Bot fetched & pushed {target_fn} to GitHub 3d-assets!"}
+    except Exception as ex:
+        return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active ({ex})"}
+    return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active for {spec_id}"}
+
+def auto_import_open_source_3d_pack(target_repo="3d-assets"):
+    """Fetches verified CC0/MIT open-source .glb models from CDN and pushes straight to user's GitHub 3d-assets repo."""
+    pushed = []
+    errors = []
+    # Ensure 3d-assets repo exists
+    repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{target_repo}", method="GET", timeout=10)
+    if not isinstance(repo_info, dict) or not repo_info.get("id"):
+        create_github_repo(target_repo, "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
+    push_file_to_github(target_repo, "models/README.md", "# HD 3D Models (.glb)\nAuto-imported by Sarfealam Nexus Forge.", "Init models folder")
+    for fname, src_url in OPEN_SOURCE_GLB_CATALOG.items():
+        try:
+            r = requests.get(src_url, timeout=25)
+            if r.status_code == 200 and len(r.content) > 1024:
+                res = push_binary_to_github(target_repo, f"models/{fname}", r.content, f"Auto-import open-source {fname}")
+                if isinstance(res, dict) and res.get("content"):
+                    pushed.append(fname)
+                else:
+                    errors.append(f"{fname}: GitHub push failed")
+            else:
+                errors.append(f"{fname}: HTTP {r.status_code}")
+        except Exception as ex:
+            errors.append(f"{fname}: {ex}")
+    return pushed, errors
+
 
 def push_file_to_github(repo_name, file_path, content_str, commit_msg):
     url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{file_path}"
@@ -1837,7 +1919,7 @@ def persist_assembly_state(asm_state):
     save_json_file("assembly_studio_state.json", asm_state)
 
 def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state, step_stage=4, live_code_snippet=""):
-    """Workflow 5 (v19.0 REAL-3D-LIVE): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
+    """Workflow 5 (v23.0 FINAL-STUDIO): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
     start_keep_alive_heartbeat()
     is_game = (factory_id == "GAMING_FACTORY_01")
     paint_idx = int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)
@@ -1937,99 +2019,137 @@ def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, select
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#60a5fa');
-    scene.fog = new THREE.Fog('#93c5fd', 24, 95);
-    const cam = new THREE.PerspectiveCamera(52, w/h, 0.1, 160);
-    cam.position.set(0, 3.6, 7.6);
-    cam.lookAt(0, 1.0, 0);
+    scene.background = new THREE.Color('#7dd3fc');
+    scene.fog = new THREE.Fog('#bae6fd', 30, 120);
+    const cam = new THREE.PerspectiveCamera(50, w/h, 0.1, 180);
+    cam.position.set(2.4, 3.3, 7.4);
+    cam.lookAt(0, 1.1, -1.5);
 
-    scene.add(new THREE.AmbientLight('#ffffff', 0.65));
-    const sun = new THREE.DirectionalLight('#fffbeb', 1.25);
-    sun.position.set(12, 22, 10);
+    scene.add(new THREE.HemisphereLight('#e0f2fe', '#334155', 0.75));
+    const sun = new THREE.DirectionalLight('#fffbeb', 1.35);
+    sun.position.set(14, 26, 12);
     sun.castShadow = true;
     scene.add(sun);
 
-    // Asphalt Road + Grass Ground
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 220), new THREE.MeshStandardMaterial({color:'#16a34a', roughness:0.9}));
-    ground.rotation.x = -Math.PI/2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 220), new THREE.MeshStandardMaterial({color:'#1f2937', roughness:0.75}));
-    road.rotation.x = -Math.PI/2;
-    road.position.y = 0.02;
-    road.receiveShadow = true;
-    scene.add(road);
-
-    const dashes = [];
-    for(let z=-90; z<90; z+=7){
-      const d = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 3.2), new THREE.MeshBasicMaterial({color:'#facc15'}));
-      d.rotation.x = -Math.PI/2;
-      d.position.set(0, 0.03, z);
-      scene.add(d);
-      dashes.push(d);
+    // 3D Clouds in Sky
+    for(let c=0; c<8; c++){
+      const cl = new THREE.Mesh(new THREE.SphereGeometry(2.8, 10, 8), new THREE.MeshBasicMaterial({color:'#ffffff', transparent:true, opacity:0.85}));
+      cl.scale.set(2.4, 0.55, 1.2);
+      cl.position.set((c%2===0?-18:18)+(c*3), 16 + (c%3)*2, -30 - c*10);
+      scene.add(cl);
     }
 
-    // 3D Trees & Village Houses
+    // Procedural Asphalt Road Texture
+    const rCv = document.createElement('canvas'); rCv.width=128; rCv.height=128;
+    const rCtx = rCv.getContext('2d'); rCtx.fillStyle='#1f2937'; rCtx.fillRect(0,0,128,128);
+    for(let i=0;i<600;i++){ rCtx.fillStyle = Math.random()>0.5 ? '#374151':'#111827'; rCtx.fillRect(Math.random()*128,Math.random()*128,2,2); }
+    const roadTex = new THREE.CanvasTexture(rCv); roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping; roadTex.repeat.set(2, 24);
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 260), new THREE.MeshStandardMaterial({color:'#3f6212', roughness:0.95}));
+    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(10.5, 260), new THREE.MeshStandardMaterial({map:roadTex, roughness:0.78}));
+    road.rotation.x = -Math.PI/2; road.position.y = 0.02; road.receiveShadow = true; scene.add(road);
+
+    // Highway Edge Lines & Guardrails
+    [-4.9, 4.9].forEach(x => {
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 260), new THREE.MeshBasicMaterial({color:'#f8fafc'}));
+      edge.rotation.x = -Math.PI/2; edge.position.set(x, 0.03, 0); scene.add(edge);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 260), new THREE.MeshStandardMaterial({color:'#94a3b8', metalness:0.7, roughness:0.35}));
+      rail.position.set(x + (x<0?-0.45:0.45), 0.35, 0); scene.add(rail);
+    });
+
+    const dashes = [];
+    for(let z=-110; z<110; z+=7){
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 3.2), new THREE.MeshBasicMaterial({color:'#facc15'}));
+      d.rotation.x = -Math.PI/2; d.position.set(0, 0.03, z); scene.add(d); dashes.push(d);
+    }
+
+    // 3D City Buildings + Streetlights + Flyover Arch
     const props = [];
     for(let i=0; i<16; i++){
-      const side = (i % 2 === 0) ? -6.5 : 6.5;
-      const zPos = -i * 11;
+      const side = (i % 2 === 0) ? -9.5 : 9.5;
+      const zPos = -i * 13;
       const g = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.28,1.5,8), new THREE.MeshStandardMaterial({color:'#78350f'}));
-      trunk.position.y = 0.75; trunk.castShadow = true;
-      const crown = new THREE.Mesh(new THREE.ConeGeometry(1.3,2.6,8), new THREE.MeshStandardMaterial({color:'#15803d'}));
-      crown.position.y = 2.4; crown.castShadow = true;
-      g.add(trunk, crown);
+      const bh = 4 + (i % 4) * 2.5;
+      const bldg = new THREE.Mesh(new THREE.BoxGeometry(4.5, bh, 5.2), new THREE.MeshStandardMaterial({color: i%3===0 ? '#475569' : (i%3===1 ? '#64748b' : '#78350f'), roughness:0.8}));
+      bldg.position.y = bh/2; bldg.castShadow = true;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,4.6,8), new THREE.MeshStandardMaterial({color:'#cbd5e1', metalness:0.8}));
+      pole.position.set(side<0?3.6:-3.6, 2.3, 0);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.15,0.25), new THREE.MeshBasicMaterial({color:'#fef08a'}));
+      lamp.position.set(side<0?3.2:-3.2, 4.6, 0);
+      g.add(bldg, pole, lamp);
       g.position.set(side, 0, zPos);
       scene.add(g);
       props.push(g);
     }
+    const flyover = new THREE.Mesh(new THREE.BoxGeometry(28, 1.1, 4.5), new THREE.MeshStandardMaterial({color:'#64748b', roughness:0.75}));
+    flyover.position.set(0, 6.8, -36); flyover.castShadow = true; scene.add(flyover);
+    props.push(flyover);
 
-    // 3D Metallic Painted Truck + Visible 3D Driver (CHR-01)
+    // High-Detail Multi-Part Metallic 3D Truck / Vehicle + Glass + Chrome + Driver
     const truck = new THREE.Group();
-    const paintMat = new THREE.MeshStandardMaterial({color:'""" + paint_hex + """', metalness:0.72, roughness:0.24});
-    const chromeMat = new THREE.MeshStandardMaterial({color:'#e2e8f0', metalness:0.9, roughness:0.15});
-    const tireMat = new THREE.MeshStandardMaterial({color:'#111827', roughness:0.85});
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.55, 1.8), paintMat);
-    cab.position.set(0, 1.15, -1.2); cab.castShadow = true;
-    const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.25, 1.9, 3.2), new THREE.MeshStandardMaterial({color:'#f8fafc', roughness:0.45}));
-    cargo.position.set(0, 1.35, 1.35); cargo.castShadow = true;
-    const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.32, 0.25), chromeMat);
-    bumper.position.set(0, 0.45, -2.15);
-    const driverHead = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({color:'#fbbf24'}));
-    driverHead.position.set(-0.45, 1.65, -1.2);
-    truck.add(cab, cargo, bumper, driverHead);
+    const paintMat = new THREE.MeshStandardMaterial({color:'""" + paint_hex + """', metalness:0.78, roughness:0.20});
+    const chromeMat = new THREE.MeshStandardMaterial({color:'#f1f5f9', metalness:0.95, roughness:0.1});
+    const glassMat = new THREE.MeshStandardMaterial({color:'#0f172a', metalness:0.9, roughness:0.08});
+    const tireMat = new THREE.MeshStandardMaterial({color:'#111827', roughness:0.88});
+
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.15, 1.55, 1.9), paintMat);
+    cab.position.set(0, 1.18, -1.25); cab.castShadow = true;
+    const roofVisor = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 0.5), chromeMat);
+    roofVisor.position.set(0, 1.98, -2.0);
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.65, 0.08), glassMat);
+    windshield.position.set(0, 1.48, -2.21);
+    const grille = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 0.1), chromeMat);
+    grille.position.set(0, 0.85, -2.21);
+    const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.3, 0.28), chromeMat);
+    bumper.position.set(0, 0.45, -2.24);
+    const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.0, 3.5), new THREE.MeshStandardMaterial({color:'#f8fafc', metalness:0.25, roughness:0.4}));
+    cargo.position.set(0, 1.42, 1.55); cargo.castShadow = true;
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.35, 3.52), paintMat);
+    stripe.position.set(0, 1.42, 1.55);
+    const driverHead = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshStandardMaterial({color:'#fbbf24'}));
+    driverHead.position.set(-0.45, 1.55, -1.35);
+    // Glowing Headlights + Tail Lights
+    [-0.78, 0.78].forEach(lx => {
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.08), new THREE.MeshBasicMaterial({color:'#fef9c3'}));
+      hl.position.set(lx, 0.75, -2.22); truck.add(hl);
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08), new THREE.MeshBasicMaterial({color:'#ef4444'}));
+      tl.position.set(lx, 0.65, 3.31); truck.add(tl);
+    });
+    truck.add(cab, roofVisor, windshield, grille, bumper, cargo, stripe, driverHead);
 
     const wheels = [];
-    [[-1.05,0.42,-1.3],[1.05,0.42,-1.3],[-1.05,0.42,1.6],[1.05,0.42,1.6]].forEach(pos => {
-      const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.34,16), tireMat);
-      wh.rotation.z = Math.PI/2;
-      wh.position.set(pos[0], pos[1], pos[2]);
-      wh.castShadow = true;
-      truck.add(wh);
-      wheels.push(wh);
+    [[-1.06,0.44,-1.3],[1.06,0.44,-1.3],[-1.06,0.44,1.2],[-1.06,0.44,2.4],[1.06,0.44,1.2],[1.06,0.44,2.4]].forEach(pos => {
+      const wg = new THREE.Group();
+      const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,18), tireMat);
+      wh.rotation.z = Math.PI/2; wh.castShadow = true;
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.36,12), chromeMat);
+      rim.rotation.z = Math.PI/2;
+      wg.add(wh, rim);
+      wg.position.set(pos[0], pos[1], pos[2]);
+      truck.add(wg);
+      wheels.push(wg);
     });
     scene.add(truck);
 
-    // Also load Khronos CesiumMilkTruck.glb if reachable
+    // Optional HD Custom GLB Loader from user's own GitHub 3d-assets repo (zero white demo van!)
     if(typeof THREE.GLTFLoader !== 'undefined'){
-      new THREE.GLTFLoader().load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb', gltf => {
+      new THREE.GLTFLoader().load('https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/""" + spec_id + """.glb', gltf => {
         const m = gltf.scene;
-        m.scale.set(0.85, 0.85, 0.85);
-        m.rotation.y = Math.PI;
         m.traverse(o => { if(o.isMesh){ o.castShadow = true; }});
         truck.clear();
         truck.add(m);
       }, undefined, ()=>{});
     }
 
-    let spd = 0.28;
+    let spd = 0.30;
     function tick(){
       requestAnimationFrame(tick);
-      spd = gasDown ? Math.min(0.65, spd + 0.015) : Math.max(0.24, spd - 0.005);
-      dashes.forEach(d => { d.position.z += spd; if(d.position.z > 20) d.position.z -= 180; });
-      props.forEach(p => { p.position.z += spd; if(p.position.z > 15) p.position.z -= 176; });
+      spd = gasDown ? Math.min(0.72, spd + 0.015) : Math.max(0.25, spd - 0.005);
+      roadTex.offset.y -= spd * 0.08;
+      dashes.forEach(d => { d.position.z += spd; if(d.position.z > 25) d.position.z -= 220; });
+      props.forEach(p => { p.position.z += spd; if(p.position.z > 20) p.position.z -= 208; });
       wheels.forEach(w => { w.rotation.x -= spd * 0.7; });
       const se = document.getElementById('spdMini');
       if(se) se.innerText = Math.round(spd * 150) + ' km/h';
@@ -2041,7 +2161,7 @@ def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, select
 
     html_studio = f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  *{{box-sizing:border-box;}}
+  *{{box-sizing:border-box;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}}
   body{{margin:0;padding:6px;background:#070d1a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;}}
   .hdr{{display:flex;justify-content:space-between;align-items:center;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:6px 10px;margin-bottom:8px;font-size:11px;}}
   .split{{display:grid;grid-template-columns:148px 1fr;gap:8px;align-items:stretch;}}
@@ -2561,7 +2681,7 @@ def render_live_mobile_preview(locked_bus):
         if (typeof THREE.GLTFLoader !== 'undefined') {{
           try {{
             const gltfLoader = new THREE.GLTFLoader();
-            gltfLoader.load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb', function(gltf) {{
+            gltfLoader.load('https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/vehicle.glb', function(gltf) {{
               const model = gltf.scene;
               model.scale.set(0.85, 0.85, 0.85);
               model.rotation.y = Math.PI;
@@ -3493,6 +3613,17 @@ with tab_build:
                 size_tier_choice,
                 asm_state,
             )
+            if is_g_lane:
+                tool_opts = [
+                    "Multi-Touch 3D Steering + GAS/BRK",
+                    "D/N/R Gear + Pressure Air Horn (HRN)",
+                    "Headlights & Blinkers (LGT)",
+                    "3D Driver Character (GM-51)",
+                    "3D Flyover & Highway World (GM-52)",
+                    "Dual Portrait + Landscape Fullscreen",
+                ]
+                kept_tools = st.multiselect("Owner Controller — Select 3D Vehicles & Tools to Keep:", tool_opts, default=tool_opts, key="owner_kept_tools")
+                asm_state["kept_tools"] = kept_tools
             va_col1, va_col2, va_col3, va_col4 = st.columns(4)
             with va_col1:
                 if st.button("Reject & Change Paint/Layout", use_container_width=True):
@@ -3517,6 +3648,29 @@ with tab_build:
                 audio_clip = st.audio_input("Native Mic Backup")
                 if audio_clip is not None:
                     st.info("Voice captured! Ready for Groq Whisper.")
+
+
+        with st.expander("HD 3D Asset Hub (1-Click Open-Source Import + Phone .glb Upload -> 3d-assets)", expanded=False):
+            ah1, ah2 = st.columns(2)
+            with ah1:
+                if st.button("1-Click Auto-Import Open-Source 3D Models", use_container_width=True):
+                    with st.spinner("Downloading open-source .glb models & pushing to sarfealam2246-coder/3d-assets..."):
+                        pushed_list, err_list = auto_import_open_source_3d_pack("3d-assets")
+                        if pushed_list:
+                            st.success(f"Auto-Imported to GitHub 3d-assets/models/: {', '.join(pushed_list)}")
+                        if err_list:
+                            st.warning("; ".join(err_list))
+            with ah2:
+                up_glb = st.file_uploader("Upload Any .glb File From Phone (Auto-Save to 3d-assets):", type=["glb"], key="glb_direct_up")
+                up_slot = st.selectbox("Save As Vehicle ID:", ["GM-01.glb (Truck)", "GM-31.glb (Bus)", "GM-11.glb (Tractor)", "GM-35.glb (Car)", "vehicle.glb (Default)"], index=0)
+                if up_glb is not None and st.button("Push Uploaded .glb to GitHub", use_container_width=True):
+                    target_fn = up_slot.split(" ")[0].strip()
+                    with st.spinner(f"Uploading {target_fn} to GitHub 3d-assets..."):
+                        res = push_binary_to_github("3d-assets", f"models/{target_fn}", up_glb.read(), f"Upload {target_fn} from phone")
+                        if isinstance(res, dict) and res.get("content"):
+                            st.success(f"Uploaded models/{target_fn} to GitHub 3d-assets!")
+                        else:
+                            st.error("Upload failed — check GitHub Token permissions.")
 
         in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
         in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
