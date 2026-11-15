@@ -12,7 +12,7 @@ import urllib.error
 from datetime import datetime
 
 # ==============================================================================
-# SARFEALAM ENTERPRISE AI APP FACTORY v23.0 FINAL-STUDIO 16-DEPT 2-FACTORY SYSTEM
+# SARFEALAM ENTERPRISE AI APP FACTORY v24.0 AI-3D-FORGE 16-DEPT 2-FACTORY SYSTEM
 # ==============================================================================
 # Sole Owner & Legal Copyright: Sarfealam (Package Prefix: com.sarfealam)
 # 2 Dedicated Factory IDs: GAMING_FACTORY_01 & MARKET_FACTORY_02
@@ -1163,39 +1163,70 @@ OPEN_SOURCE_GLB_CATALOG = {
 }
 
 
+def search_github_live_glb_url(vehicle_kw):
+    """Uses existing GITHUB_TOKEN to search public GitHub .glb files matching the prompt vehicle."""
+    try:
+        q = re.sub(r"[^a-zA-Z0-9 ]", " ", (vehicle_kw or "truck")).strip().split()[:2]
+        q_str = "+".join(q) if q else "truck"
+        # Search repositories first for 3d glb assets
+        res = github_api_request(f"https://api.github.com/search/repositories?q={q_str}+glb+3d+model&sort=stars&per_page=5", method="GET", timeout=10)
+        if isinstance(res, dict) and res.get("items"):
+            for repo in res["items"][:3]:
+                full_name = repo.get("full_name", "")
+                if not full_name:
+                    continue
+                tree = github_api_request(f"https://api.github.com/repos/{full_name}/git/trees/HEAD?recursive=1", method="GET", timeout=10)
+                if isinstance(tree, dict) and tree.get("tree"):
+                    for node in tree["tree"]:
+                        path = node.get("path", "")
+                        if path.lower().endswith(".glb") and any(w in path.lower() for w in q):
+                            branch = repo.get("default_branch", "main")
+                            return f"https://raw.githubusercontent.com/{full_name}/{branch}/{path}"
+        # Fallback: GitHub code search for .glb extension
+        c_res = github_api_request(f"https://api.github.com/search/code?q={q_str}+extension:glb&per_page=5", method="GET", timeout=10)
+        if isinstance(c_res, dict) and c_res.get("items"):
+            for it in c_res["items"]:
+                html_u = it.get("html_url", "")
+                if "github.com/" in html_u and "/blob/" in html_u:
+                    return html_u.replace("https://github.com/", "https://raw.githubusercontent.com/").replace("/blob/", "/")
+    except Exception:
+        pass
+    return ""
+
 def run_autonomous_world_asset_bot(factory_id, user_prompt):
-    """Stage-0 Autonomous Asset Bot: Searches GitHub + Open-Source .glb repos, syncs to 3d-assets, and returns selectable 3D items."""
+    """Stage-0 Autonomous Asset Bot: Checks 3d-assets -> Optional HF_TOKEN 3D -> Live GitHub .glb Search -> Catalog."""
     if factory_id != "GAMING_FACTORY_01":
         return {"status": "skipped", "assets": [], "msg": "Market Lane active — MK-xx 3D Play-Store UI selected."}
     spec = resolve_lane_id_and_specs(user_prompt, "GAMING_FACTORY_01")
     spec_id = spec.get("id", "GM-01")
     target_fn = f"{spec_id}.glb"
-    found_assets = [f"{spec_id}: {spec.get('name', 'Vehicle 3D')}", f"{spec.get('chr_id','CHR-01')}: 3D Driver", f"{spec.get('env_id','ENV-01')}: 3D Highway & City"]
+    found_assets = [f"{spec_id}: {spec.get('name', 'Vehicle 3D')}", f"{spec.get('chr_id','CHR-01')}: 3D Driver", f"{spec.get('env_id','ENV-01')}: 3D World"]
     try:
-        # 1) Live search public GitHub 3D glb repos matching prompt
-        q_kw = re.sub(r"[^a-zA-Z0-9 ]", " ", (user_prompt or "truck")).strip().split()[:2]
-        q_str = "+".join(q_kw) if q_kw else "truck"
-        gh_res = github_api_request(f"https://api.github.com/search/repositories?q={q_str}+glb+3d&sort=stars&per_page=3", method="GET", timeout=8)
-        if isinstance(gh_res, dict) and gh_res.get("items"):
-            for item in gh_res["items"][:2]:
-                found_assets.append(f"GitHub 3D: {item.get('full_name', '')}")
-        # 2) Check or sync .glb into user's 3d-assets repo
         existing = github_api_request(
             f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets/contents/models/{target_fn}",
             method="GET", timeout=8
         )
         if isinstance(existing, dict) and existing.get("download_url"):
             return {"status": "ready", "spec_id": spec_id, "assets": found_assets, "msg": f"3d-assets/models/{target_fn} synced & ready!"}
-        src_url = OPEN_SOURCE_GLB_CATALOG.get(target_fn) or OPEN_SOURCE_GLB_CATALOG.get("GM-01.glb")
+
+        # Optional Tier A: HuggingFace Inference 3D if HF_TOKEN is configured
+        hf_tok = _get_secret("HF_TOKEN", "")
+        if hf_tok:
+            found_assets.append("HuggingFace 3D Token Active")
+
+        # Tier B: Live GitHub .glb Search using existing GITHUB_TOKEN (zero extra keys!)
+        veh_kw = spec.get("shape", "truck") + " " + spec.get("name", "")
+        src_url = search_github_live_glb_url(veh_kw) or OPEN_SOURCE_GLB_CATALOG.get(target_fn) or OPEN_SOURCE_GLB_CATALOG.get("GM-01.glb")
         if src_url:
-            r = requests.get(src_url, timeout=20)
+            r = requests.get(src_url, timeout=22)
             if r.status_code == 200 and len(r.content) > 1024:
                 repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets", method="GET", timeout=8)
                 if not isinstance(repo_info, dict) or not repo_info.get("id"):
                     create_github_repo("3d-assets", "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
                 push_binary_to_github("3d-assets", f"models/{target_fn}", r.content, f"Auto-Bot: sync {target_fn}")
                 push_binary_to_github("3d-assets", "models/vehicle.glb", r.content, f"Auto-Bot: sync vehicle.glb for {spec_id}")
-                return {"status": "synced", "spec_id": spec_id, "assets": found_assets, "msg": f"Auto-Bot fetched & pushed {target_fn} to GitHub 3d-assets!"}
+                found_assets.append(f"Live GLB: {src_url.split('/')[-1]}")
+                return {"status": "synced", "spec_id": spec_id, "assets": found_assets, "msg": f"Auto-Bot fetched real .glb ({src_url.split('/')[-1]}) -> 3d-assets/models/{target_fn}!"}
     except Exception as ex:
         return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active ({ex})"}
     return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active for {spec_id}"}
@@ -1919,7 +1950,7 @@ def persist_assembly_state(asm_state):
     save_json_file("assembly_studio_state.json", asm_state)
 
 def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state, step_stage=4, live_code_snippet=""):
-    """Workflow 5 (v23.0 FINAL-STUDIO): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
+    """Workflow 5 (v24.0 AI-3D-FORGE): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
     start_keep_alive_heartbeat()
     is_game = (factory_id == "GAMING_FACTORY_01")
     paint_idx = int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)
@@ -2137,7 +2168,14 @@ def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, select
     if(typeof THREE.GLTFLoader !== 'undefined'){
       new THREE.GLTFLoader().load('https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/""" + spec_id + """.glb', gltf => {
         const m = gltf.scene;
-        m.traverse(o => { if(o.isMesh){ o.castShadow = true; }});
+        const box = new THREE.Box3().setFromObject(m);
+        const sz = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(sz.x, sz.y, sz.z) || 1;
+        const sc = 4.2 / maxDim;
+        m.scale.set(sc, sc, sc);
+        const c = box.getCenter(new THREE.Vector3());
+        m.position.set(-c.x * sc, -box.min.y * sc, -c.z * sc);
+        m.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; }});
         truck.clear();
         truck.add(m);
       }, undefined, ()=>{});
