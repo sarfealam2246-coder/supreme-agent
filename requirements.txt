@@ -4,3 +4,4 @@ duckduckgo-search
 yfinance
 pandas
 gTTS
+pynacl
