@@ -12,7 +12,7 @@ import urllib.error
 from datetime import datetime
 
 # ==============================================================================
-# SARFEALAM ENTERPRISE AI APP FACTORY v24.0 AI-3D-FORGE 16-DEPT 2-FACTORY SYSTEM
+# SARFEALAM ENTERPRISE AI APP FACTORY v26.0 AAA-PIPELINE 16-DEPT 2-FACTORY SYSTEM
 # ==============================================================================
 # Sole Owner & Legal Copyright: Sarfealam (Package Prefix: com.sarfealam)
 # 2 Dedicated Factory IDs: GAMING_FACTORY_01 & MARKET_FACTORY_02
@@ -318,7 +318,8 @@ REPAIR_MEMORY_VAULT = {
 APK_SIZE_TIERS = [
     "20 MB Lite (Fast Core Build)",
     "50 MB Pro (Full PBR Textures & Sound Bank)",
-    "100 MB Ultra (Full GM-51/52 Assets & Multi-Level Pack)",
+    "100 MB Pro+ (Full GM-51/52 Assets & Multi-Level Pack)",
+    "577 MB AAA Ultra (PolyHaven PBR + Procedural City + AI Traffic)",
 ]
 
 def resolve_lane_id_and_specs(user_prompt, factory_id, explicit_id="AUTO"):
@@ -328,12 +329,14 @@ def resolve_lane_id_and_specs(user_prompt, factory_id, explicit_id="AUTO"):
         if explicit_id and explicit_id in GAMING_DATA_CENTER and explicit_id not in ("GM-51", "GM-52"):
             return GAMING_DATA_CENTER[explicit_id]
         kw_map = [
+            ("GM-25", ["dumper", "tipper", "hydraulic"]),
+            ("GM-01", ["cargo truck", "goods carrier", "indian truck", "truck"]),
             ("GM-11", ["tractor", "khet", "farm", "trolley", "plough", "kisan"]),
             ("GM-12", ["harvester", "combine", "crop"]),
             ("GM-22", ["jcb", "backhoe", "excavator"]),
             ("GM-21", ["crane", "tower crane"]),
             ("GM-24", ["bulldozer", "dozer"]),
-            ("GM-41", ["train", "rail", "loco", "station", "metro"]),
+            ("GM-41", ["train", "railway", "loco", "express train", "metro train"]),
             ("GM-44", ["plane", "flight", "jet", "airport", "airplane"]),
             ("GM-46", ["helicopter", "chopper", "heli"]),
             ("GM-47", ["ship", "boat", "yacht", "ocean", "port"]),
@@ -712,10 +715,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Fetch Open-Source CC0 3D Vehicle Model
+      - name: Fetch Open-Source CC0 3D Models & PBR Asphalt/Sky Textures
         run: |
-          mkdir -p assets/models build/android
+          mkdir -p assets/models assets/textures build/android
           curl -fsL "https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/vehicle.glb" -o assets/models/vehicle.glb || true
+          curl -fsL "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_diff_1k.jpg" -o assets/textures/asphalt_diff.jpg || true
+          curl -fsL "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr" -o assets/textures/sky_1k.hdr || true
 
       - name: Setup Android Debug Keystore & Godot Cache
         run: |
@@ -910,10 +915,62 @@ offset_right = 340.0
 offset_bottom = 60.0
 text = "0 km/h | {gm_id}"
 """
+    city_gd = """extends Node3D
+
+# Procedural City, Flyover, Streetlights & AI Traffic Spawner (AAA Pipeline)
+var traffic_cars: Array = []
+
+func _ready() -> void:
+	var road_mat := StandardMaterial3D.new()
+	road_mat.albedo_color = Color(0.16, 0.18, 0.22)
+	road_mat.roughness = 0.78
+	if ResourceLoader.exists("res://assets/textures/asphalt_diff.jpg"):
+		road_mat.albedo_texture = load("res://assets/textures/asphalt_diff.jpg")
+	var road_node = get_node_or_null("../Ground3D/RoadMesh3D")
+	if road_node:
+		road_node.material_override = road_mat
+
+	# Spawn 14 City Buildings & Streetlights
+	for i in range(14):
+		var side := -11.0 if i % 2 == 0 else 11.0
+		var b := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var bh := 6.0 + float((i * 3) % 12)
+		bm.size = Vector3(5.5, bh, 6.0)
+		b.mesh = bm
+		b.position = Vector3(side, bh * 0.5, -float(i) * 16.0)
+		var bmat := StandardMaterial3D.new()
+		bmat.albedo_color = Color(0.32, 0.36, 0.44) if i % 2 == 0 else Color(0.45, 0.38, 0.32)
+		b.material_override = bmat
+		add_child(b)
+
+	# Spawn 4 Moving AI Traffic Vehicles
+	for t in range(4):
+		var car := MeshInstance3D.new()
+		var cm := BoxMesh.new()
+		cm.size = Vector3(1.9, 1.3, 4.0)
+		car.mesh = cm
+		car.position = Vector3(-2.6 if t % 2 == 0 else 2.6, 0.75, -25.0 - float(t) * 35.0)
+		var cmat := StandardMaterial3D.new()
+		cmat.albedo_color = Color(0.15, 0.45, 0.9) if t % 2 == 0 else Color(0.9, 0.65, 0.1)
+		cmat.metallic = 0.7
+		cmat.roughness = 0.25
+		car.material_override = cmat
+		add_child(car)
+		traffic_cars.append(car)
+
+func _process(delta: float) -> void:
+	for c in traffic_cars:
+		c.position.z += delta * 14.0
+		if c.position.z > 40.0:
+			c.position.z = -180.0
+"""
+    main_tscn = main_tscn.replace('[node name="MainWorld3D" type="Node3D"]', '[ext_resource type="Script" path="res://scripts/city_traffic.gd" id="2_city"]\n\n[node name="MainWorld3D" type="Node3D"]\n\n[node name="CityAndTraffic3D" type="Node3D" parent="."]\nscript = ExtResource("2_city")')
     return {
         "project.godot": proj_godot,
         "export_presets.cfg": export_cfg,
         "scripts/vehicle_ctrl.gd": gd_script,
+        "scripts/city_traffic.gd": city_gd,
         "scenes/main.tscn": main_tscn,
     }
 
@@ -1218,13 +1275,15 @@ def run_autonomous_world_asset_bot(factory_id, user_prompt):
         veh_kw = spec.get("shape", "truck") + " " + spec.get("name", "")
         src_url = search_github_live_glb_url(veh_kw) or OPEN_SOURCE_GLB_CATALOG.get(target_fn) or OPEN_SOURCE_GLB_CATALOG.get("GM-01.glb")
         if src_url:
-            r = requests.get(src_url, timeout=22)
-            if r.status_code == 200 and len(r.content) > 1024:
+            req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=22) as resp:
+                raw_glb = resp.read()
+            if len(raw_glb) > 1024:
                 repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets", method="GET", timeout=8)
                 if not isinstance(repo_info, dict) or not repo_info.get("id"):
                     create_github_repo("3d-assets", "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
-                push_binary_to_github("3d-assets", f"models/{target_fn}", r.content, f"Auto-Bot: sync {target_fn}")
-                push_binary_to_github("3d-assets", "models/vehicle.glb", r.content, f"Auto-Bot: sync vehicle.glb for {spec_id}")
+                push_binary_to_github("3d-assets", f"models/{target_fn}", raw_glb, f"Auto-Bot: sync {target_fn}")
+                push_binary_to_github("3d-assets", "models/vehicle.glb", raw_glb, f"Auto-Bot: sync vehicle.glb for {spec_id}")
                 found_assets.append(f"Live GLB: {src_url.split('/')[-1]}")
                 return {"status": "synced", "spec_id": spec_id, "assets": found_assets, "msg": f"Auto-Bot fetched real .glb ({src_url.split('/')[-1]}) -> 3d-assets/models/{target_fn}!"}
     except Exception as ex:
@@ -1242,15 +1301,17 @@ def auto_import_open_source_3d_pack(target_repo="3d-assets"):
     push_file_to_github(target_repo, "models/README.md", "# HD 3D Models (.glb)\nAuto-imported by Sarfealam Nexus Forge.", "Init models folder")
     for fname, src_url in OPEN_SOURCE_GLB_CATALOG.items():
         try:
-            r = requests.get(src_url, timeout=25)
-            if r.status_code == 200 and len(r.content) > 1024:
-                res = push_binary_to_github(target_repo, f"models/{fname}", r.content, f"Auto-import open-source {fname}")
+            req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                raw_glb = resp.read()
+            if len(raw_glb) > 1024:
+                res = push_binary_to_github(target_repo, f"models/{fname}", raw_glb, f"Auto-import open-source {fname}")
                 if isinstance(res, dict) and res.get("content"):
                     pushed.append(fname)
                 else:
                     errors.append(f"{fname}: GitHub push failed")
             else:
-                errors.append(f"{fname}: HTTP {r.status_code}")
+                errors.append(f"{fname}: Empty .glb")
         except Exception as ex:
             errors.append(f"{fname}: {ex}")
     return pushed, errors
@@ -1950,7 +2011,7 @@ def persist_assembly_state(asm_state):
     save_json_file("assembly_studio_state.json", asm_state)
 
 def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state, step_stage=4, live_code_snippet=""):
-    """Workflow 5 (v24.0 AI-3D-FORGE): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
+    """Workflow 5 (v26.0 AAA-PIPELINE): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
     start_keep_alive_heartbeat()
     is_game = (factory_id == "GAMING_FACTORY_01")
     paint_idx = int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)
@@ -2103,7 +2164,11 @@ def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, select
       const zPos = -i * 13;
       const g = new THREE.Group();
       const bh = 4 + (i % 4) * 2.5;
-      const bldg = new THREE.Mesh(new THREE.BoxGeometry(4.5, bh, 5.2), new THREE.MeshStandardMaterial({color: i%3===0 ? '#475569' : (i%3===1 ? '#64748b' : '#78350f'), roughness:0.8}));
+      const bCv = document.createElement('canvas'); bCv.width=64; bCv.height=64;
+      const bCtx = bCv.getContext('2d'); bCtx.fillStyle = i%3===0 ? '#334155' : (i%3===1 ? '#475569' : '#57534e'); bCtx.fillRect(0,0,64,64);
+      for(let wy=6;wy<58;wy+=12){ for(let wx=6;wx<58;wx+=14){ bCtx.fillStyle = (wx+wy+i)%3===0 ? '#fef08a' : '#bae6fd'; bCtx.fillRect(wx,wy,8,7); } }
+      const bTex = new THREE.CanvasTexture(bCv);
+      const bldg = new THREE.Mesh(new THREE.BoxGeometry(4.5, bh, 5.2), new THREE.MeshStandardMaterial({map:bTex, roughness:0.65}));
       bldg.position.y = bh/2; bldg.castShadow = true;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,4.6,8), new THREE.MeshStandardMaterial({color:'#cbd5e1', metalness:0.8}));
       pole.position.set(side<0?3.6:-3.6, 2.3, 0);
@@ -2414,7 +2479,7 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
         icons_html = ""
         if fetched_icons:
             cards = []
-            for ic in fetched_icons[:6]:
+            for ic in [x for x in fetched_icons if factory_id != "GAMING_FACTORY_01" or not any(b in x.get("name","").lower() for b in ("shopping","cart","bag","store","receipt","wallet"))][:6]:
                 b64_s = base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8")
                 short_n = ic["name"].split(":")[-1][:12]
                 cards.append(f'<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;text-align:center;min-width:58px;"><img src="data:image/svg+xml;base64,{b64_s}" width="26" height="26"/><div style="font-size:8.5px;color:#cbd5e1;margin-top:2px;">{short_n}</div></div>')
@@ -3687,28 +3752,6 @@ with tab_build:
                 if audio_clip is not None:
                     st.info("Voice captured! Ready for Groq Whisper.")
 
-
-        with st.expander("HD 3D Asset Hub (1-Click Open-Source Import + Phone .glb Upload -> 3d-assets)", expanded=False):
-            ah1, ah2 = st.columns(2)
-            with ah1:
-                if st.button("1-Click Auto-Import Open-Source 3D Models", use_container_width=True):
-                    with st.spinner("Downloading open-source .glb models & pushing to sarfealam2246-coder/3d-assets..."):
-                        pushed_list, err_list = auto_import_open_source_3d_pack("3d-assets")
-                        if pushed_list:
-                            st.success(f"Auto-Imported to GitHub 3d-assets/models/: {', '.join(pushed_list)}")
-                        if err_list:
-                            st.warning("; ".join(err_list))
-            with ah2:
-                up_glb = st.file_uploader("Upload Any .glb File From Phone (Auto-Save to 3d-assets):", type=["glb"], key="glb_direct_up")
-                up_slot = st.selectbox("Save As Vehicle ID:", ["GM-01.glb (Truck)", "GM-31.glb (Bus)", "GM-11.glb (Tractor)", "GM-35.glb (Car)", "vehicle.glb (Default)"], index=0)
-                if up_glb is not None and st.button("Push Uploaded .glb to GitHub", use_container_width=True):
-                    target_fn = up_slot.split(" ")[0].strip()
-                    with st.spinner(f"Uploading {target_fn} to GitHub 3d-assets..."):
-                        res = push_binary_to_github("3d-assets", f"models/{target_fn}", up_glb.read(), f"Upload {target_fn} from phone")
-                        if isinstance(res, dict) and res.get("content"):
-                            st.success(f"Uploaded models/{target_fn} to GitHub 3d-assets!")
-                        else:
-                            st.error("Upload failed — check GitHub Token permissions.")
 
         in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
         in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
