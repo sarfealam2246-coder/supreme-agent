@@ -1,700 +1,356 @@
-import streamlit as st
-import streamlit.components.v1 as components
+import ast
+import base64
+import io
 import json
 import os
 import re
 import time
-import threading
-import base64
-import urllib.request
-import urllib.parse
 import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
 from datetime import datetime
 
+import streamlit as st
+import streamlit.components.v1 as components
+
 # ==============================================================================
-# SARFEALAM ENTERPRISE AI APP FACTORY v26.0 AAA-PIPELINE 16-DEPT 2-FACTORY SYSTEM
-# ==============================================================================
-# Sole Owner & Legal Copyright: Sarfealam (Package Prefix: com.sarfealam)
-# 2 Dedicated Factory IDs: GAMING_FACTORY_01 & MARKET_FACTORY_02
-# 5 AI Engines: NVIDIA NIM (16 Models) + GroqCloud + Google Gemini + OpenRouter + Cohere
-# Live Open-Source Icon Fetcher: Iconify API + Game-icons.net (0 API keys needed)
+# SARFEALAM AUTO-STUDIO v30.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
-def _get_secret(key_name, fallback_val):
+def _get_secret(key_name, fallback=""):
     try:
         if key_name in st.secrets:
-            return st.secrets[key_name]
+            return str(st.secrets[key_name])
     except Exception:
         pass
-    return fallback_val
+    return fallback
 
-DEFAULT_NVIDIA_KEY = _get_secret("NVIDIA_KEY", "nvapi-" + "2XPjS-vcPo880Q08MJOXlhuZImZGJvUflDLq9LmAOroAVHi2xlBpOZmNPOsdPtsX")
-DEFAULT_GROQ_KEY = _get_secret("GROQ_KEY", "gsk_" + "RpoMAW72Fr6atNnsFqceWGdyb3FYgOOH1eDW1LSxrOdxOccTQSUD")
-DEFAULT_GEMINI_KEY = _get_secret("GEMINI_KEY", "AQ." + "Ab8RN6IqY7rKF058j9Dl298vuVtSeENbLSxikXP-cBpm8e4mTw")
-DEFAULT_OPENROUTER_KEY = _get_secret("OPENROUTER_KEY", "sk-or-v1-" + "4482b7c6cd7e3c3a4f467e4762becd1a450e91b716dcc80121d5116b43f009a3")
-DEFAULT_COHERE_KEY = _get_secret("COHERE_KEY", "QPjLB5nx" + "piy3eEKZLQcGIkl8RCsiqCSz09eEGKqE")
-
-DEFAULT_GITHUB_TOKEN = _get_secret("GITHUB_TOKEN", "ghp_" + "IiyBqkh0hk4C6b4ArIXyBnBy3Dszf71dEdPv")
-DEFAULT_GITHUB_USERNAME = "sarfealam2246-coder"
 OWNER_NAME = "Sarfealam"
-ADMIN_PASSWORD = _get_secret("ADMIN_PASSWORD", "SF" + "2026")
+NVIDIA_KEY = _get_secret("NVIDIA_API_KEY", _get_secret("NVIDIA_KEY", ""))
+GROQ_KEY = _get_secret("GROQ_API_KEY", _get_secret("GROQ_KEY", ""))
+GEMINI_KEY = _get_secret("GEMINI_API_KEY", _get_secret("GEMINI_KEY", ""))
+OPENROUTER_KEY = _get_secret("OPENROUTER_API_KEY", _get_secret("OPENROUTER_KEY", ""))
+COHERE_KEY = _get_secret("COHERE_API_KEY", _get_secret("COHERE_KEY", ""))
+GITHUB_TOKEN = _get_secret("GITHUB_TOKEN", "")
+DEFAULT_GITHUB_USERNAME = _get_secret("GITHUB_USERNAME", "sarfealam2246-coder")
 SUPABASE_URL = _get_secret("SUPABASE_URL", "https://saexbzapfzfkzqkunsom.supabase.co")
-SUPABASE_KEY = _get_secret("SUPABASE_KEY", "sb_publishable_" + "3YZ2OA5MiOoVoLqFCXcsxw_JIjNlEjY")
-DEFAULT_UNITY_EMAIL = _get_secret("UNITY_EMAIL", "")
-DEFAULT_UNITY_PASSWORD = _get_secret("UNITY_PASSWORD", "")
+SUPABASE_KEY = _get_secret("SUPABASE_KEY", "")
+ADMIN_PASSWORD = _get_secret("ADMIN_PASSWORD", "sarfealam786")
 
+STATE_FILE = "auto_studio_state.json"
 VAULT_FILE = "apps_vault.json"
-ACTIVE_BUILD_FILE = "active_build.json"
-DESIGN_LOCK_FILE = "design_lock_bus.json"
-CODED_APP_FILE = "coded_flutter_bundle.json"
-REJECTED_REPOS_FILE = "rejected_repos.json"
-SCOUT_STATE_FILE = "scout_state.json"
-_SCOUT_JOBS = {}
 
 # ==============================================================================
-# 2 DEDICATED FACTORY IDs & THEIR REAL TOOL STORES (ZERO EXTERNAL BRAND NAMES)
+# STORAGE & PERSISTENCE (LOCAL + SUPABASE CLOUD)
 # ==============================================================================
 
-# ==============================================================================
-# 6-WORKFLOW MASTER DATA CENTERS (52 GAMING IDs + 52 MARKET IDs + REPAIR VAULT)
-# ==============================================================================
-GAMING_LEAD_ARCHITECT = (
-    "Lead 3D Game Studio Architect (Euro Truck / Farming Simulator / Godot 4 AAA Mobile Standards): "
-    "60 FPS mobile optimization, true PBR metallic shaders, real-time directional shadows, "
-    "VehicleBody3D / PathFollow3D / Aerodynamic physics, dual Portrait+Landscape touch controls, "
-    "visible 3D driver character (GM-51), and rich 3D world environment (GM-52)."
-)
-
-MARKET_LEAD_ARCHITECT = (
-    "Principal Super-App Mobile Architect (Flipkart / PhonePe / Zomato / Dream11 Material 3 Standards): "
-    "3D depth gradient cards, smooth 4-tab floating navigation, Mobile/Gmail OTP Sign-In + Unique Profile ID (MK-51), "
-    "Play-Store 3D UI Theme System (MK-52), Razorpay/UPI PaymentGatewayService, and zero-crash state management."
-)
-
-PAINT_4_COLORS = [
-    {"name": "Crimson Red", "hex": "#dc2626", "accent": "#f87171"},
-    {"name": "Cobalt Blue", "hex": "#2563eb", "accent": "#60a5fa"},
-    {"name": "Emerald Green", "hex": "#059669", "accent": "#34d399"},
-    {"name": "Solar Gold", "hex": "#d97706", "accent": "#fbbf24"},
-]
-
-SFX_PROFILES = {
-    "SFX-01": {"name": "Heavy Diesel Turbo", "base_hz": 58, "wave": "sawtooth", "turbo": True},
-    "SFX-02": {"name": "Tractor Thump Diesel", "base_hz": 44, "wave": "triangle", "turbo": False},
-    "SFX-03": {"name": "JCB Hydraulic & Diesel", "base_hz": 52, "wave": "sawtooth", "turbo": True},
-    "SFX-04": {"name": "Coach & Auto Engine", "base_hz": 74, "wave": "triangle", "turbo": False},
-    "SFX-05": {"name": "Supercar V8 + Nitro", "base_hz": 96, "wave": "sawtooth", "turbo": True},
-    "SFX-06": {"name": "Superbike High-RPM", "base_hz": 125, "wave": "sawtooth", "turbo": True},
-    "SFX-07": {"name": "Train Loco & Rail Clack", "base_hz": 48, "wave": "square", "turbo": False},
-    "SFX-08": {"name": "Jet Turbine / Propeller", "base_hz": 160, "wave": "sine", "turbo": True},
-    "SFX-09": {"name": "Helicopter Rotor Chop", "base_hz": 36, "wave": "square", "turbo": False},
-    "SFX-10": {"name": "Ship Marine / Tank", "base_hz": 40, "wave": "sawtooth", "turbo": False},
-}
-
-HRN_PROFILES = {
-    "HRN-01": {"name": "Truck Pressure Air Horn", "f1": 310, "f2": 392},
-    "HRN-02": {"name": "Car / Bike Beep Horn", "f1": 440, "f2": 554},
-    "HRN-03": {"name": "Tractor / JCB Industrial Horn", "f1": 280, "f2": 350},
-    "HRN-04": {"name": "Police / Ambulance Dual Siren", "f1": 660, "f2": 880},
-    "HRN-05": {"name": "Train Dual-Chime Horn", "f1": 277, "f2": 370},
-    "HRN-06": {"name": "Ship Deep Foghorn", "f1": 110, "f2": 146},
-}
-
-LGT_PROFILES = {
-    "LGT-01": "Dual Halogen Headlights + Brake Red + Reverse White + Hazard Blinkers",
-    "LGT-02": "Heavy Work Floodlights + Amber Beacon Strobe",
-    "LGT-03": "Red-Blue Emergency Police/Ambulance Strobe Rig",
-    "LGT-04": "Train High-Beam Searchlight + Track Signal",
-    "LGT-05": "Aircraft Red-Green Wing Nav Lights + Landing Beam",
-    "LGT-06": "Marine Deck Floodlights + Search Beam",
-}
-
-GM_51_DRIVERS = [
-    ("CHR-01", "Indian Highway Trucker", "Kurta Vest & Gamcha"),
-    ("CHR-02", "Punjabi Sardar Driver", "Turban & Leather Jacket"),
-    ("CHR-03", "Village Kisan Farmer", "Pagdi & Kurta (Tractor)"),
-    ("CHR-04", "JCB / Crane Engineer", "Yellow Safety Helmet & Vest"),
-    ("CHR-05", "Pro MotoGP / Drift Racer", "Full Racing Suit & Visor"),
-    ("CHR-06", "Commercial Airline Pilot", "White Uniform & Gold Cap"),
-    ("CHR-07", "Railway Loco Pilot", "Khaki Rail Uniform & Cap"),
-    ("CHR-08", "Police Interceptor Officer", "Khaki Uniform & Aviators"),
-    ("CHR-09", "Fire & Rescue Medic", "Fire Suit & Rescue Helmet"),
-    ("CHR-10", "Ship Marine Captain", "Navy Coat & Peaked Cap"),
-    ("CHR-11", "Army Tank Commander", "Camo Combat Helmet"),
-    ("CHR-12", "Female Pro Driver", "Racing Jacket & Helmet"),
-]
-
-GM_52_WORLDS = [
-    ("ENV-01", "Indian Village & Kisan Khet", "3D Houses, Dhaba, Neem Trees, Loading Dock"),
-    ("ENV-02", "National Highway & Toll Plaza", "4-Lane Asphalt, Toll Booth, Fuel Pump"),
-    ("ENV-03", "Metro City & Flyover", "3D Skyscrapers, Traffic Signals, Flyover"),
-    ("ENV-04", "Pahadi Ghat & Snow Peaks", "Curved Mountain Road, Guardrails, Depth Fog"),
-    ("ENV-05", "Construction & Mining Quarry", "Tower Cranes, Dirt Mounds, Barricades"),
-    ("ENV-06", "Railway Station & Yard", "Platforms, Overhead Wires, Crossing Gate"),
-    ("ENV-07", "Airport Runway & Sky Clouds", "Long Runway, ATC Tower, 3D Volumetric Clouds"),
-    ("ENV-08", "Seaport & Ocean Waves", "Container Yard, Lighthouse, 3D Ocean Waves"),
-    ("ENV-09", "Racing Circuit & Stadium", "Checkered Flag, Curbs, Stadium Floodlights"),
-    ("ENV-10", "Dynamic Weather & Time", "Day Shadows / Golden Sunset / Night Beams / Rain"),
-]
-
-_GM_RAW = [
-    ("GM-01", "Indian Cargo Truck", "truck", "SFX-01", "HRN-01", "LGT-01", "ENV-01", "CHR-01", "Steering, D/N/R, GAS/BRK, Air Horn, Village Cargo Dock"),
-    ("GM-02", "18-Wheeler Euro Semi", "truck", "SFX-01", "HRN-01", "LGT-01", "ENV-02", "CHR-02", "Articulated Trailer, Air Brake, Highway Cruise"),
-    ("GM-03", "Oil & Fuel Tanker", "truck", "SFX-01", "HRN-01", "LGT-01", "ENV-02", "CHR-01", "Heavy Tank Balance, Refinery to Pump Delivery"),
-    ("GM-04", "Car Transporter Carrier", "truck", "SFX-01", "HRN-01", "LGT-01", "ENV-02", "CHR-02", "Double-Deck Ramp, Multi-Car Cargo Load"),
-    ("GM-05", "Timber & Logging Truck", "truck", "SFX-01", "HRN-01", "LGT-02", "ENV-04", "CHR-01", "4x4 Diff Lock, Hill Offroad Log Hauling"),
-    ("GM-06", "Concrete Mixer Truck", "truck", "SFX-01", "HRN-01", "LGT-02", "ENV-05", "CHR-04", "Rotating Drum Toggle, Construction Pouring"),
-    ("GM-07", "Garbage & Recycling Truck", "truck", "SFX-01", "HRN-01", "LGT-02", "ENV-03", "CHR-04", "Hydraulic Bin Lift, City Route Pickup"),
-    ("GM-08", "Cold-Chain Refrigerated Van", "truck", "SFX-01", "HRN-02", "LGT-01", "ENV-03", "CHR-01", "Timed Fresh Delivery, Temp Gauge"),
-    ("GM-09", "4x4 Pickup Cargo", "car", "SFX-05", "HRN-02", "LGT-01", "ENV-01", "CHR-03", "Fast Offroad 4x4, Farm Crate Delivery"),
-    ("GM-10", "Port Container Hauler", "truck", "SFX-01", "HRN-01", "LGT-02", "ENV-08", "CHR-01", "Container Hitch/Unhitch, Dock Shifting"),
-    ("GM-11", "Farming Tractor + Trolley", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "PTO On/Off, Plough Hydraulic Lift, Trolley Unload"),
-    ("GM-12", "Combine Harvester", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Rotating Cutter Head, Grain Tank % Unload"),
-    ("GM-13", "Crop Sprayer Tractor", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Boom Sprayer Toggle, Field Coverage"),
-    ("GM-14", "Sugarcane & Hay Baler", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Bale Dropper, Trailer Hitch"),
-    ("GM-15", "Mini Orchard Tractor", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Tight Turning Radius, Orchard Crate Hauling"),
-    ("GM-16", "Milk Dairy Tanker", "truck", "SFX-02", "HRN-02", "LGT-01", "ENV-01", "CHR-03", "Village-to-City Dairy Collection"),
-    ("GM-17", "Seed Planter & Plough Rig", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Seed Drill Depth Slider, Soil Furrows"),
-    ("GM-18", "Livestock Cattle Carrier", "truck", "SFX-01", "HRN-01", "LGT-01", "ENV-01", "CHR-02", "Smooth Suspension Farm Transport"),
-    ("GM-19", "Heavy 4WD Mud Tractor", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-04", "CHR-03", "Towing Winch Rope, Deep Mud Traction"),
-    ("GM-20", "Paddy Rice Harvester", "tractor", "SFX-02", "HRN-03", "LGT-02", "ENV-01", "CHR-03", "Wet Field Grip, Paddy Unloading"),
-    ("GM-21", "Mobile & Tower Crane", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Dual Boom Joysticks, Magnet/Hook Grab, Stabilizers"),
-    ("GM-22", "JCB Backhoe Loader", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Front Scoop + Rear Digging Bucket, Reverse Beep"),
-    ("GM-23", "Tracked 360 Excavator", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "360 Cabin Rotate, Trench Digging Bucket"),
-    ("GM-24", "Heavy Bulldozer", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Front Blade Lift/Tilt, Earth Clearing"),
-    ("GM-25", "Giant Mining Dumper", "truck", "SFX-03", "HRN-01", "LGT-02", "ENV-05", "CHR-04", "Hydraulic Tipper Bed Dump, Quarry Load"),
-    ("GM-26", "Asphalt Road Roller", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-02", "CHR-04", "Vibration Drum Compactor, Highway Paving"),
-    ("GM-27", "Warehouse Forklift", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Fork Height Slider, Pallet Stacking"),
-    ("GM-28", "Motor Grader", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Center Blade Angle Control, Road Leveling"),
-    ("GM-29", "Tunnel Drilling Rig", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Vertical Bore Head, Rock Dust Particles"),
-    ("GM-30", "Wheel Loader Scoop", "crane", "SFX-03", "HRN-03", "LGT-02", "ENV-05", "CHR-04", "Heavy Scoop Lift & Dump Trigger"),
-    ("GM-31", "Highway Sleeper Bus", "bus", "SFX-04", "HRN-01", "LGT-01", "ENV-02", "CHR-01", "Passenger Door Toggle, Bus Stop Pickup"),
-    ("GM-32", "Double-Decker Tourist Bus", "bus", "SFX-04", "HRN-01", "LGT-01", "ENV-03", "CHR-12", "City Tour Checkpoints, Roof Camera"),
-    ("GM-33", "School Bus", "bus", "SFX-04", "HRN-01", "LGT-01", "ENV-03", "CHR-01", "Stop Sign Arm, Kids Pickup Route"),
-    ("GM-34", "Auto Rickshaw Tuk-Tuk", "car", "SFX-04", "HRN-02", "LGT-01", "ENV-03", "CHR-01", "3-Wheel Handlebar Steer, Fare Meter"),
-    ("GM-35", "Sports Supercar Drift", "car", "SFX-05", "HRN-02", "LGT-01", "ENV-09", "CHR-05", "Nitro NOS Boost, Handbrake Drift, Lap Timer"),
-    ("GM-36", "Police Chase Interceptor", "car", "SFX-05", "HRN-04", "LGT-03", "ENV-03", "CHR-08", "Red-Blue Siren Strobe, Turbo Pursuit"),
-    ("GM-37", "Emergency Ambulance", "bus", "SFX-05", "HRN-04", "LGT-03", "ENV-03", "CHR-09", "Emergency Siren, Hospital Rescue Timer"),
-    ("GM-38", "Fire Brigade Ladder Truck", "truck", "SFX-01", "HRN-04", "LGT-03", "ENV-03", "CHR-09", "Ladder Extend, Water Cannon Spray"),
-    ("GM-39", "Superbike MotoGP", "bike", "SFX-06", "HRN-02", "LGT-01", "ENV-09", "CHR-05", "Lean Angle Physics, Wheelie Button, NOS"),
-    ("GM-40", "Dirt Bike & BMX Cycle", "bike", "SFX-06", "HRN-02", "LGT-01", "ENV-04", "CHR-12", "Stunt Jump, Ramp Tricks, Trail Balance"),
-    ("GM-41", "Express Passenger Train", "train", "SFX-07", "HRN-05", "LGT-04", "ENV-06", "CHR-07", "Throttle Notch 0-8, Track Switch, Station Doors"),
-    ("GM-42", "Heavy Freight Cargo Train", "train", "SFX-07", "HRN-05", "LGT-04", "ENV-06", "CHR-07", "Multi-Wagon Locomotive, Dynamic Brake"),
-    ("GM-43", "City Metro / Bullet Train", "train", "SFX-07", "HRN-05", "LGT-04", "ENV-03", "CHR-07", "High-Speed Auto Signal, Elevated Track"),
-    ("GM-44", "Commercial Passenger Jet", "plane", "SFX-08", "HRN-05", "LGT-05", "ENV-07", "CHR-06", "Flight Stick Pitch/Roll/Yaw, Flaps, Landing Gear"),
-    ("GM-45", "Stunt Propeller Airplane", "plane", "SFX-08", "HRN-02", "LGT-05", "ENV-07", "CHR-06", "360 Aerobatic Loops, Smoke Trail"),
-    ("GM-46", "Rescue & Cargo Helicopter", "heli", "SFX-09", "HRN-04", "LGT-05", "ENV-04", "CHR-06", "Collective Throttle, Hover Auto, Rescue Winch"),
-    ("GM-47", "Cargo Container Ship", "ship", "SFX-10", "HRN-06", "LGT-06", "ENV-08", "CHR-10", "Rudder Wheel, Twin Throttle, Anchor & Sonar"),
-    ("GM-48", "Racing Speedboat & Yacht", "ship", "SFX-10", "HRN-06", "LGT-06", "ENV-08", "CHR-10", "Turbo Water Jet, Buoyancy Waves"),
-    ("GM-49", "Monster Truck 4x4", "truck", "SFX-05", "HRN-01", "LGT-02", "ENV-09", "CHR-05", "Jumbo Suspension, Car-Crush Ramps"),
-    ("GM-50", "Army Tank & Armored", "tank", "SFX-10", "HRN-03", "LGT-02", "ENV-04", "CHR-11", "360 Turret Aim, Cannon Fire, Zoom Scope"),
-]
-
-GAMING_DATA_CENTER = {
-    row[0]: {
-        "id": row[0],
-        "name": row[1],
-        "shape": row[2],
-        "sfx_id": row[3],
-        "hrn_id": row[4],
-        "lgt_id": row[5],
-        "env_id": row[6],
-        "chr_id": row[7],
-        "tools": row[8],
-        "paints": PAINT_4_COLORS,
-    }
-    for row in _GM_RAW
-}
-GAMING_DATA_CENTER["GM-51"] = {
-    "id": "GM-51",
-    "name": "3D Driver & Character Roster (12 Characters)",
-    "shape": "driver",
-    "roster": GM_51_DRIVERS,
-    "tools": "Visible 3D Driver in Seat + First-Person Hands on Wheel",
-}
-GAMING_DATA_CENTER["GM-52"] = {
-    "id": "GM-52",
-    "name": "3D World, Houses, Sky & Weather Pack (10 Worlds)",
-    "shape": "world",
-    "worlds": GM_52_WORLDS,
-    "tools": "Directional Sun Shadows, 3D Houses/Dhaba, Sky Clouds, Rain/Sunset/Night",
-}
-
-MSFX_PROFILES = {
-    "MSFX-01": "UPI / Payment Success Ding! Chime",
-    "MSFX-02": "Order Confirmed / Cart Pop",
-    "MSFX-03": "Live Delivery / Cab Arrival Ping",
-    "MSFX-04": "Fantasy / Trading Win Fanfare",
-    "MSFX-05": "6-Digit Gmail OTP Security Alert",
-    "MSFX-06": "Chat Message Pop",
-    "MSFX-07": "Reminder / Alarm Bell",
-    "MSFX-08": "Play-Store Button Tap Click",
-}
-
-_MK_RAW = [
-    ("MK-01", "Mega Store (Amazon/Flipkart)", "ecommerce", "MSFX-02", "Flash Sale, Search, Cart, 4-Tab Nav"),
-    ("MK-02", "10-Min Grocery (Blinkit/Zepto)", "ecommerce", "MSFX-03", "Live 10-Min Timer, Basket, Express Checkout"),
-    ("MK-03", "Fashion & Lifestyle (Myntra)", "ecommerce", "MSFX-02", "Size Filter, Wishlist, Lookbook Cards"),
-    ("MK-04", "Beauty & Cosmetics (Nykaa)", "ecommerce", "MSFX-02", "Shade Picker, Beauty Cart, Offers"),
-    ("MK-05", "Social Reseller (Meesho)", "ecommerce", "MSFX-01", "Margin Calculator, WhatsApp Share"),
-    ("MK-06", "Electronics & Mobile Hub", "ecommerce", "MSFX-08", "Specs Compare, EMI Card, Warranty"),
-    ("MK-07", "Home & Furniture Store", "ecommerce", "MSFX-02", "Room Categories, Dimension Tags"),
-    ("MK-08", "Online Pharmacy (1mg)", "ecommerce", "MSFX-07", "Prescription Upload, Lab Test Booking"),
-    ("MK-09", "Gold & Jewellery Store", "ecommerce", "MSFX-01", "Live 24K Gold Rate, Hallmark Badge"),
-    ("MK-10", "Books & Stationery Mart", "ecommerce", "MSFX-08", "Preview Reader, Bundle Discounts"),
-    ("MK-11", "Food Delivery (Zomato/Swiggy)", "food", "MSFX-03", "Live Restaurants, Coupon Strip, Track Map"),
-    ("MK-12", "Cab & Taxi Booking (Uber/Ola)", "travel", "MSFX-03", "Pickup/Drop Route, Live Fare Card"),
-    ("MK-13", "Bike Taxi & Auto (Rapido)", "travel", "MSFX-05", "Quick Ride Pin, Captain OTP"),
-    ("MK-14", "Flight & Hotel (MakeMyTrip)", "travel", "MSFX-02", "Date/Seat Picker, Boarding Pass"),
-    ("MK-15", "Bus & Train Ticket (IRCTC/RedBus)", "travel", "MSFX-03", "Live Seat Map, PNR Status"),
-    ("MK-16", "Hotel & Homestay (OYO)", "travel", "MSFX-02", "Room Gallery, Instant Check-In"),
-    ("MK-17", "Home Services (Urban Company)", "service", "MSFX-03", "Plumber/AC/Salon Slot Picker"),
-    ("MK-18", "Car & Bike Service Wash", "service", "MSFX-02", "Garage Pickup, Service Bill"),
-    ("MK-19", "Laundry & Dry-Clean", "service", "MSFX-02", "Per-Kg Rate, Pickup Slot"),
-    ("MK-20", "Parcel & Mini-Truck (Porter)", "service", "MSFX-03", "Truck Size Selector, Live Tracking"),
-    ("MK-21", "UPI & Wallet (PhonePe/GPay)", "fintech", "MSFX-01", "Gradient Wallet, Scan-Pay, Ding! Sound"),
-    ("MK-22", "Super-App Payments (Paytm)", "fintech", "MSFX-01", "Bill Pay, Recharge, Scratch Card"),
-    ("MK-23", "Stock & F&O Trading (Groww)", "fintech", "MSFX-04", "Live fl_chart Candles, Buy/Sell"),
-    ("MK-24", "Mutual Fund & SIP Tracker", "fintech", "MSFX-01", "XIRR Graph, Auto-Pay Mandate"),
-    ("MK-25", "Instant Loan & Credit Score", "fintech", "MSFX-05", "CIBIL Meter, EMI Calculator"),
-    ("MK-26", "Digital Khata / Ledger", "fintech", "MSFX-01", "Udhar-Jama Ledger, Reminder"),
-    ("MK-27", "Expense & Budget Manager", "fintech", "MSFX-07", "Monthly Pie Chart, Savings Goal"),
-    ("MK-28", "Digital Gold & Silver Jar", "fintech", "MSFX-01", "Save from Rs.10, Vault Balance"),
-    ("MK-29", "Insurance Policy Hub", "fintech", "MSFX-05", "Health/Bike Claim Tracker"),
-    ("MK-30", "Crypto & Web3 Portfolio", "fintech", "MSFX-04", "Coin Watchlist, Portfolio P&L"),
-    ("MK-31", "Cricket Fantasy XI (Dream11)", "fantasy", "MSFX-04", "Pitch Report, 11-Player Builder, Prize Pool"),
-    ("MK-32", "Live Cricket Score & Stats", "fantasy", "MSFX-04", "Ball-by-Ball Score, Run-Rate Chart"),
-    ("MK-33", "OTT Video Streaming (Hotstar)", "media", "MSFX-08", "Hero Banner, Episode Queue"),
-    ("MK-34", "Music & Podcast (Spotify)", "media", "MSFX-08", "Mini-Player Bar, Playlists"),
-    ("MK-35", "Short Video / Reels Social", "social", "MSFX-06", "Vertical Swipe Feed, Like/Share"),
-    ("MK-36", "Chat & Community Messenger", "social", "MSFX-06", "Online Badge, Group Channels"),
-    ("MK-37", "Matrimony / Matchmaking", "social", "MSFX-06", "Verified Profile Cards, Filters"),
-    ("MK-38", "EdTech & Video Courses", "edtech", "MSFX-07", "Progress Bar, Certificate"),
-    ("MK-39", "Exam Quiz & Mock Test", "edtech", "MSFX-04", "Countdown Timer, Rank Leaderboard"),
-    ("MK-40", "Daily Short News (Inshorts)", "media", "MSFX-08", "Swipe News Cards, Bookmarks"),
-    ("MK-41", "Gym & Fitness Tracker (Cult.fit)", "health", "MSFX-07", "Steps, Calorie Ring, Workouts"),
-    ("MK-42", "Doctor Telemedicine", "health", "MSFX-05", "Video Consult Slot, E-Prescription"),
-    ("MK-43", "Diet & Calorie Counter", "health", "MSFX-07", "Meal Logger, Water Reminder"),
-    ("MK-44", "Restaurant POS & KOT", "business", "MSFX-02", "Table Status, Thermal Bill"),
-    ("MK-45", "Kirana Inventory & GST Bill", "business", "MSFX-01", "Barcode Scan, Stock Alert"),
-    ("MK-46", "Real Estate Finder (99acres)", "business", "MSFX-08", "2BHK/3BHK Map, EMI Preview"),
-    ("MK-47", "Job & Naukri Portal", "business", "MSFX-06", "1-Tap Apply, Resume Tracker"),
-    ("MK-48", "Astrology & Kundli Panchang", "utility", "MSFX-07", "Daily Horoscope, Kundli Match"),
-    ("MK-49", "EV Charging Station Finder", "utility", "MSFX-03", "Live Plug Status, kWh Billing"),
-    ("MK-50", "Smart Home IoT Controller", "utility", "MSFX-08", "Light/AC/Fan Toggles, Watt Meter"),
-]
-
-MARKET_DATA_CENTER = {
-    row[0]: {
-        "id": row[0],
-        "name": row[1],
-        "category": row[2],
-        "msfx_id": row[3],
-        "features": row[4],
-        "themes": PAINT_4_COLORS,
-    }
-    for row in _MK_RAW
-}
-MARKET_DATA_CENTER["MK-51"] = {
-    "id": "MK-51",
-    "name": "Mobile Number / Gmail OTP Sign-In & Unique Profile ID",
-    "features": "Phone/OTP Verification, Unique Member ID Badge, Avatar, Wallet & Orders",
-}
-MARKET_DATA_CENTER["MK-52"] = {
-    "id": "MK-52",
-    "name": "3D Play-Store UI & Depth Theme System",
-    "features": "3D Gradient Depth Cards, 4-Tab Floating Nav, fl_chart, flutter_animate",
-}
-
-REPAIR_MEMORY_VAULT = {
-    "RP-01": "Dart Bracket / EOF Cut-Off Fallback -> Replace broken screen with tested MK-xx Clean Template",
-    "RP-02": "Flutter 3.50 Auto-Patcher -> Strip invalid const, update withOpacity->withValues, fix AndroidManifest",
-    "RP-03": "Godot 4 & godot-ci Auto-Healer -> Verify export_presets.cfg, orientation=6, VehicleBody3D nodes",
-    "RP-04": "Display 2 3D Guard -> Enforce PCFSoftShadowMap, touch.identifier multi-touch, and GM-xx PBR meshes",
-    "RP-05": "AI Engine 404/429 Auto-Switch -> Instant failover Gemini <-> Groq gpt-oss-120b <-> NVIDIA <-> OpenRouter",
-    "RP-06": "GitHub Workflow Validator -> Verify real GitHub Actions repos before push",
-}
-
-APK_SIZE_TIERS = [
-    "20 MB Lite (Fast Core Build)",
-    "50 MB Pro (Full PBR Textures & Sound Bank)",
-    "100 MB Pro+ (Full GM-51/52 Assets & Multi-Level Pack)",
-    "577 MB AAA Ultra (PolyHaven PBR + Procedural City + AI Traffic)",
-]
-
-def resolve_lane_id_and_specs(user_prompt, factory_id, explicit_id="AUTO"):
-    """Strict Lane Firewall: Gaming ONLY reads GM-01..52; Market ONLY reads MK-01..52."""
-    p = (user_prompt or "").lower()
-    if factory_id == "GAMING_FACTORY_01":
-        if explicit_id and explicit_id in GAMING_DATA_CENTER and explicit_id not in ("GM-51", "GM-52"):
-            return GAMING_DATA_CENTER[explicit_id]
-        kw_map = [
-            ("GM-25", ["dumper", "tipper", "hydraulic"]),
-            ("GM-01", ["cargo truck", "goods carrier", "indian truck", "truck"]),
-            ("GM-11", ["tractor", "khet", "farm", "trolley", "plough", "kisan"]),
-            ("GM-12", ["harvester", "combine", "crop"]),
-            ("GM-22", ["jcb", "backhoe", "excavator"]),
-            ("GM-21", ["crane", "tower crane"]),
-            ("GM-24", ["bulldozer", "dozer"]),
-            ("GM-41", ["train", "railway", "loco", "express train", "metro train"]),
-            ("GM-44", ["plane", "flight", "jet", "airport", "airplane"]),
-            ("GM-46", ["helicopter", "chopper", "heli"]),
-            ("GM-47", ["ship", "boat", "yacht", "ocean", "port"]),
-            ("GM-39", ["bike", "motorcycle", "motogp", "ktm", "bullet"]),
-            ("GM-40", ["cycle", "bmx", "bicycle"]),
-            ("GM-35", ["car", "drift", "supercar", "racing", "ferrari"]),
-            ("GM-36", ["police", "cop", "chase"]),
-            ("GM-37", ["ambulance", "hospital"]),
-            ("GM-38", ["fire", "brigade"]),
-            ("GM-34", ["auto", "rickshaw", "tuk"]),
-            ("GM-31", ["bus", "coach", "sleeper"]),
-            ("GM-50", ["tank", "army", "military"]),
-            ("GM-49", ["monster", "4x4", "offroad"]),
-            ("GM-03", ["tanker", "oil", "fuel", "petrol"]),
-        ]
-        for gid, kws in kw_map:
-            if any(k in p for k in kws):
-                return GAMING_DATA_CENTER[gid]
-        return GAMING_DATA_CENTER["GM-01"]
-    else:
-        if explicit_id and explicit_id in MARKET_DATA_CENTER and explicit_id not in ("MK-51", "MK-52"):
-            return MARKET_DATA_CENTER[explicit_id]
-        mk_map = [
-            ("MK-31", ["dream11", "fantasy", "cricket", "ipl", "team"]),
-            ("MK-21", ["upi", "wallet", "phonepe", "gpay", "pay", "bank", "expense"]),
-            ("MK-23", ["stock", "trade", "groww", "zerodha", "crypto"]),
-            ("MK-11", ["food", "zomato", "swiggy", "restaurant", "pizza"]),
-            ("MK-12", ["cab", "taxi", "uber", "ola", "ride"]),
-            ("MK-02", ["grocery", "blinkit", "zepto", "kirana"]),
-            ("MK-03", ["fashion", "myntra", "clothes", "shoes"]),
-            ("MK-41", ["gym", "fitness", "workout", "health"]),
-            ("MK-38", ["course", "study", "edtech", "quiz", "exam"]),
-            ("MK-33", ["video", "ott", "netflix", "movie", "music"]),
-        ]
-        for mid, kws in mk_map:
-            if any(k in p for k in kws):
-                return MARKET_DATA_CENTER[mid]
-        return MARKET_DATA_CENTER["MK-01"]
-
-
-FACTORY_REGISTRY = {
-    "GAMING_FACTORY_01": {
-        "name": "Gaming & Skill Arena Factory",
-        "app_type": "GAMING",
-        "frame_ai": "NVIDIA Nemotron 3.5 Super VL + Gemma 4 31B",
-        "bottom_nav": False,
-        "icon_prefix": "game-icons",
-        "design_sources": [
-            "https://game-icons.net/",
-            "https://api.iconify.design",
-            "https://lawsofux.com"
-        ],
-        "tool_store": [
-            "Fullscreen Arena Lobby (No Bottom Bar)",
-            "Dual-Currency Wallet (Free XP + One-Way VIP/Booster Store, 0% Cash Prize Pool)",
-            "Razorpay-Ready PaymentGatewayService (One-Way Premium Unlocks)",
-            "Player Profile & Rank Badge (Supabase Sync)",
-            "CustomPainter Interactive Mini-Game Canvas",
-            "Live Match / Challenge Countdown Cards"
-        ]
-    },
-    "MARKET_FACTORY_02": {
-        "name": "Commercial & Service App Factory",
-        "app_type": "NORMAL",
-        "frame_ai": "NVIDIA Mistral Large 4 (1T MoE) + GLM-5-3-Flash",
-        "bottom_nav": True,
-        "icon_prefix": "lucide",
-        "design_sources": [
-            "https://api.iconify.design",
-            "https://m3.material.io",
-            "https://lawsofux.com"
-        ],
-        "tool_store": [
-            "4-Tab Material 3 Bottom Navigation",
-            "Hero Balance / Search Header + Quick Action Icon Grid",
-            "Universal Wallet Icon + Passbook Ledger",
-            "Razorpay-Ready PaymentGatewayService (UPI/Card Checkout Sheet)",
-            "User Profile + Edit Profile + Gmail 6-Digit OTP",
-            "Bottom Sheet Details & Searchable Records"
-        ]
-    }
-}
-
-# ==============================================================================
-# GITHUB ACTIONS NATIVE FLUTTER APK COMPILER WORKFLOW
-# ==============================================================================
-AUTOMATED_APK_WORKFLOW = """name: Build Native Flutter Android APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Set up Flutter Stable SDK
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Install ImageMagick for Brand App Icon
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
-
-      - name: Build Native Flutter Release APK
-        run: bash build.sh
-
-      - name: Publish Production Flutter APK to Releases
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.0
-          name: "Production Flutter APK v1.0.0"
-          files: dist/*.apk
-          draft: false
-          prerelease: false
-"""
-
-UNITY_APK_WORKFLOW = """name: Build Native Unity 3D Android APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-
-jobs:
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Activate Unity Personal License
-        uses: game-ci/unity-activate@v2
-        with:
-          license: personal
-          username: ${{ secrets.UNITY_EMAIL }}
-          password: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Build Unity 3D Android APK
-        uses: game-ci/unity-builder@v4
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: Android
-          unityVersion: 2022.3.20f1
-          androidAppBundle: false
-          buildMethod: AutoBuildScene.PerformAndroidBuild
-
-      - name: Publish Unity 3D APK to Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.0-${{ github.run_number }}
-          name: "Unity 3D Android APK v1.0.0"
-          files: build/Android/*.apk
-          draft: false
-          prerelease: false
-"""
-
-def push_github_repo_secret(repo_name, secret_name, secret_value):
-    """Encrypts & pushes a secret to GitHub Repo Actions Secrets if PyNaCl is available."""
-    if not secret_value:
-        return False, "Empty secret"
+def load_json_file(path, default_val=None):
+    if default_val is None:
+        default_val = {}
     try:
-        from nacl import encoding, public
-        pk_data = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/secrets/public-key", method="GET")
-        pk_b64 = pk_data.get("key", "")
-        key_id = pk_data.get("key_id", "")
-        if not pk_b64 or not key_id:
-            return False, "Missing GitHub repo public key"
-        pub_key = public.PublicKey(pk_b64.encode("utf-8"), encoding.Base64Encoder())
-        sealed = public.SealedBox(pub_key).encrypt(secret_value.encode("utf-8"))
-        enc_val = base64.b64encode(sealed).decode("utf-8")
-        github_api_request(
-            f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/secrets/{secret_name}",
-            method="PUT",
-            payload={"encrypted_value": enc_val, "key_id": key_id}
-        )
-        return True, "OK"
-    except Exception as e:
-        return False, str(e)[:120]
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default_val
 
-def build_unity_3d_project_files(app_title, pkg_slug):
-    """Generates a Colorful Multi-Part Unity 2022.3 LTS 3D Highway/Vehicle Android project with Touch HUD."""
-    safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "bharat_drive"
-    ver_txt = """m_EditorVersion: 2022.3.20f1
-m_EditorVersionWithRevision: 2022.3.20f1 (1234567890ab)
-"""
-    veh_cs = """using UnityEngine;
+def save_json_file(path, data):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
 
-public class BharatVehicleController : MonoBehaviour
-{
-    public float speed = 0f;
-    public float maxSpeed = 26f;
-    public float turnSpeed = 52f;
-    public float steerInput = 0f;
-    public bool gasDown = true;
-    public bool brkDown = false;
-    public bool reverseGear = false;
+def remove_json_file(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
 
-    void Update()
-    {
-        float h = Input.GetAxis("Horizontal") + steerInput;
-        float v = Input.GetAxis("Vertical");
-        if (Mathf.Abs(v) > 0.05f) speed = v * maxSpeed;
-        else if (gasDown) speed = Mathf.MoveTowards(speed, reverseGear ? -12f : maxSpeed, 14f * Time.deltaTime);
-        else if (brkDown) speed = Mathf.MoveTowards(speed, 0f, 24f * Time.deltaTime);
-        else speed = Mathf.MoveTowards(speed, 0f, 6f * Time.deltaTime);
+def save_to_vault(rec):
+    v = load_json_file(VAULT_FILE, [])
+    if not isinstance(v, list):
+        v = []
+    v = [x for x in v if x.get("repo") != rec.get("repo")]
+    v.insert(0, rec)
+    save_json_file(VAULT_FILE, v[:40])
 
-        transform.Translate(Vector3.forward * speed * Time.deltaTime);
-        transform.Rotate(Vector3.up * h * turnSpeed * (Mathf.Abs(speed) > 0.5f ? 1f : 0.2f) * Time.deltaTime);
+# ==============================================================================
+# STRICT MULTI-AI ENGINE (GEMINI + GROQ + NVIDIA + OPENROUTER + COHERE)
+# ==============================================================================
+
+def strip_markdown_fences(raw_text):
+    t = (raw_text or "").strip()
+    t = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", t)
+    t = re.sub(r"\n?```\s*$", "", t)
+    return t.strip()
+
+def _http_json(url, payload=None, headers=None, method="GET", timeout=35):
+    hdrs = headers or {}
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def call_ai(system_prompt, user_prompt, max_tokens=3600, prefer="gemini"):
+    # 1. Gemini 2.5 Flash
+    if GEMINI_KEY and prefer == "gemini":
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
+            body = {
+                "system_instruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.35},
+            }
+            res = _http_json(url, body, {"Content-Type": "application/json"}, "POST", 45)
+            txt = res["candidates"][0]["content"]["parts"][0]["text"]
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+    # 2. GroqCloud (openai/gpt-oss-120b)
+    if GROQ_KEY:
+        try:
+            res = _http_json(
+                "https://api.groq.com/openai/v1/chat/completions",
+                {
+                    "model": "openai/gpt-oss-120b",
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    "max_tokens": min(max_tokens, 4096),
+                    "temperature": 0.35,
+                },
+                {"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_KEY}"},
+                "POST",
+                40,
+            )
+            txt = res["choices"][0]["message"]["content"]
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+    # 3. NVIDIA NIM (deepseek / kimi / nemotron)
+    if NVIDIA_KEY:
+        for mdl in ["deepseek-ai/deepseek-v4.1-flash", "moonshotai/kimi-k3.1-pro", "nvidia/nemotron-3.5-lightning-30b-a3b"]:
+            try:
+                res = _http_json(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    {
+                        "model": mdl,
+                        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                        "max_tokens": min(max_tokens, 4096),
+                        "temperature": 0.3,
+                    },
+                    {"Content-Type": "application/json", "Authorization": f"Bearer {NVIDIA_KEY}"},
+                    "POST",
+                    45,
+                )
+                txt = res["choices"][0]["message"]["content"]
+                if txt:
+                    return txt
+            except Exception:
+                continue
+
+    # 4. OpenRouter
+    if OPENROUTER_KEY:
+        try:
+            res = _http_json(
+                "https://openrouter.ai/api/v1/chat/completions",
+                {
+                    "model": "openrouter/free",
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    "max_tokens": min(max_tokens, 3500),
+                },
+                {"Content-Type": "application/json", "Authorization": f"Bearer {OPENROUTER_KEY}"},
+                "POST",
+                40,
+            )
+            txt = res["choices"][0]["message"]["content"]
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+    # 5. Cohere
+    if COHERE_KEY:
+        try:
+            res = _http_json(
+                "https://api.cohere.com/v2/chat",
+                {
+                    "model": "command-a-03-2025",
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    "max_tokens": min(max_tokens, 2800),
+                },
+                {"Content-Type": "application/json", "Authorization": f"Bearer {COHERE_KEY}"},
+                "POST",
+                35,
+            )
+            txt = res["message"]["content"][0]["text"]
+            if txt:
+                return txt
+        except Exception:
+            pass
+    return ""
+
+def call_vision_ai(prompt_text, img_bytes):
+    """Uses Gemini 2.5 Flash Vision to inspect actual Playwright screenshots."""
+    if not GEMINI_KEY or not img_bytes:
+        return ""
+    try:
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
+        body = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt_text},
+                    {"inline_data": {"mime_type": "image/png", "data": b64}},
+                ]
+            }]
+        }
+        res = _http_json(url, body, {"Content-Type": "application/json"}, "POST", 35)
+        return res["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        return ""
+
+# ==============================================================================
+# GITHUB API + PLAYWRIGHT SCREENSHOT FETCHER
+# ==============================================================================
+
+def github_api(url, method="GET", payload=None, timeout=18):
+    if not GITHUB_TOKEN:
+        return {"error": "Missing GITHUB_TOKEN"}
+    hdrs = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Sarfealam-Auto-Studio",
     }
+    try:
+        return _http_json(url, payload, hdrs, method, timeout)
+    except urllib.error.HTTPError as he:
+        try:
+            return {"error": f"HTTP {he.code}: {he.read().decode('utf-8')[:220]}"}
+        except Exception:
+            return {"error": f"HTTP {he.code}"}
+    except Exception as ex:
+        return {"error": str(ex)}
 
-    AudioSource engSrc;
-    AudioSource hornSrc;
+def create_github_repo(repo_name, desc):
+    return github_api(
+        "https://api.github.com/user/repos",
+        "POST",
+        {"name": repo_name, "description": desc[:140], "private": False, "auto_init": True},
+    )
 
-    void Start()
-    {
-        engSrc = gameObject.AddComponent<AudioSource>();
-        engSrc.loop = true;
-        int sr = 22050;
-        var eClip = AudioClip.Create("Engine", sr, 1, sr, false);
-        float[] eData = new float[sr];
-        for (int i = 0; i < sr; i++) eData[i] = Mathf.Sin(2f * Mathf.PI * 58f * i / sr) * 0.25f + Mathf.Sin(2f * Mathf.PI * 116f * i / sr) * 0.12f;
-        eClip.SetData(eData, 0);
-        engSrc.clip = eClip;
-        engSrc.Play();
-
-        hornSrc = gameObject.AddComponent<AudioSource>();
-        var hClip = AudioClip.Create("Horn", sr / 2, 1, sr, false);
-        float[] hData = new float[sr / 2];
-        for (int i = 0; i < hData.Length; i++) hData[i] = (Mathf.Sin(2f * Mathf.PI * 340f * i / sr) + Mathf.Sin(2f * Mathf.PI * 425f * i / sr)) * 0.25f;
-        hClip.SetData(hData, 0);
-        hornSrc.clip = hClip;
+def push_file_to_github(repo_name, file_path, content_str, commit_msg):
+    api_url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{file_path}"
+    sha = None
+    cur = github_api(api_url, "GET", timeout=10)
+    if isinstance(cur, dict) and cur.get("sha"):
+        sha = cur["sha"]
+    payload = {
+        "message": commit_msg,
+        "content": base64.b64encode(content_str.encode("utf-8")).decode("utf-8"),
     }
+    if sha:
+        payload["sha"] = sha
+    return github_api(api_url, "PUT", payload, timeout=25)
 
-    void LateUpdate()
-    {
-        if (engSrc != null) engSrc.pitch = 0.75f + (Mathf.Abs(speed) / maxSpeed) * 1.15f;
-    }
+def fetch_file_from_github(repo_name, file_path):
+    res = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{file_path}", "GET", timeout=10)
+    if isinstance(res, dict) and res.get("content"):
+        return base64.b64decode(res["content"]).decode("utf-8", errors="ignore")
+    return ""
 
-    void OnGUI()
-    {
-        float w = Screen.width, h = Screen.height;
-        GUIStyle st = new GUIStyle(GUI.skin.button);
-        st.fontSize = (int)(h * 0.038f);
-        if (GUI.RepeatButton(new Rect(25, h - 135, 110, 105), "LEFT", st)) steerInput = -1f;
-        else if (GUI.RepeatButton(new Rect(150, h - 135, 110, 105), "RIGHT", st)) steerInput = 1f;
-        else steerInput = 0f;
-
-        if (GUI.Button(new Rect(w - 415, h - 135, 95, 105), "HORN", st) && hornSrc != null) hornSrc.Play();
-        if (GUI.Button(new Rect(w - 310, h - 135, 85, 105), reverseGear ? "R" : "D", st)) reverseGear = !reverseGear;
-        brkDown = GUI.RepeatButton(new Rect(w - 215, h - 135, 95, 105), "BRK", st);
-        gasDown = GUI.RepeatButton(new Rect(w - 110, h - 155, 95, 125), "GAS", st);
-        GUI.Box(new Rect(w * 0.5f - 95, h - 75, 190, 50), Mathf.RoundToInt(Mathf.Abs(speed) * 3.6f) + " km/h", st);
-    }
-}
-"""
-    editor_cs = f"""using UnityEditor;
-using UnityEditor.SceneManagement;
-using UnityEngine;
-using System.IO;
-
-public class AutoBuildScene
-{{
-    static void ColorObj(GameObject go, Color c)
-    {{
-        var r = go.GetComponent<Renderer>();
-        if (r != null) {{ var m = new Material(Shader.Find("Standard")); m.color = c; r.sharedMaterial = m; }}
-    }}
-
-    public static void PerformAndroidBuild()
-    {{
-        var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-        RenderSettings.fog = true;
-        RenderSettings.fogColor = new Color(0.55f, 0.78f, 0.98f);
-        RenderSettings.fogDensity = 0.012f;
-
-        var grass = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        grass.transform.localScale = new Vector3(30f, 1f, 60f);
-        ColorObj(grass, new Color(0.22f, 0.48f, 0.16f));
-
-        var road = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        road.transform.position = new Vector3(0f, 0.02f, 0f);
-        road.transform.localScale = new Vector3(1.3f, 1f, 60f);
-        ColorObj(road, new Color(0.18f, 0.21f, 0.26f));
-
-        for (int z = -200; z <= 200; z += 18)
-        {{
-            var dash = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            dash.transform.position = new Vector3(0f, 0.05f, z);
-            dash.transform.localScale = new Vector3(0.35f, 0.05f, 4.5f);
-            ColorObj(dash, new Color(0.98f, 0.8f, 0.15f));
-
-            foreach (int side in new[] {{ -1, 1 }})
-            {{
-                var tree = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                tree.transform.position = new Vector3(side * 10.5f, 2.5f, z);
-                tree.transform.localScale = new Vector3(1.6f, 2.5f, 1.6f);
-                ColorObj(tree, new Color(0.1f, 0.55f, 0.2f));
-            }}
-        }}
-
-        var truck = new GameObject("BharatTruck");
-        truck.transform.position = new Vector3(0f, 0.8f, 0f);
-        var bed = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        bed.transform.SetParent(truck.transform);
-        bed.transform.localPosition = new Vector3(0f, 0.7f, -0.8f);
-        bed.transform.localScale = new Vector3(2.2f, 1.3f, 3.4f);
-        ColorObj(bed, new Color(0.92f, 0.35f, 0.08f));
-
-        var cab = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cab.transform.SetParent(truck.transform);
-        cab.transform.localPosition = new Vector3(0f, 0.85f, 1.6f);
-        cab.transform.localScale = new Vector3(2.1f, 1.5f, 1.6f);
-        ColorObj(cab, new Color(0.85f, 0.14f, 0.16f));
-
-        truck.AddComponent<BharatVehicleController>();
-        if (Camera.main != null)
-        {{
-            Camera.main.backgroundColor = new Color(0.38f, 0.68f, 0.98f);
-            Camera.main.transform.SetParent(truck.transform);
-            Camera.main.transform.localPosition = new Vector3(0f, 3.6f, -8.5f);
-            Camera.main.transform.LookAt(truck.transform);
-        }}
-        Directory.CreateDirectory("Assets/Scenes");
-        EditorSceneManager.SaveScene(scene, "Assets/Scenes/Main.unity");
-        PlayerSettings.applicationIdentifier = "com.sarfealam.{safe_pkg}";
-        PlayerSettings.productName = "{app_title}";
-        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
-        Directory.CreateDirectory("build/Android");
-        BuildPipeline.BuildPlayer(new[] {{ "Assets/Scenes/Main.unity" }}, "build/Android/game-release.apk", BuildTarget.Android, BuildOptions.None);
-    }}
-}}
-"""
+def get_live_build_telemetry(repo_name):
+    runs = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=3", "GET", timeout=10)
+    if not isinstance(runs, dict) or not runs.get("workflow_runs"):
+        return {"status": "queued", "conclusion": None, "steps": []}
+    run = runs["workflow_runs"][0]
+    jobs = github_api(run.get("jobs_url", ""), "GET", timeout=10)
+    steps = []
+    job_id = None
+    if isinstance(jobs, dict) and jobs.get("jobs"):
+        j = jobs["jobs"][0]
+        job_id = j.get("id")
+        steps = j.get("steps", [])
     return {
-        "ProjectSettings/ProjectVersion.txt": ver_txt,
-        "Assets/Scripts/BharatVehicleController.cs": veh_cs,
-        "Assets/Editor/AutoBuildScene.cs": editor_cs
+        "run_id": run.get("id"),
+        "status": run.get("status"),
+        "conclusion": run.get("conclusion"),
+        "job_id": job_id,
+        "steps": steps,
     }
+
+def fetch_github_job_error_tail(repo_name, job_id):
+    if not job_id or not GITHUB_TOKEN:
+        return ""
+    try:
+        url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/jobs/{job_id}/logs"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "User-Agent": "Sarfealam-Auto-Studio"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            lines = r.read().decode("utf-8", errors="ignore").splitlines()
+            return "\n".join(lines[-80:])
+    except Exception:
+        return ""
+
+def fetch_latest_playwright_screenshot(repo_name):
+    """Downloads visual-audit-capture artifact ZIP from GitHub Actions and returns PNG bytes."""
+    if not GITHUB_TOKEN or not repo_name:
+        return None
+    try:
+        arts = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/artifacts", "GET", timeout=10)
+        for art in arts.get("artifacts", []):
+            if art.get("name") == "visual-audit-capture" and not art.get("expired"):
+                dl_url = art.get("archive_download_url")
+                req = urllib.request.Request(dl_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "User-Agent": "Sarfealam-Auto-Studio"})
+                with urllib.request.urlopen(req, timeout=25) as r:
+                    zbytes = io.BytesIO(r.read())
+                with zipfile.ZipFile(zbytes) as zf:
+                    for name in zf.namelist():
+                        if name.lower().endswith(".png"):
+                            return zf.read(name)
+    except Exception:
+        pass
+    return None
+
+# ==============================================================================
+# WORKFLOWS: PLAYWRIGHT VISUAL AUDIT + GODOT 4 3D APK + FLUTTER 3.50 APK
+# ==============================================================================
+
+VISION_AUDIT_WORKFLOW = """name: Playwright Visual Screenshot & Verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  visual-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Capture Live 3D / UI Screenshot via Playwright
+        run: |
+          if [ -f assets/game.html ]; then
+            npx -y playwright@1.48.0 install chromium --with-deps || true
+            node -e "const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const p=await b.newPage({viewport:{width:800,height:450}});await p.goto('file://'+process.cwd()+'/assets/game.html');await p.waitForTimeout(2500);await p.screenshot({path:'preview_capture.png'});await b.close();})().catch(()=>process.exit(0));"
+          fi
+      - name: Upload Visual Capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-audit-capture
+          path: preview_capture.png
+          if-no-files-found: ignore
+"""
 
 GODOT_APK_WORKFLOW = """name: Build Native Godot 4 3D Android APK
 
@@ -715,16 +371,32 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Fetch Open-Source CC0 3D Models & PBR Asphalt/Sky Textures
+      - name: Fetch Open-Source PBR Asphalt & Sky Textures
         run: |
-          mkdir -p assets/models assets/textures build/android
-          curl -fsL "https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/vehicle.glb" -o assets/models/vehicle.glb || true
+          mkdir -p assets/textures build/android
           curl -fsL "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_diff_1k.jpg" -o assets/textures/asphalt_diff.jpg || true
-          curl -fsL "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr" -o assets/textures/sky_1k.hdr || true
 
-      - name: Setup Android Debug Keystore & Godot Cache
+      - name: Setup Export Templates, Java/Android SDK & Keystore in $HOME
         run: |
-          mkdir -p /root/.local/share/godot/export_templates/4.3.stable || true
+          mkdir -p "$HOME/.local/share/godot" "$HOME/.config/godot"
+          if [ -d /root/.local/share/godot ]; then cp -rn /root/.local/share/godot/* "$HOME/.local/share/godot/" || true; fi
+          if [ -d /root/.config/godot ]; then cp -rn /root/.config/godot/* "$HOME/.config/godot/" || true; fi
+          JAVA_DIR="${JAVA_HOME:-$(dirname $(dirname $(readlink -f $(which java))))}"
+          ANDROID_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}"
+          KS_PATH="$HOME/.local/share/godot/debug.keystore"
+          if [ ! -f "$KS_PATH" ]; then
+            keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$KS_PATH" -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 || true
+          fi
+          cat > "$HOME/.config/godot/editor_settings-4.3.tres" <<EOF
+[gd_resource type="EditorSettings" format=3]
+
+[resource]
+export/android/java_sdk_path = "$JAVA_DIR"
+export/android/android_sdk_path = "$ANDROID_DIR"
+export/android/debug_keystore = "$KS_PATH"
+export/android/debug_keystore_user = "androiddebugkey"
+export/android/debug_keystore_pass = "android"
+EOF
           godot --headless --quit --editor || true
 
       - name: Export Native Godot 4 3D Release APK
@@ -741,23 +413,110 @@ jobs:
           prerelease: false
 """
 
-def build_godot4_3d_project_files(app_title, pkg_slug, pal, gm_spec=None, paint_hex="#dc2626", size_tier="50 MB Pro"):
-    """Generates a Dual-Orientation (Portrait + Landscape) Godot 4 3D Project with GM-xx, GM-51 Driver, GM-52 World & SFX."""
-    safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "bharat_drive"
-    spec = gm_spec or GAMING_DATA_CENTER["GM-01"]
-    gm_id = spec.get("id", "GM-01")
-    gm_name = spec.get("name", "Indian Cargo Truck")
-    sfx_id = spec.get("sfx_id", "SFX-01")
-    hrn_id = spec.get("hrn_id", "HRN-01")
-    env_id = spec.get("env_id", "ENV-01")
-    chr_id = spec.get("chr_id", "CHR-01")
-    proj_godot = f"""config_version=5
+FLUTTER_APK_WORKFLOW = """name: Build Native Flutter Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Create Android Shell & Build Release APK
+        run: |
+          flutter create --platforms=android .
+          flutter pub get
+          flutter build apk --release
+      - name: Publish Flutter APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: "Flutter Android APK v1.0.0"
+          files: build/app/outputs/flutter-apk/app-release.apk
+          draft: false
+          prerelease: false
+"""
+
+# ==============================================================================
+# AUTONOMOUS GENERATORS (ANY PROMPT -> 3D SCENE / GODOT 4 / FLUTTER)
+# ==============================================================================
+
+def detect_is_game(prompt_text):
+    p = (prompt_text or "").lower()
+    game_kws = ["game", "3d", "truck", "bus", "tractor", "car", "bike", "train", "plane", "crane", "jcb", "dumper", "racing", "simulator", "driving", "building", "stepwell"]
+    return any(k in p for k in game_kws)
+
+def build_custom_preview_html(user_prompt, is_game):
+    if is_game:
+        sys_p = (
+            "You are an expert Three.js WebGL 3D Architect (like Grok Build Sandbox). "
+            "Output ONLY a complete, valid self-contained HTML5 file (no markdown fences) using "
+            "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js with OrbitControls or touch-drag 360 rotation, "
+            "bright HemisphereLight + DirectionalLight + PCFSoftShadowMap shadows, procedural PBR textures, "
+            "user-select:none, and interactive touch controls/sliders matching the prompt. "
+            "Make it rich, bright, colorful, and genuinely 3D — never dark or flat."
+        )
+        usr_p = f"Build a full 360-degree interactive Three.js 3D web experience for: {user_prompt}"
+    else:
+        sys_p = (
+            "You are a Principal Mobile UI Architect. Output ONLY a complete, self-contained HTML5 mobile app preview "
+            "(no markdown fences) with Material 3 3D depth cards, Mobile OTP login tab, Profile ID tab, interactive buttons, "
+            "and a 4-tab floating bottom navigation bar. user-select:none."
+        )
+        usr_p = f"Build an interactive Play-Store style mobile app preview for: {user_prompt}"
+
+    raw = strip_markdown_fences(call_ai(sys_p, usr_p, max_tokens=3800))
+    if "<html" in raw.lower() and (not is_game or "webglrenderer" in raw.lower()):
+        return raw
+
+    # Deterministic rich 3D fallback if AI call fails
+    return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box;user-select:none;-webkit-user-select:none;}body{margin:0;overflow:hidden;background:#60a5fa;font-family:system-ui;}#hud{position:absolute;top:10px;left:10px;color:#fff;font-weight:800;font-size:12px;background:rgba(15,23,42,0.7);padding:6px 10px;border-radius:10px;}</style>
+</head><body><div id="hud">360 Touch Drag 3D Scene</div><canvas id="c"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+const cv=document.getElementById('c'),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+ren.setSize(window.innerWidth,window.innerHeight);ren.shadowMap.enabled=true;
+const sc=new THREE.Scene();sc.background=new THREE.Color('#7dd3fc');sc.fog=new THREE.Fog('#bae6fd',25,110);
+const cam=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,160);
+let ang=0.5,dist=9;
+sc.add(new THREE.HemisphereLight('#e0f2fe','#334155',0.8));
+const sun=new THREE.DirectionalLight('#fffbeb',1.3);sun.position.set(12,24,10);sun.castShadow=true;sc.add(sun);
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(180,180),new THREE.MeshStandardMaterial({color:'#3f6212',roughness:0.9}));
+gnd.rotation.x=-Math.PI/2;gnd.receiveShadow=true;sc.add(gnd);
+const road=new THREE.Mesh(new THREE.PlaneGeometry(9,180),new THREE.MeshStandardMaterial({color:'#1f2937',roughness:0.8}));
+road.rotation.x=-Math.PI/2;road.position.y=0.02;sc.add(road);
+const grp=new THREE.Group();
+const cab=new THREE.Mesh(new THREE.BoxGeometry(2.1,1.6,1.9),new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.75,roughness:0.2}));
+cab.position.set(0,1.2,-1.2);cab.castShadow=true;
+const bed=new THREE.Mesh(new THREE.BoxGeometry(2.3,1.9,3.4),new THREE.MeshStandardMaterial({color:'#f8fafc',roughness:0.4}));
+bed.position.set(0,1.4,1.5);bed.castShadow=true;grp.add(cab,bed);sc.add(grp);
+window.addEventListener('touchmove',e=>{if(e.touches[0])ang=(e.touches[0].clientX/window.innerWidth)*Math.PI*2;},{passive:true});
+window.addEventListener('mousemove',e=>{if(e.buttons)ang=(e.clientX/window.innerWidth)*Math.PI*2;});
+(function loop(){requestAnimationFrame(loop);cam.position.set(Math.sin(ang)*dist,4.2,Math.cos(ang)*dist);cam.lookAt(0,1,0);ren.render(sc,cam);})();
+</script></body></html>"""
+
+def build_godot4_files(app_title, user_prompt):
+    safe_pkg = re.sub(r"[^a-z0-9_]", "_", app_title.lower().replace(" ", "_")) or "auto_studio_3d"
+    proj = f"""config_version=5
 
 [application]
 config/name="{app_title}"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "Mobile")
-config/icon="res://assets/icon.svg"
 
 [display]
 window/size/viewport_width=1280
@@ -768,13 +527,14 @@ window/stretch/aspect="expand"
 
 [rendering]
 renderer/rendering_method="mobile"
-lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
 """
-    export_cfg = f"""[preset.0]
+    preset = f"""[preset.0]
 name="Android"
 platform="Android"
 runnable=true
 export_filter="all_resources"
+include_filter=""
+exclude_filter=""
 
 [preset.0.options]
 package/unique_name="com.sarfealam.{safe_pkg}"
@@ -783,3275 +543,334 @@ package/signed=false
 gradle_build/use_gradle_build=false
 architectures/arm64-v8a=true
 """
-    gd_script = f"""extends VehicleBody3D
+    ctrl_gd = call_ai(
+        "You are a Godot 4.3 GDScript Expert. Output ONLY valid GDScript (no markdown fences) extending VehicleBody3D with touch steering, gas, brake, and speed label update.",
+        f"Title: {app_title}\nPrompt: {user_prompt}",
+        max_tokens=1600,
+    )
+    ctrl_gd = strip_markdown_fences(ctrl_gd)
+    if "extends VehicleBody3D" not in ctrl_gd:
+        ctrl_gd = """extends VehicleBody3D
 
-# Spec: {gm_id} ({gm_name}) | Driver: {chr_id} | World: {env_id} | Audio: {sfx_id}/{hrn_id} | Tier: {size_tier}
 @export var max_steer := 0.48
 @export var engine_power := 360.0
-var steer_input := 0.0
-var gas_input := 0.0
-var reverse_gear := false
-var lights_on := true
-
-func _ready() -> void:
-	if ResourceLoader.exists("res://assets/models/vehicle.glb"):
-		var glb = load("res://assets/models/vehicle.glb")
-		if glb:
-			var inst = glb.instantiate()
-			add_child(inst)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("{paint_hex}")
-	mat.metallic = 0.78
-	mat.roughness = 0.22
-	var body_mesh = get_node_or_null("ChassisMesh")
-	if body_mesh:
-		body_mesh.material_override = mat
 
 func _physics_process(delta: float) -> void:
-	var h = Input.get_axis("ui_right", "ui_left")
-	var v = Input.get_axis("ui_down", "ui_up")
-	steering = move_toward(steering, (h + steer_input) * max_steer, delta * 3.4)
-	var dir = -1.0 if reverse_gear else 1.0
-	engine_force = (v + gas_input) * engine_power * dir
-	var hud = get_node_or_null("../TouchHUD/SpeedLabel")
-	if hud:
-		hud.text = str(int(linear_velocity.length() * 3.6)) + " km/h | {gm_id}"
+\tvar h = Input.get_axis("ui_right", "ui_left")
+\tvar v = Input.get_axis("ui_down", "ui_up")
+\tsteering = move_toward(steering, h * max_steer, delta * 3.2)
+\tengine_force = v * engine_power
 """
-    main_tscn = f"""[gd_scene load_steps=9 format=3]
+    main_tscn = """[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/vehicle_ctrl.gd" id="1_ctrl"]
 
-[sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
-sky_top_color = Color(0.15, 0.45, 0.88, 1)
-sky_horizon_color = Color(0.65, 0.82, 0.96, 1)
-ground_bottom_color = Color(0.16, 0.32, 0.14, 1)
-
-[sub_resource type="Sky" id="Sky_1"]
-sky_material = SubResource("SkyMat_1")
-
-[sub_resource type="Environment" id="Env_1"]
-background_mode = 2
-sky = SubResource("Sky_1")
-fog_enabled = true
-fog_light_color = Color(0.75, 0.85, 0.95, 1)
-fog_density = 0.004
-
-[sub_resource type="BoxShape3D" id="BoxShape_road"]
+[sub_resource type="BoxShape3D" id="Box_gnd"]
 size = Vector3(240, 1, 240)
 
-[sub_resource type="BoxMesh" id="BoxMesh_road"]
-size = Vector3(14, 0.2, 240)
+[sub_resource type="BoxMesh" id="Mesh_gnd"]
+size = Vector3(12, 0.2, 240)
 
-[sub_resource type="BoxShape3D" id="BoxShape_veh"]
-size = Vector3(2.2, 1.8, 4.8)
+[sub_resource type="BoxShape3D" id="Box_veh"]
+size = Vector3(2.2, 1.8, 4.6)
 
-[sub_resource type="BoxMesh" id="BoxMesh_driver"]
-size = Vector3(0.45, 0.65, 0.45)
+[sub_resource type="BoxMesh" id="Mesh_veh"]
+size = Vector3(2.2, 1.8, 4.6)
 
 [node name="MainWorld3D" type="Node3D"]
-
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Env_1")
 
 [node name="SunLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866, -0.35, 0.35, 0, 0.707, 0.707, -0.5, -0.61, 0.61, 0, 35, 0)
 shadow_enabled = true
-light_energy = 1.35
 
 [node name="Ground3D" type="StaticBody3D" parent="."]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Ground3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
-shape = SubResource("BoxShape_road")
+shape = SubResource("Box_gnd")
 
 [node name="RoadMesh3D" type="MeshInstance3D" parent="Ground3D"]
-mesh = SubResource("BoxMesh_road")
+mesh = SubResource("Mesh_gnd")
 
 [node name="PlayerVehicle3D" type="VehicleBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
-mass = 1500.0
+mass = 1400.0
 script = ExtResource("1_ctrl")
 
-[node name="ChassisCollision" type="CollisionShape3D" parent="PlayerVehicle3D"]
-shape = SubResource("BoxShape_veh")
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlayerVehicle3D"]
+shape = SubResource("Box_veh")
 
-[node name="ChassisMesh" type="MeshInstance3D" parent="PlayerVehicle3D"]
-mesh = SubResource("BoxMesh_veh")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PlayerVehicle3D"]
+mesh = SubResource("Mesh_veh")
 
-[node name="Driver3D_{chr_id}" type="MeshInstance3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 0.9, 0.8)
-mesh = SubResource("BoxMesh_driver")
-
-[node name="FLWheel" type="VehicleWheel3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0, -0.4, 1.5)
-use_as_steering = true
-wheel_radius = 0.45
-
-[node name="FRWheel" type="VehicleWheel3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, -0.4, 1.5)
-use_as_steering = true
-wheel_radius = 0.45
-
-[node name="RLWheel" type="VehicleWheel3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0, -0.4, -1.5)
-use_as_traction = true
-wheel_radius = 0.45
-
-[node name="RRWheel" type="VehicleWheel3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, -0.4, -1.5)
-use_as_traction = true
-wheel_radius = 0.45
-
-[node name="ChaseCamera3D" type="Camera3D" parent="PlayerVehicle3D"]
-transform = Transform3D(1, 0, 0, 0, 0.94, 0.34, 0, -0.34, 0.94, 0, 4.0, -8.0)
+[node name="Camera3D" type="Camera3D" parent="PlayerVehicle3D"]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.34, 0, -0.34, 0.94, 0, 4.0, -8.5)
 current = true
-
-[node name="TouchHUD" type="CanvasLayer" parent="."]
-
-[node name="SpeedLabel" type="Label" parent="TouchHUD"]
-offset_left = 24.0
-offset_top = 20.0
-offset_right = 340.0
-offset_bottom = 60.0
-text = "0 km/h | {gm_id}"
 """
-    city_gd = """extends Node3D
-
-# Procedural City, Flyover, Streetlights & AI Traffic Spawner (AAA Pipeline)
-var traffic_cars: Array = []
-
-func _ready() -> void:
-	var road_mat := StandardMaterial3D.new()
-	road_mat.albedo_color = Color(0.16, 0.18, 0.22)
-	road_mat.roughness = 0.78
-	if ResourceLoader.exists("res://assets/textures/asphalt_diff.jpg"):
-		road_mat.albedo_texture = load("res://assets/textures/asphalt_diff.jpg")
-	var road_node = get_node_or_null("../Ground3D/RoadMesh3D")
-	if road_node:
-		road_node.material_override = road_mat
-
-	# Spawn 14 City Buildings & Streetlights
-	for i in range(14):
-		var side := -11.0 if i % 2 == 0 else 11.0
-		var b := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		var bh := 6.0 + float((i * 3) % 12)
-		bm.size = Vector3(5.5, bh, 6.0)
-		b.mesh = bm
-		b.position = Vector3(side, bh * 0.5, -float(i) * 16.0)
-		var bmat := StandardMaterial3D.new()
-		bmat.albedo_color = Color(0.32, 0.36, 0.44) if i % 2 == 0 else Color(0.45, 0.38, 0.32)
-		b.material_override = bmat
-		add_child(b)
-
-	# Spawn 4 Moving AI Traffic Vehicles
-	for t in range(4):
-		var car := MeshInstance3D.new()
-		var cm := BoxMesh.new()
-		cm.size = Vector3(1.9, 1.3, 4.0)
-		car.mesh = cm
-		car.position = Vector3(-2.6 if t % 2 == 0 else 2.6, 0.75, -25.0 - float(t) * 35.0)
-		var cmat := StandardMaterial3D.new()
-		cmat.albedo_color = Color(0.15, 0.45, 0.9) if t % 2 == 0 else Color(0.9, 0.65, 0.1)
-		cmat.metallic = 0.7
-		cmat.roughness = 0.25
-		car.material_override = cmat
-		add_child(car)
-		traffic_cars.append(car)
-
-func _process(delta: float) -> void:
-	for c in traffic_cars:
-		c.position.z += delta * 14.0
-		if c.position.z > 40.0:
-			c.position.z = -180.0
-"""
-    main_tscn = main_tscn.replace('[node name="MainWorld3D" type="Node3D"]', '[ext_resource type="Script" path="res://scripts/city_traffic.gd" id="2_city"]\n\n[node name="MainWorld3D" type="Node3D"]\n\n[node name="CityAndTraffic3D" type="Node3D" parent="."]\nscript = ExtResource("2_city")')
     return {
-        "project.godot": proj_godot,
-        "export_presets.cfg": export_cfg,
-        "scripts/vehicle_ctrl.gd": gd_script,
-        "scripts/city_traffic.gd": city_gd,
+        "project.godot": proj,
+        "export_presets.cfg": preset,
+        "scripts/vehicle_ctrl.gd": ctrl_gd,
         "scenes/main.tscn": main_tscn,
     }
 
-def make_flutter_build_script(app_title, pkg_slug):
-    safe_pkg = re.sub(r'[^a-z0-9_]', '_', pkg_slug.lower()) or "smart_app"
-    if not safe_pkg[0].isalpha():
-        safe_pkg = "sf_" + safe_pkg
-    safe_label = app_title.replace('"', '').replace("'", "").strip() or "Sarfealam App"
-    return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-mkdir -p _src_backup dist
-cp -r lib pubspec.yaml assets _src_backup/
-
-flutter create . --org com.sarfealam --project-name {safe_pkg} --platforms=android
-
-rm -rf test lib pubspec.yaml assets
-cp -r _src_backup/lib _src_backup/pubspec.yaml _src_backup/assets .
-rm -rf _src_backup
-
-MANIFEST="android/app/src/main/AndroidManifest.xml"
-if [ -f "$MANIFEST" ]; then
-  if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-    sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\\/>\\n    <application/' "$MANIFEST"
-  fi
-  sed -i 's/android:label="[^"]*"/android:label="{safe_label}"/' "$MANIFEST"
-fi
-
-if [ -f "assets/icon.svg" ]; then
-  for sz_dir in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
-    sz="${{sz_dir%%:*}}"
-    dir="${{sz_dir##*:}}"
-    mkdir -p "android/app/src/main/res/$dir"
-    convert -background none -resize "${{sz}}x${{sz}}" assets/icon.svg "android/app/src/main/res/$dir/ic_launcher.png" || true
-  done
-fi
-
-flutter pub get
-flutter analyze --no-fatal-infos || true
-flutter build apk --release
-
-cp build/app/outputs/flutter-apk/app-release.apk "dist/{safe_pkg}_release.apk"
-echo "APK BUILT: dist/{safe_pkg}_release.apk"
-"""
-
-# ==============================================================================
-# PERSISTENCE & PROJECT SIDELINE / REJECT HELPERS
-# ==============================================================================
-_CLOUD_SYNC_FILES = {DESIGN_LOCK_FILE, CODED_APP_FILE, ACTIVE_BUILD_FILE}
-
-def _cloud_state_sync(action, path, data=None):
-    """Auto-saves & restores active Design Studio / Coded Bundle in Supabase Cloud so restarts never wipe work."""
-    if path not in _CLOUD_SYNC_FILES:
-        return None
-    ckey = f"CLOUD_{path}"
-    try:
-        if action == "save" and data is not None:
-            supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}", method="DELETE")
-            supabase_rest("factory_transactions", method="POST", payload={
-                "app_id": "NEXUS_CLOUD_STATE",
-                "type": ckey,
-                "title": json.dumps(data),
-                "amount": 0
-            })
-        elif action == "load":
-            rows = supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}&order=created_at.desc&limit=1", method="GET")
-            if isinstance(rows, list) and rows:
-                raw_t = rows[0].get("title", "")
-                if raw_t:
-                    return json.loads(raw_t)
-        elif action == "delete":
-            supabase_rest(f"factory_transactions?type=eq.{urllib.parse.quote(ckey)}", method="DELETE")
-    except Exception:
-        pass
-    return None
-
-def load_json_file(path, default_val):
-    ss_key = f"_local_cache_{path}"
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                val = json.load(f)
-                st.session_state[ss_key] = val
-                return val
-        except Exception:
-            pass
-    if ss_key in st.session_state and st.session_state[ss_key] is not None:
-        return st.session_state[ss_key]
-    cloud_val = _cloud_state_sync("load", path)
-    if cloud_val is not None:
-        st.session_state[ss_key] = cloud_val
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(cloud_val, f, indent=2)
-        except Exception:
-            pass
-        return cloud_val
-    return default_val
-
-def save_json_file(path, data):
-    st.session_state[f"_local_cache_{path}"] = data
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    except Exception:
-        pass
-    _cloud_state_sync("save", path, data)
-
-def remove_json_file(path):
-    st.session_state.pop(f"_local_cache_{path}", None)
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception:
-        pass
-    _cloud_state_sync("delete", path)
-
-def reject_and_clear_project(repo_name=None):
-    if repo_name:
-        rej = load_json_file(REJECTED_REPOS_FILE, [])
-        if repo_name not in rej:
-            rej.append(repo_name)
-            save_json_file(REJECTED_REPOS_FILE, rej[-60:])
-    remove_json_file(ACTIVE_BUILD_FILE)
-    remove_json_file(DESIGN_LOCK_FILE)
-    remove_json_file(CODED_APP_FILE)
-
-def save_to_vault(record):
-    vault = load_json_file(VAULT_FILE, [])
-    vault = [r for r in vault if r.get("repo") != record.get("repo")]
-    vault.insert(0, record)
-    save_json_file(VAULT_FILE, vault[:50])
-
-# ==============================================================================
-# LIVE OPEN-SOURCE ICON FETCHER (ICONIFY API + GAME-ICONS.NET — ZERO KEYS)
-# ==============================================================================
-def fetch_live_iconify_icons(prompt_text, factory_id, accent_hex="#38bdf8", ai_keywords=None):
-    """Fetches Colorful Digital 3D/Flat SVGs (fluent-emoji + noto) — 1 exact icon per vehicle/entity in prompt."""
-    is_game = (factory_id == "GAMING_FACTORY_01")
-    low = (prompt_text or "").lower()
-    ordered_entities = [
-        ("truck", ["truck", "tipper", "lorry", "rig", "wheeler"]),
-        ("bus", ["bus", "coach", "sleeper"]),
-        ("tractor", ["tractor", "trailer", "farm"]),
-        ("crane", ["crane", "excavator", "jcb", "construct", "digging"]),
-        ("car", ["car", "taxi", "cab", "race"]),
-        ("cricket", ["cricket", "bat", "pitch"]),
-        ("trophy", ["trophy", "leaderboard", "champion", "rank"]),
-        ("coin", ["wallet", "xp", "coin", "vip", "booster"]),
-        ("shop", ["shop", "store", "dukan", "mart"]),
-        ("receipt", ["ledger", "khata", "invoice", "bill", "hisab"])
-    ]
-    matched_queries = []
-    for icon_q, triggers in ordered_entities:
-        if any(re.search(r'\b' + t + r'\b', low) for t in triggers):
-            matched_queries.append(icon_q)
-
-    clean_ai_kw = [re.sub(r'[^a-z0-9-]', '', str(k).lower()) for k in (ai_keywords or []) if k]
-    for k in clean_ai_kw + (["truck", "bus", "trophy", "coin"] if is_game else ["shop", "wallet", "receipt", "trophy"]):
-        if k and k not in matched_queries:
-            matched_queries.append(k)
-
-    # Multi-color digital sets first (NO &color= param so full colors stay intact!)
-    color_prefixes = ["fluent-emoji", "noto", "twemoji"]
-    fetched = []
-    seen = set()
-
-    for q in matched_queries[:6]:
-        if len(fetched) >= 6:
-            break
-        got_one = False
-        for pref in color_prefixes:
-            if got_one:
-                break
-            try:
-                s_url = f"https://api.iconify.design/search?query={urllib.parse.quote(q)}&prefix={pref}&limit=2"
-                req = urllib.request.Request(s_url, headers={"User-Agent": "Sarfealam-Nexus-Forge"})
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                for ic_name in data.get("icons", []):
-                    if ic_name in seen:
-                        continue
-                    if ":" in ic_name:
-                        p_name, i_slug = ic_name.split(":", 1)
-                        svg_url = f"https://api.iconify.design/{p_name}/{i_slug}.svg"
-                        req2 = urllib.request.Request(svg_url, headers={"User-Agent": "Sarfealam-Nexus-Forge"})
-                        with urllib.request.urlopen(req2, timeout=5) as resp2:
-                            svg_txt = resp2.read().decode("utf-8", errors="ignore")
-                        if "<svg" in svg_txt.lower():
-                            seen.add(ic_name)
-                            fetched.append({"name": ic_name, "svg": svg_txt})
-                            got_one = True
-                            break
-            except Exception:
-                continue
-
-    if not fetched:
-        fallback_svgs = [
-            ("fluent-emoji:delivery-truck", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect x="2" y="10" width="20" height="14" rx="2" fill="#f97316"/><path d="M22 14h7l5 5v5H22z" fill="#ef4444"/><rect x="24" y="16" width="5" height="4" fill="#38bdf8"/><circle cx="9" cy="26" r="4" fill="#1e293b"/><circle cx="27" cy="26" r="4" fill="#1e293b"/></svg>'),
-            ("fluent-emoji:bus", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect x="3" y="8" width="30" height="17" rx="4" fill="#facc15"/><rect x="6" y="11" width="7" height="6" fill="#38bdf8"/><rect x="15" y="11" width="7" height="6" fill="#38bdf8"/><rect x="24" y="11" width="6" height="6" fill="#38bdf8"/><circle cx="10" cy="27" r="3.5" fill="#1e293b"/><circle cx="26" cy="27" r="3.5" fill="#1e293b"/></svg>'),
-            ("fluent-emoji:trophy", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M9 6h18v10a9 9 0 0 1-18 0z" fill="#fbbf24"/><rect x="15" y="24" width="6" height="6" fill="#d97706"/><rect x="11" y="29" width="14" height="4" rx="2" fill="#92400e"/></svg>')
-        ]
-        fetched = [{"name": n, "svg": s} for n, s in fallback_svgs]
-    return fetched
-
-# ==============================================================================
-# GITHUB REST API & LIVE BUILD TELEMETRY
-# ==============================================================================
-def github_api_request(url, method="GET", payload=None, timeout=15):
-    headers = {
-        "Authorization": f"token {DEFAULT_GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Sarfealam-Flutter-Factory"
-    }
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
-def create_github_repo(repo_name, description):
-    url = "https://api.github.com/user/repos"
-    return github_api_request(url, method="POST", payload={
-        "name": repo_name,
-        "description": description,
-        "private": False,
-        "auto_init": True
-    })
-
-
-def push_binary_to_github(repo_name, file_path, raw_bytes, commit_msg, owner=DEFAULT_GITHUB_USERNAME):
-    """Pushes binary .glb/.png assets directly to GitHub repo using base64 content."""
-    api_url = f"https://api.github.com/repos/{owner}/{repo_name}/contents/{file_path}"
-    sha = None
-    cur = github_api_request(api_url, method="GET", timeout=10)
-    if isinstance(cur, dict) and cur.get("sha"):
-        sha = cur["sha"]
-    b64_data = base64.b64encode(raw_bytes).decode("utf-8")
-    payload = {"message": commit_msg, "content": b64_data}
-    if sha:
-        payload["sha"] = sha
-    return github_api_request(api_url, method="PUT", payload=payload, timeout=30)
-
-OPEN_SOURCE_GLB_CATALOG = {
-    "GM-35.glb": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb",
-    "GM-01.glb": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb",
-}
-
-
-def search_github_live_glb_url(vehicle_kw):
-    """Uses existing GITHUB_TOKEN to search public GitHub .glb files matching the prompt vehicle."""
-    try:
-        q = re.sub(r"[^a-zA-Z0-9 ]", " ", (vehicle_kw or "truck")).strip().split()[:2]
-        q_str = "+".join(q) if q else "truck"
-        # Search repositories first for 3d glb assets
-        res = github_api_request(f"https://api.github.com/search/repositories?q={q_str}+glb+3d+model&sort=stars&per_page=5", method="GET", timeout=10)
-        if isinstance(res, dict) and res.get("items"):
-            for repo in res["items"][:3]:
-                full_name = repo.get("full_name", "")
-                if not full_name:
-                    continue
-                tree = github_api_request(f"https://api.github.com/repos/{full_name}/git/trees/HEAD?recursive=1", method="GET", timeout=10)
-                if isinstance(tree, dict) and tree.get("tree"):
-                    for node in tree["tree"]:
-                        path = node.get("path", "")
-                        if path.lower().endswith(".glb") and any(w in path.lower() for w in q):
-                            branch = repo.get("default_branch", "main")
-                            return f"https://raw.githubusercontent.com/{full_name}/{branch}/{path}"
-        # Fallback: GitHub code search for .glb extension
-        c_res = github_api_request(f"https://api.github.com/search/code?q={q_str}+extension:glb&per_page=5", method="GET", timeout=10)
-        if isinstance(c_res, dict) and c_res.get("items"):
-            for it in c_res["items"]:
-                html_u = it.get("html_url", "")
-                if "github.com/" in html_u and "/blob/" in html_u:
-                    return html_u.replace("https://github.com/", "https://raw.githubusercontent.com/").replace("/blob/", "/")
-    except Exception:
-        pass
-    return ""
-
-def run_autonomous_world_asset_bot(factory_id, user_prompt):
-    """Stage-0 Autonomous Asset Bot: Checks 3d-assets -> Optional HF_TOKEN 3D -> Live GitHub .glb Search -> Catalog."""
-    if factory_id != "GAMING_FACTORY_01":
-        return {"status": "skipped", "assets": [], "msg": "Market Lane active — MK-xx 3D Play-Store UI selected."}
-    spec = resolve_lane_id_and_specs(user_prompt, "GAMING_FACTORY_01")
-    spec_id = spec.get("id", "GM-01")
-    target_fn = f"{spec_id}.glb"
-    found_assets = [f"{spec_id}: {spec.get('name', 'Vehicle 3D')}", f"{spec.get('chr_id','CHR-01')}: 3D Driver", f"{spec.get('env_id','ENV-01')}: 3D World"]
-    try:
-        existing = github_api_request(
-            f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets/contents/models/{target_fn}",
-            method="GET", timeout=8
-        )
-        if isinstance(existing, dict) and existing.get("download_url"):
-            return {"status": "ready", "spec_id": spec_id, "assets": found_assets, "msg": f"3d-assets/models/{target_fn} synced & ready!"}
-
-        # Optional Tier A: HuggingFace Inference 3D if HF_TOKEN is configured
-        hf_tok = _get_secret("HF_TOKEN", "")
-        if hf_tok:
-            found_assets.append("HuggingFace 3D Token Active")
-
-        # Tier B: Live GitHub .glb Search using existing GITHUB_TOKEN (zero extra keys!)
-        veh_kw = spec.get("shape", "truck") + " " + spec.get("name", "")
-        src_url = search_github_live_glb_url(veh_kw) or OPEN_SOURCE_GLB_CATALOG.get(target_fn) or OPEN_SOURCE_GLB_CATALOG.get("GM-01.glb")
-        if src_url:
-            req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=22) as resp:
-                raw_glb = resp.read()
-            if len(raw_glb) > 1024:
-                repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/3d-assets", method="GET", timeout=8)
-                if not isinstance(repo_info, dict) or not repo_info.get("id"):
-                    create_github_repo("3d-assets", "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
-                push_binary_to_github("3d-assets", f"models/{target_fn}", raw_glb, f"Auto-Bot: sync {target_fn}")
-                push_binary_to_github("3d-assets", "models/vehicle.glb", raw_glb, f"Auto-Bot: sync vehicle.glb for {spec_id}")
-                found_assets.append(f"Live GLB: {src_url.split('/')[-1]}")
-                return {"status": "synced", "spec_id": spec_id, "assets": found_assets, "msg": f"Auto-Bot fetched real .glb ({src_url.split('/')[-1]}) -> 3d-assets/models/{target_fn}!"}
-    except Exception as ex:
-        return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active ({ex})"}
-    return {"status": "fallback", "spec_id": spec_id, "assets": found_assets, "msg": f"Built-in High-Detail 3D Mesh active for {spec_id}"}
-
-def auto_import_open_source_3d_pack(target_repo="3d-assets"):
-    """Fetches verified CC0/MIT open-source .glb models from CDN and pushes straight to user's GitHub 3d-assets repo."""
-    pushed = []
-    errors = []
-    # Ensure 3d-assets repo exists
-    repo_info = github_api_request(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{target_repo}", method="GET", timeout=10)
-    if not isinstance(repo_info, dict) or not repo_info.get("id"):
-        create_github_repo(target_repo, "HD 3D Vehicle & World Models (.glb) for Sarfealam Nexus Forge")
-    push_file_to_github(target_repo, "models/README.md", "# HD 3D Models (.glb)\nAuto-imported by Sarfealam Nexus Forge.", "Init models folder")
-    for fname, src_url in OPEN_SOURCE_GLB_CATALOG.items():
-        try:
-            req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                raw_glb = resp.read()
-            if len(raw_glb) > 1024:
-                res = push_binary_to_github(target_repo, f"models/{fname}", raw_glb, f"Auto-import open-source {fname}")
-                if isinstance(res, dict) and res.get("content"):
-                    pushed.append(fname)
-                else:
-                    errors.append(f"{fname}: GitHub push failed")
-            else:
-                errors.append(f"{fname}: Empty .glb")
-        except Exception as ex:
-            errors.append(f"{fname}: {ex}")
-    return pushed, errors
-
-
-def push_file_to_github(repo_name, file_path, content_str, commit_msg):
-    url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{file_path}"
-    sha = None
-    try:
-        existing = github_api_request(url, method="GET")
-        sha = existing.get("sha")
-    except Exception:
-        pass
-    payload = {
-        "message": commit_msg,
-        "content": base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
-    }
-    if sha:
-        payload["sha"] = sha
-    return github_api_request(url, method="PUT", payload=payload)
-
-def fetch_file_from_github(repo_name, file_path):
-    url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{file_path}"
-    res = github_api_request(url, method="GET")
-    content_b64 = res.get("content", "")
-    return base64.b64decode(content_b64).decode("utf-8") if content_b64 else ""
-
-def fetch_github_user_repos():
-    try:
-        url = f"https://api.github.com/users/{DEFAULT_GITHUB_USERNAME}/repos?sort=created&direction=desc&per_page=20"
-        repos = github_api_request(url, method="GET")
-        return [r for r in repos if r.get("name") != "supreme-agent"] if isinstance(repos, list) else []
-    except Exception:
-        return []
-
-def get_live_build_telemetry(repo_name):
-    runs_url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=1"
-    try:
-        runs_data = github_api_request(runs_url, method="GET")
-        runs = runs_data.get("workflow_runs", [])
-        if not runs:
-            return {"status": "queued", "conclusion": None, "steps": [], "job_id": None, "html_url": f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions"}
-        latest_run = runs[0]
-        run_id = latest_run.get("id")
-        status = latest_run.get("status", "queued")
-        conclusion = latest_run.get("conclusion")
-        html_url = latest_run.get("html_url", "")
-        steps = []
-        job_id = None
-        if run_id:
-            jobs_url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs/{run_id}/jobs"
-            jobs_data = github_api_request(jobs_url, method="GET")
-            jobs = jobs_data.get("jobs", [])
-            if jobs:
-                steps = jobs[0].get("steps", [])
-                job_id = jobs[0].get("id")
-        return {"status": status, "conclusion": conclusion, "steps": steps, "job_id": job_id, "html_url": html_url}
-    except Exception:
-        return {"status": "queued", "conclusion": None, "steps": [], "job_id": None, "html_url": f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions"}
-
-def fetch_github_job_error_tail(repo_name, job_id):
-    if not job_id:
-        return ""
-    try:
-        url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/jobs/{job_id}/logs"
-        headers = {
-            "Authorization": f"token {DEFAULT_GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Sarfealam-Flutter-Factory"
-        }
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            txt = resp.read().decode("utf-8", errors="ignore")
-            return txt[-3500:]
-    except Exception:
-        return ""
-
-def recover_active_build_if_needed():
-    active = load_json_file(ACTIVE_BUILD_FILE, None)
-    if active:
-        return active
-    rejected = set(load_json_file(REJECTED_REPOS_FILE, []))
-    repos = [r for r in fetch_github_user_repos() if r.get("name") not in rejected]
-    if repos:
-        newest = repos[0]
-        repo_name = newest.get("name")
-        tele = get_live_build_telemetry(repo_name)
-        if tele.get("status") in ("queued", "in_progress"):
-            rec = {
-                "name": repo_name.replace("-", " ").title(),
-                "repo": repo_name,
-                "repo_url": newest.get("html_url"),
-                "actions_url": f"{newest.get('html_url')}/actions",
-                "releases_url": f"{newest.get('html_url')}/releases",
-                "admin_url": f"https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app={repo_name}"
-            }
-            save_json_file(ACTIVE_BUILD_FILE, rec)
-            return rec
-    return None
-
-def delete_github_repo(repo_name):
-    url = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}"
-    return github_api_request(url, method="DELETE")
-
-# ==============================================================================
-# SUPABASE REST CLIENT & 5-ENGINE 16-DEPT MULTI-AI ROUTER
-# ==============================================================================
-def supabase_rest(table_path, method="GET", payload=None, extra_headers=None):
-    url = f"{SUPABASE_URL}/rest/v1/{table_path}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
-    if extra_headers:
-        headers.update(extra_headers)
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.read().decode("utf-8")
-        return json.loads(raw) if raw else []
-
-def strip_markdown_fences(raw_text):
-    if not raw_text:
-        return ""
-    cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", raw_text.strip(), flags=re.MULTILINE)
-    cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
-    return cleaned.strip()
-
-def extract_json_object(raw_text):
-    """Robustly extracts and parses a JSON object even if surrounded by prose or markdown."""
-    cleaned = strip_markdown_fences(raw_text or "")
-    try:
-        return json.loads(cleaned)
-    except Exception:
-        pass
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end > start:
-        sub = cleaned[start:end + 1]
-        sub = re.sub(r",\s*([}\]])", r"\1", sub)
-        try:
-            return json.loads(sub)
-        except Exception:
-            pass
-    return None
-
-def _call_openai_compat(base_url, api_key, model_id, system_prompt, user_prompt, max_tokens=2800, temperature=0.3, extra_headers=None):
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "Sarfealam-Flutter-Factory"
-    }
-    if extra_headers:
-        headers.update(extra_headers)
-    payload = {
-        "model": model_id,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature
-    }
-    req = urllib.request.Request(base_url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        return res["choices"][0]["message"]["content"]
-
-def _call_gemini_api(model_id, system_prompt, user_prompt, max_tokens=2800, use_search=False):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={DEFAULT_GEMINI_KEY}"
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.3}
-    }
-    if use_search:
-        payload["tools"] = [{"google_search": {}}]
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        parts = res.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        return "\n".join([p.get("text", "") for p in parts if p.get("text")])
-
-def _call_cohere_api(model_id, system_prompt, user_prompt, max_tokens=2400):
-    url = "https://api.cohere.com/v2/chat"
-    headers = {
-        "Authorization": f"Bearer {DEFAULT_COHERE_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model_id,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "max_tokens": max_tokens
-    }
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        content_list = res.get("message", {}).get("content", [])
-        return "\n".join([c.get("text", "") for c in content_list if c.get("text")])
-
-def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
-    """5-Engine 16-Dept Multi-AI Router putting every idle model to specialized work."""
-    role_map = {
-        "orchestrator": [
-            ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
-            ("nvidia", "mistralai/mistral-large-4"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "design_brain": [
-            ("gemini_search", "gemini-2.5-flash"),
-            ("nvidia", "mistralai/mistral-large-4"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "human_architect": [
-            ("groq", "openai/gpt-oss-120b"),
-            ("nvidia", "meta/llama-3.2-90b-vision-instruct"),
-            ("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"),
-            ("gemini", "gemini-2.5-flash"),
-            ("openrouter", "openrouter/free")
-        ],
-        "frame_director_gaming": [
-            ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
-            ("nvidia", "google/gemma-4-31b-it"),
-            ("gemini", "gemini-2.5-flash"),
-            ("openrouter", "nvidia/nemotron-3.5-super-vl:free"),
-            ("openrouter", "openrouter/free")
-        ],
-        "frame_director_market": [
-            ("nvidia", "mistralai/mistral-large-4"),
-            ("nvidia", "z-ai/glm-5-3-flash"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "premium_studio": [
-            ("nvidia", "stepfun-ai/step-5-preview"),
-            ("nvidia", "z-ai/glm-5-3-flash"),
-            ("nvidia", "meta/llama-3.2-90b-vision-instruct"),
-            ("gemini", "gemini-2.5-flash"),
-            ("openrouter", "openrouter/free")
-        ],
-        "icon_gen": [
-            ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
-            ("gemini", "gemini-2.5-flash"),
-            ("nvidia", "google/gemma-4-31b-it"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "gateway_coder": [
-            ("nvidia", "poolside/laguna-xs-2.1"),
-            ("nvidia", "minimaxai/minimax-m3.1-flash"),
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("gemini", "gemini-2.5-flash"),
-            ("openrouter", "cohere/north-mini-code:free")
-        ],
-        "frontend_coder": [
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("nvidia", "moonshotai/kimi-k3.1-pro"),
-            ("nvidia", "poolside/laguna-xs-2.1"),
-            ("nvidia", "minimaxai/minimax-m3.1-flash"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "cohere/north-mini-code:free"),
-            ("openrouter", "openrouter/free"),
-            ("cohere", "command-a-03-2025")
-        ],
-        "nav_specialist": [
-            ("nvidia", "moonshotai/kimi-k3.1-pro"),
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("nvidia", "google/gemma-4-31b-it"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "backend_coder": [
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("nvidia", "moonshotai/kimi-k3.1-pro"),
-            ("nvidia", "poolside/laguna-xs-2.1"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "reviewer": [
-            ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("nvidia", "meta/llama-3.2-90b-vision-instruct"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free")
-        ],
-        "repair_center": [
-            ("nvidia", "moonshotai/kimi-k3.1-pro"),
-            ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"),
-            ("gemini", "gemini-2.5-flash"),
-            ("groq", "openai/gpt-oss-120b"),
-            ("openrouter", "openrouter/free"),
-            ("cohere", "command-a-03-2025")
-        ],
-        "live_preview": [
-            ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
-            ("gemini", "gemini-2.5-flash"),
-            ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-            ("openrouter", "openrouter/free")
-        ]
-    }
-    candidates = role_map.get(role, [("nvidia", "deepseek-ai/deepseek-v4.1-flash"), ("openrouter", "openrouter/free")])
-    last_err = "No AI engine responded"
-    for prov, m_id in candidates:
-        try:
-            raw = ""
-            if prov == "nvidia":
-                raw = _call_openai_compat("https://integrate.api.nvidia.com/v1/chat/completions", DEFAULT_NVIDIA_KEY, m_id, sys_prompt, usr_prompt, max_tokens=max_tokens)
-            elif prov == "groq":
-                raw = _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", DEFAULT_GROQ_KEY, m_id, sys_prompt, usr_prompt, max_tokens=max_tokens)
-            elif prov == "openrouter":
-                raw = _call_openai_compat(
-                    "https://openrouter.ai/api/v1/chat/completions", DEFAULT_OPENROUTER_KEY, m_id, sys_prompt, usr_prompt,
-                    max_tokens=max_tokens, extra_headers={"HTTP-Referer": "https://supreme-agent.streamlit.app", "X-Title": "Sarfealam Flutter AI Factory"}
-                )
-            elif prov == "gemini":
-                raw = _call_gemini_api(m_id, sys_prompt, usr_prompt, max_tokens=max_tokens, use_search=False)
-            elif prov == "gemini_search":
-                raw = _call_gemini_api(m_id, sys_prompt, usr_prompt, max_tokens=max_tokens, use_search=True)
-            elif prov == "cohere":
-                raw = _call_cohere_api(m_id, sys_prompt, usr_prompt, max_tokens=max_tokens)
-            res = strip_markdown_fences(raw)
-            if res:
-                return res, f"{prov.upper()}:{m_id}", None
-        except urllib.error.HTTPError as he:
-            try:
-                last_err = f"{prov}:{m_id} HTTP {he.code} - {he.read().decode('utf-8')[:110]}"
-            except Exception:
-                last_err = f"{prov}:{m_id} HTTP {he.code}"
-        except Exception as e:
-            last_err = f"{prov}:{m_id} - {str(e)[:110]}"
-    return "", "", last_err
-
-def run_live_engine_diagnostics():
-    """Tests NVIDIA NIM catalog + Groq + Google Gemini + OpenRouter + Cohere + Iconify live."""
-    report = []
-    try:
-        req = urllib.request.Request(
-            "https://integrate.api.nvidia.com/v1/models",
-            headers={"Authorization": f"Bearer {DEFAULT_NVIDIA_KEY}", "User-Agent": "Sarfealam-Factory"},
-            method="GET"
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            mods = json.loads(resp.read().decode("utf-8")).get("data", [])
-            ids = [m.get("id", "") for m in mods]
-            report.append(("NVIDIA NIM Catalog", True, f"{len(ids)} live models available", ids[:25]))
-    except Exception as e:
-        report.append(("NVIDIA NIM Catalog", False, str(e)[:120], []))
-
-    try:
-        req_ic = urllib.request.Request("https://api.iconify.design/search?query=trophy&limit=2", headers={"User-Agent": "Sarfealam-Factory"})
-        with urllib.request.urlopen(req_ic, timeout=8) as resp_ic:
-            ic_data = json.loads(resp_ic.read().decode("utf-8"))
-            report.append(("Iconify Open-Source Icons API", True, f"LIVE ({len(ic_data.get('icons', []))} icons tested)", []))
-    except Exception as e:
-        report.append(("Iconify Open-Source Icons API", False, str(e)[:110], []))
-
-    probes = [
-        ("NVIDIA (DeepSeek V4.1)", "nvidia", "deepseek-ai/deepseek-v4.1-flash"),
-        ("NVIDIA (Kimi K3.1 Pro)", "nvidia", "moonshotai/kimi-k3.1-pro"),
-        ("NVIDIA (Step 5 Preview)", "nvidia", "stepfun-ai/step-5-preview"),
-        ("Groq (GPT-OSS 120B Human Brain)", "groq", "openai/gpt-oss-120b"),
-        ("Google Gemini (2.5 Flash)", "gemini", "gemini-2.5-flash"),
-        ("OpenRouter (openrouter/free)", "openrouter", "openrouter/free"),
-        ("Cohere (Command A)", "cohere", "command-a-03-2025")
-    ]
-    for label, prov, m_id in probes:
-        t0 = time.time()
-        try:
-            if prov == "nvidia":
-                out = _call_openai_compat("https://integrate.api.nvidia.com/v1/chat/completions", DEFAULT_NVIDIA_KEY, m_id, "Reply OK.", "Say OK", max_tokens=16)
-            elif prov == "groq":
-                out = _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", DEFAULT_GROQ_KEY, m_id, "Reply OK.", "Say OK", max_tokens=16)
-            elif prov == "gemini":
-                out = _call_gemini_api(m_id, "Reply OK.", "Say OK", max_tokens=16)
-            elif prov == "openrouter":
-                out = _call_openai_compat("https://openrouter.ai/api/v1/chat/completions", DEFAULT_OPENROUTER_KEY, m_id, "Reply OK.", "Say OK", max_tokens=16)
-            else:
-                out = _call_cohere_api(m_id, "Reply OK.", "Say OK", max_tokens=16)
-            ms = int((time.time() - t0) * 1000)
-            report.append((label, bool(out), f"LIVE ({ms} ms)", []))
-        except Exception as e:
-            report.append((label, False, str(e)[:110], []))
-    return report
-
-
-# ==============================================================================
-# DART SYNTAX & FLUTTER 3.50 DETERMINISTIC AUTO-FIXER + KIMI REPAIR
-# ==============================================================================
-def validate_dart_code(dart_code):
-    """Strict Dart Lexer checking strings, comments, braces, parens, and brackets."""
-    if not dart_code or not dart_code.strip():
-        return False, "Empty Dart file"
-    stack = []
-    pairs = {"{": "}", "(": ")", "[": "]"}
-    closing = {"}": "{", ")": "(", "]": "["}
-    i, n = 0, len(dart_code)
-    in_str = None
-    in_triple = False
-    in_line_c = False
-    in_block_c = False
-    line_no = 1
-    while i < n:
-        c = dart_code[i]
-        nxt = dart_code[i + 1] if i + 1 < n else ""
-        tri = dart_code[i:i + 3]
-        if c == "\n":
-            line_no += 1
-            in_line_c = False
-            if in_str and not in_triple:
-                return False, f"Unclosed string literal at line {line_no - 1}"
-            i += 1
-            continue
-        if in_line_c:
-            i += 1
-            continue
-        if in_block_c:
-            if c == "*" and nxt == "/":
-                in_block_c = False
-                i += 2
-                continue
-            i += 1
-            continue
-        if in_str:
-            if c == "\\":
-                i += 2
-                continue
-            if in_triple and tri == in_str * 3:
-                in_str = None
-                in_triple = False
-                i += 3
-                continue
-            if not in_triple and c == in_str:
-                in_str = None
-            i += 1
-            continue
-        if c == "/" and nxt == "/":
-            in_line_c = True
-            i += 2
-            continue
-        if c == "/" and nxt == "*":
-            in_block_c = True
-            i += 2
-            continue
-        if tri in ("'''", '"""'):
-            in_str = c
-            in_triple = True
-            i += 3
-            continue
-        if c in ("'", '"'):
-            in_str = c
-            in_triple = False
-            i += 1
-            continue
-        if c in pairs:
-            stack.append((c, line_no))
-        elif c in closing:
-            if not stack or stack[-1][0] != closing[c]:
-                return False, f"Unexpected '{c}' at line {line_no}"
-            stack.pop()
-        i += 1
-    if in_str:
-        return False, "Unclosed Dart string at EOF"
-    if stack:
-        return False, f"Unclosed '{stack[-1][0]}' from line {stack[-1][1]}"
-    return True, "OK (Dart Lexer)"
-
-def apply_flutter3_deterministic_fixes(dart_code):
-    """Deterministic Flutter 3.50+ auto-fixer for CardThemeData, M3 TextTheme, and non-const Screens."""
-    if not dart_code:
-        return dart_code, []
-    fixes = []
-    out = dart_code
-    if re.search(r"\bCardTheme\s*\(", out):
-        out = re.sub(r"\bCardTheme\s*\(", "CardThemeData(", out)
-        fixes.append("CardTheme -> CardThemeData")
-    m2_to_m3 = {
-        "headline1": "displayLarge",
-        "headline2": "displayMedium",
-        "headline3": "displaySmall",
-        "headline4": "headlineMedium",
-        "headline5": "headlineSmall",
-        "headline6": "titleLarge",
-        "subtitle1": "titleMedium",
-        "subtitle2": "titleSmall",
-        "bodyText1": "bodyLarge",
-        "bodyText2": "bodyMedium",
-        "caption": "bodySmall",
-        "button": "labelLarge",
-        "overline": "labelSmall"
-    }
-    for old_k, new_k in m2_to_m3.items():
-        if re.search(rf"\b{old_k}\b", out):
-            out = re.sub(rf"\b{old_k}\b", new_k, out)
-            fixes.append(f"{old_k} -> {new_k}")
-    if re.search(r"\bconst\s+[A-Z][A-Za-z0-9_]*(?:Screen|Page|Shell|Tab)\s*\(", out):
-        out = re.sub(r"\bconst\s+([A-Z][A-Za-z0-9_]*(?:Screen|Page|Shell|Tab)\s*\()", r"\1", out)
-        fixes.append("Stripped invalid const on Screen widget")
-    return out, fixes
-
-def build_pubspec_yaml(app_title, extra_deps=None):
-    slug = re.sub(r'[^a-z0-9_]', '_', app_title.lower()) or "smart_app"
-    if not slug[0].isalpha():
-        slug = "sf_" + slug
-    base_deps = {
-        "http": "^1.2.2",
-        "shared_preferences": "^2.3.2",
-        "google_fonts": "^6.2.1",
-        "url_launcher": "^6.3.1"
-    }
-    if isinstance(extra_deps, dict):
-        for k, v in extra_deps.items():
-            if isinstance(k, str) and k.strip():
-                base_deps[k.strip()] = str(v or "any")
-    deps_lines = "\n".join([f"  {k}: {v}" for k, v in base_deps.items()])
-    return f"""name: {slug}
-description: "{app_title} - Built by Sarfealam 16-Dept Flutter Factory"
-publish_to: 'none'
+def build_flutter_files(app_title, user_prompt):
+    pubspec = f"""name: {re.sub(r'[^a-z0-9_]', '_', app_title.lower().replace(' ', '_')) or 'auto_app'}
+description: {app_title}
 version: 1.0.0+1
-
 environment:
   sdk: '>=3.2.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-{deps_lines}
-
+  fl_chart: ^0.68.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
-
 flutter:
   uses-material-design: true
-  assets:
-    - assets/icon.svg
-    - assets/
 """
+    main_dart = strip_markdown_fences(call_ai(
+        "You are a Principal Flutter 3.50 Engineer. Output ONLY valid, self-contained Dart code for lib/main.dart (no markdown fences, no invalid const, no withOpacity) implementing a complete Material 3 app with OTP sign-in, Profile tab, Home cards, and 4-tab bottom navigation.",
+        f"App Title: {app_title}\nPrompt: {user_prompt}",
+        max_tokens=3400,
+    ))
+    if "void main()" not in main_dart:
+        main_dart = f"""import 'package:flutter/material.dart';
 
+void main() => runApp(const AutoApp());
 
-def run_dept_17_18_memory_enforcer(coded_bundle, apk_engine):
-    """Workflow 6 (Dept 17-18): Enforces 52-ID Gaming/Market Memory Card before GitHub APK build."""
-    fixes = []
-    fid = coded_bundle.get("factory_id", "GAMING_FACTORY_01")
-    if fid == "GAMING_FACTORY_01":
-        spec = coded_bundle.get("gm_spec") or GAMING_DATA_CENTER["GM-01"]
-        prev = coded_bundle.get("preview_html") or coded_bundle.get("rendered_preview_html") or ""
-        if "Node2D" in prev or not prev:
-            fixes.append("RP-04: Replaced empty/2D preview with true Three.js PBR 3D scene.")
-        fixes.append(f"Dept 17-18 Verified: {spec['id']} ({spec['name']}) + {spec.get('chr_id','CHR-01')} Driver + {spec.get('env_id','ENV-01')} World + {spec.get('sfx_id','SFX-01')} Audio + Dual Portrait/Landscape.")
-    else:
-        spec = coded_bundle.get("mk_spec") or MARKET_DATA_CENTER["MK-01"]
-        scr = coded_bundle.get("screens_dart", "")
-        if "OTP" not in scr and "Profile" not in scr:
-            fixes.append("RP-01/MK-51: Verified Mobile/OTP Sign-In + Unique Profile ID in Dart bundle.")
-        fixes.append(f"Dept 17-18 Verified: {spec['id']} ({spec['name']}) + MK-51 OTP/Profile + MK-52 Play-Store 3D Depth UI + {spec.get('msfx_id','MSFX-01')}.")
-    return fixes
+class AutoApp extends StatelessWidget {{
+  const AutoApp({{super.key}});
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: '{app_title}',
+      theme: ThemeData(colorSchemeSeed: Colors.blue, useMaterial3: true),
+      home: const HomeShell(),
+    );
+  }}
+}}
 
+class HomeShell extends StatefulWidget {{
+  const HomeShell({{super.key}});
+  @override
+  State<HomeShell> createState() => _HomeShellState();
+}}
 
-def auto_detect_and_repair_bundle(project_bus):
-    """Dept 16: Kimi AI Self-Repair & Auto-Module Builder checking all 4 Dart files & pubspec deps."""
-    repairs = []
-    pub_extra = dict(project_bus.get("extra_deps", {}))
-    all_dart = "\n".join([
-        project_bus.get("backend_dart", ""),
-        project_bus.get("gateway_dart", ""),
-        project_bus.get("screens_dart", ""),
-        project_bus.get("main_dart", "")
-    ])
-
-    pkg_versions = {
-        "fl_chart": "^0.69.0",
-        "intl": "^0.19.0",
-        "share_plus": "^10.1.0",
-        "pdf": "^3.11.1",
-        "printing": "^5.13.4",
-        "qr_flutter": "^4.1.0",
-        "razorpay_flutter": "^1.3.7",
-        "flame": "^1.38.2",
-        "flutter_animate": "^4.5.2",
-        "lucide_icons_flutter": "^4.0.2",
-        "lottie": "^3.1.3",
-        "webview_flutter": "^4.14.0"
-    }
-    for pkg, ver in pkg_versions.items():
-        if f"package:{pkg}/" in all_dart and pkg not in pub_extra:
-            pub_extra[pkg] = ver
-            repairs.append(f"Auto-added missing package '{pkg}: {ver}' to pubspec.yaml")
-
-    file_keys = [
-        ("backend_dart", "lib/services/supabase_api.dart"),
-        ("gateway_dart", "lib/services/payment_gateway.dart"),
-        ("screens_dart", "lib/screens/app_screens.dart"),
-        ("main_dart", "lib/main.dart")
-    ]
-    for key, label in file_keys:
-        code, det_fixes = apply_flutter3_deterministic_fixes(project_bus.get(key, ""))
-        project_bus[key] = code
-        if det_fixes:
-            repairs.append(f"Flutter 3.50 auto-fix in {label}: {', '.join(det_fixes)}")
-        ok, msg = validate_dart_code(code)
-        if not ok:
-            repairs.append(f"Detected issue in {label}: {msg} — Kimi Self-Repair running...")
-            fixed, m_used, _ = call_specialist_ai(
-                "repair_center",
-                "You are Dept 16 Kimi AI Self-Repair Center. Fix ALL Dart syntax, missing functions, or Flutter 3.50 errors (use CardThemeData, headlineMedium, no const on Screen constructors). Output ONLY valid raw Dart code.",
-                f"File: {label}\nError: {msg}\nDesign Context:\n{json.dumps(project_bus.get('design_doc', {}))[:1400]}\n\nBroken Dart:\n{code}",
-                max_tokens=4200
-            )
-            if fixed:
-                fixed, _ = apply_flutter3_deterministic_fixes(fixed)
-            ok2, msg2 = validate_dart_code(fixed) if fixed else (False, "Empty")
-            if fixed and ok2:
-                project_bus[key] = fixed
-                repairs.append(f"[{m_used}] Repaired {label} cleanly.")
-            else:
-                repairs.append(f"BLOCKED: {label} still failed ({msg2})")
-                return False, repairs, pub_extra
-
-    # Kimi Cross-File Auto-Wiring Check (ensures Gateway, Profile & Routes are wired)
-    scr_code = project_bus.get("screens_dart", "")
-    main_code = project_bus.get("main_dart", "")
-    if "PaymentGatewayService" not in scr_code and project_bus.get("gateway_dart"):
-        repairs.append("Kimi Auto-Wiring: Connecting PaymentGatewayService into app_screens.dart...")
-        wired_scr, wm, _ = call_specialist_ai(
-            "repair_center",
-            "You are Kimi Auto-Wiring Engineer. Wire `../services/payment_gateway.dart` (`PaymentGatewayService.openCheckoutSheet`) into the Wallet/Store button in `app_screens.dart` without breaking existing classes. Output ONLY raw Dart.",
-            f"Current app_screens.dart:\n{scr_code}",
-            max_tokens=4200
-        )
-        if wired_scr and validate_dart_code(wired_scr)[0]:
-            wired_scr, _ = apply_flutter3_deterministic_fixes(wired_scr)
-            project_bus["screens_dart"] = wired_scr
-            repairs.append(f"[{wm}] Auto-wired PaymentGatewayService cleanly.")
-
-    if "SarfealamApp" not in main_code:
-        repairs.append("Kimi Auto-Wiring: Missing SarfealamApp entry in main.dart — repairing...")
-        wired_main, wm2, _ = call_specialist_ai(
-            "repair_center",
-            "Fix main.dart so it defines `void main() => runApp(const SarfealamApp());` and wires `app_screens.dart`. Output ONLY raw Dart.",
-            f"Current main.dart:\n{main_code}",
-            max_tokens=2600
-        )
-        if wired_main and validate_dart_code(wired_main)[0]:
-            wired_main, _ = apply_flutter3_deterministic_fixes(wired_main)
-            project_bus["main_dart"] = wired_main
-            repairs.append(f"[{wm2}] Auto-wired main.dart cleanly.")
-
-    project_bus["extra_deps"] = pub_extra
-    project_bus["pubspec_yaml"] = build_pubspec_yaml(project_bus.get("app_title", "Smart App"), pub_extra)
-    return True, repairs, pub_extra
+class _HomeShellState extends State<HomeShell> {{
+  int idx = 0;
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('{app_title}')),
+      body: Center(child: Text('Active Tab: $idx', style: const TextStyle(fontSize: 22))),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: idx,
+        onDestinationSelected: (i) => setState(() => idx = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.apps), label: 'Apps'),
+          NavigationDestination(icon: Icon(Icons.shopping_bag), label: 'Shop'),
+          NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
+    );
+  }}
+}}
+"""
+    return {"pubspec.yaml": pubspec, "lib/main.dart": main_dart}
 
 # ==============================================================================
-# DISPLAY 1: FILM-STYLE LIVE CONNECTION BOARD + VISUAL RESEARCH ICONS
+# AUTONOMOUS PIPELINE RUNNER (ZERO MANUAL GATES)
 # ==============================================================================
 
+def run_autonomous_build(user_prompt):
+    is_game = detect_is_game(user_prompt)
+    words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", user_prompt).split() if len(w) > 2][:3]
+    app_title = " ".join(w.capitalize() for w in words) or ("Auto 3D Studio" if is_game else "Auto Super App")
+    slug = re.sub(r"[^a-z0-9-]", "", app_title.lower().replace(" ", "-")) or "auto-app"
+    repo_name = f"{slug}-{int(time.time()) % 100000}"
 
-_KEEP_ALIVE_STARTED = False
+    logs = [f"[{datetime.now().strftime('%H:%M:%S')}] Started Auto-Studio for '{app_title}' ({'3D Game / Godot 4' if is_game else 'App / Flutter 3.50'})"]
 
-def start_keep_alive_heartbeat():
-    """Workflow 5 Real Keep-Alive: Background daemon pinging Supabase/session every 45s so 18 depts stay awake 1.5hr+."""
-    global _KEEP_ALIVE_STARTED
-    if _KEEP_ALIVE_STARTED:
-        return
-    _KEEP_ALIVE_STARTED = True
-    def _beat():
-        while True:
-            try:
-                cur = load_json_file("assembly_studio_state.json", None)
-                if isinstance(cur, dict):
-                    cur["last_heartbeat_ts"] = int(time.time())
-                    cur["depts_awake"] = 18
-                    save_json_file("assembly_studio_state.json", cur)
-            except Exception:
-                pass
-            time.sleep(45)
-    t = threading.Thread(target=_beat, daemon=True)
-    t.start()
+    # Step 1: Generate live preview HTML + repo files
+    preview_html = build_custom_preview_html(user_prompt, is_game)
+    logs.append("Generated custom live HTML5/3D preview directly from prompt.")
 
-
-def persist_assembly_state(asm_state):
-    """Workflow 5 Keep-Alive: Saves assembly state locally + Supabase cloud for 1.5hr+ zero-loss sessions."""
-    save_json_file("assembly_studio_state.json", asm_state)
-
-def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state, step_stage=4, live_code_snippet=""):
-    """Workflow 5 (v26.0 AAA-PIPELINE): Real Three.js WebGL 3D Truck/Road (Landscape) + Live Code + Real Keep-Alive Heartbeat."""
-    start_keep_alive_heartbeat()
-    is_game = (factory_id == "GAMING_FACTORY_01")
-    paint_idx = int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)
-    active_paint = PAINT_4_COLORS[paint_idx] if int(asm_state.get("reject_count", 0)) > 0 else selected_paint
-    paint_hex = active_paint.get("hex", "#dc2626")
-    paint_accent = active_paint.get("accent", "#f87171")
-    paint_name = active_paint.get("name", "Crimson Red")
-    safe_title = (app_title or ("Desi Highway Cargo King 3D" if is_game else "BharatPay Pro"))[:26]
-    spec_id = spec.get("id", "GM-01" if is_game else "MK-01")
-    spec_name = spec.get("name", "Indian Cargo Truck" if is_game else "Mega Store")
-    size_short = size_tier.split("(")[0].strip()
-
-    if not live_code_snippet:
-        if is_game:
-            live_code_snippet = (
-                f"// Godot 4 Native 3D | {spec_id}: {spec_name}\n"
-                f"extends VehicleBody3D\n"
-                f"var paint = Color(\"{paint_hex}\") # {paint_name}\n"
-                f"var driver = \"{spec.get('chr_id','CHR-01')}\"\n"
-                f"var world  = \"{spec.get('env_id','ENV-01')}\"\n"
-                f"var audio  = \"{spec.get('sfx_id','SFX-01')}\"\n"
-                f"func _physics_process(delta):\n"
-                f"  steering = move_toward(steering, h * 0.48, delta*3.4)\n"
-                f"  engine_force = gas * 360.0\n"
-                f"  # Build Tier: {size_short} | Dual Portrait+Landscape"
-            )
-        else:
-            live_code_snippet = (
-                f"// Flutter 3.50 | {spec_id}: {spec_name}\n"
-                f"class HomeScreen extends StatelessWidget {{\n"
-                f"  final String themeColor = \"{paint_hex}\"; // {paint_name}\n"
-                f"  final String profileId  = \"MK-51-OTP-VERIFIED\";\n"
-                f"  Widget build(ctx) => Scaffold(\n"
-                f"    body: Column([WalletHeroCard(), Grid2x2Offers()]),\n"
-                f"    bottomNavigationBar: Floating4TabNav(),\n"
-                f"  ); // Build Tier: {size_short}\n"
-                f"}}"
-            )
-
-    code_escaped = (
-        live_code_snippet.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    repo_res = create_github_repo(repo_name, f"{app_title} - Sarfealam Auto-Studio")
+    repo_url = repo_res.get("html_url", f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}")
+    push_file_to_github(repo_name, "assets/game.html", preview_html, "Add live interactive preview")
+    push_file_to_github(repo_name, ".github/workflows/visual_verify.yml", VISION_AUDIT_WORKFLOW, "Add Playwright visual verify")
 
     if is_game:
-        phone_inner = f"""
-        <div id="webglWrap" style="position:relative;width:100%;height:100%;background:#0ea5e9;overflow:hidden;">
-          <canvas id="studio3d" style="width:100%;height:100%;display:block;"></canvas>
-          <div style="position:absolute;top:6px;left:8px;right:8px;display:flex;justify-content:space-between;pointer-events:none;font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;">
-            <span>{safe_title} ({paint_name})</span>
-            <span style="background:rgba(16,185,129,0.9);padding:1px 6px;border-radius:99px;">LIVE 3D | 18 Depts Awake</span>
-          </div>
-          <div id="steerMini" style="position:absolute;bottom:8px;left:10px;width:44px;height:44px;border-radius:50%;border:4px solid rgba(255,255,255,0.88);background:rgba(15,23,42,0.55);box-shadow:0 3px 10px rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:900;">STEER</div>
-          <div style="position:absolute;bottom:8px;right:10px;display:flex;gap:5px;align-items:flex-end;">
-            <div style="background:rgba(15,23,42,0.8);color:#38bdf8;font-size:9px;font-weight:900;padding:4px 7px;border-radius:6px;border:1px solid #38bdf8;" id="spdMini">42 km/h</div>
-            <div onmousedown="gasDown=true" onmouseup="gasDown=false" ontouchstart="gasDown=true" ontouchend="gasDown=false" style="background:#10b981;color:#fff;font-size:8px;font-weight:900;padding:9px 8px;border-radius:6px;cursor:pointer;">GAS</div>
-          </div>
-        </div>"""
+        g_files = build_godot4_files(app_title, user_prompt)
+        for fp, body in g_files.items():
+            push_file_to_github(repo_name, fp, body, f"Add {fp}")
+        push_file_to_github(repo_name, ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, "Activate Godot 4 3D APK Build")
+        logs.append("Pushed Godot 4 3D project + Playwright Visual Audit to GitHub.")
     else:
-        phone_inner = f"""
-        <div style="height:100%;background:linear-gradient(180deg,#e0f2fe 0%,#f8fafc 45%);padding:10px 8px;color:#0f172a;display:flex;flex-direction:column;gap:7px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:10px;font-weight:900;color:{paint_hex};">{safe_title}</span>
-            <span style="font-size:8px;background:{paint_hex};color:#fff;padding:2px 6px;border-radius:99px;font-weight:700;">OTP OK</span>
-          </div>
-          <div style="background:linear-gradient(135deg,{paint_hex},#0f172a);color:#fff;border-radius:10px;padding:8px;box-shadow:0 6px 14px rgba(0,0,0,0.22);">
-            <div style="font-size:8px;opacity:0.85;">Live Wallet ({paint_name})</div>
-            <div style="font-size:14px;font-weight:900;">Rs. 2,450.00</div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
-            <div style="background:#fff;border-radius:8px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);font-size:8px;font-weight:800;border-left:3px solid {paint_hex};">Quick Order<br><span style="color:#10b981;">10m</span></div>
-            <div style="background:#fff;border-radius:8px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);font-size:8px;font-weight:800;border-left:3px solid #10b981;">Profile ID<br><span style="color:#64748b;">MK-51</span></div>
-          </div>
-          <div style="margin-top:auto;background:#0f172a;color:#fff;border-radius:10px;padding:5px;display:flex;justify-content:space-around;font-size:8px;font-weight:700;">
-            <span style="color:{paint_accent};">Home</span><span>Apps</span><span>Shop</span><span>Wallet</span>
-          </div>
-        </div>"""
-
-    if is_game:
-        split_block = f'<div class="split-land"><div class="phone-land">{phone_inner}</div><pre class="editor-land">{code_escaped}</pre></div>'
-    else:
-        split_block = f'<div class="split"><div class="phone"><div class="notch"></div>{phone_inner}</div><pre class="editor">{code_escaped}</pre></div>'
-
-    groq_key = _get_secret("GROQ_API_KEY", "")
-    three_js_script = """
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script>
-  var gasDown = false;
-  (function initReal3D(){
-    const cv = document.getElementById('studio3d');
-    if(!cv || typeof THREE === 'undefined') return;
-    const w = cv.clientWidth || 320, h = cv.clientHeight || 195;
-    const renderer = new THREE.WebGLRenderer({canvas:cv, antialias:true});
-    renderer.setSize(w, h, false);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#7dd3fc');
-    scene.fog = new THREE.Fog('#bae6fd', 30, 120);
-    const cam = new THREE.PerspectiveCamera(50, w/h, 0.1, 180);
-    cam.position.set(2.4, 3.3, 7.4);
-    cam.lookAt(0, 1.1, -1.5);
-
-    scene.add(new THREE.HemisphereLight('#e0f2fe', '#334155', 0.75));
-    const sun = new THREE.DirectionalLight('#fffbeb', 1.35);
-    sun.position.set(14, 26, 12);
-    sun.castShadow = true;
-    scene.add(sun);
-
-    // 3D Clouds in Sky
-    for(let c=0; c<8; c++){
-      const cl = new THREE.Mesh(new THREE.SphereGeometry(2.8, 10, 8), new THREE.MeshBasicMaterial({color:'#ffffff', transparent:true, opacity:0.85}));
-      cl.scale.set(2.4, 0.55, 1.2);
-      cl.position.set((c%2===0?-18:18)+(c*3), 16 + (c%3)*2, -30 - c*10);
-      scene.add(cl);
-    }
-
-    // Procedural Asphalt Road Texture
-    const rCv = document.createElement('canvas'); rCv.width=128; rCv.height=128;
-    const rCtx = rCv.getContext('2d'); rCtx.fillStyle='#1f2937'; rCtx.fillRect(0,0,128,128);
-    for(let i=0;i<600;i++){ rCtx.fillStyle = Math.random()>0.5 ? '#374151':'#111827'; rCtx.fillRect(Math.random()*128,Math.random()*128,2,2); }
-    const roadTex = new THREE.CanvasTexture(rCv); roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping; roadTex.repeat.set(2, 24);
-
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 260), new THREE.MeshStandardMaterial({color:'#3f6212', roughness:0.95}));
-    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
-
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(10.5, 260), new THREE.MeshStandardMaterial({map:roadTex, roughness:0.78}));
-    road.rotation.x = -Math.PI/2; road.position.y = 0.02; road.receiveShadow = true; scene.add(road);
-
-    // Highway Edge Lines & Guardrails
-    [-4.9, 4.9].forEach(x => {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 260), new THREE.MeshBasicMaterial({color:'#f8fafc'}));
-      edge.rotation.x = -Math.PI/2; edge.position.set(x, 0.03, 0); scene.add(edge);
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 260), new THREE.MeshStandardMaterial({color:'#94a3b8', metalness:0.7, roughness:0.35}));
-      rail.position.set(x + (x<0?-0.45:0.45), 0.35, 0); scene.add(rail);
-    });
-
-    const dashes = [];
-    for(let z=-110; z<110; z+=7){
-      const d = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 3.2), new THREE.MeshBasicMaterial({color:'#facc15'}));
-      d.rotation.x = -Math.PI/2; d.position.set(0, 0.03, z); scene.add(d); dashes.push(d);
-    }
-
-    // 3D City Buildings + Streetlights + Flyover Arch
-    const props = [];
-    for(let i=0; i<16; i++){
-      const side = (i % 2 === 0) ? -9.5 : 9.5;
-      const zPos = -i * 13;
-      const g = new THREE.Group();
-      const bh = 4 + (i % 4) * 2.5;
-      const bCv = document.createElement('canvas'); bCv.width=64; bCv.height=64;
-      const bCtx = bCv.getContext('2d'); bCtx.fillStyle = i%3===0 ? '#334155' : (i%3===1 ? '#475569' : '#57534e'); bCtx.fillRect(0,0,64,64);
-      for(let wy=6;wy<58;wy+=12){ for(let wx=6;wx<58;wx+=14){ bCtx.fillStyle = (wx+wy+i)%3===0 ? '#fef08a' : '#bae6fd'; bCtx.fillRect(wx,wy,8,7); } }
-      const bTex = new THREE.CanvasTexture(bCv);
-      const bldg = new THREE.Mesh(new THREE.BoxGeometry(4.5, bh, 5.2), new THREE.MeshStandardMaterial({map:bTex, roughness:0.65}));
-      bldg.position.y = bh/2; bldg.castShadow = true;
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,4.6,8), new THREE.MeshStandardMaterial({color:'#cbd5e1', metalness:0.8}));
-      pole.position.set(side<0?3.6:-3.6, 2.3, 0);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.15,0.25), new THREE.MeshBasicMaterial({color:'#fef08a'}));
-      lamp.position.set(side<0?3.2:-3.2, 4.6, 0);
-      g.add(bldg, pole, lamp);
-      g.position.set(side, 0, zPos);
-      scene.add(g);
-      props.push(g);
-    }
-    const flyover = new THREE.Mesh(new THREE.BoxGeometry(28, 1.1, 4.5), new THREE.MeshStandardMaterial({color:'#64748b', roughness:0.75}));
-    flyover.position.set(0, 6.8, -36); flyover.castShadow = true; scene.add(flyover);
-    props.push(flyover);
-
-    // High-Detail Multi-Part Metallic 3D Truck / Vehicle + Glass + Chrome + Driver
-    const truck = new THREE.Group();
-    const paintMat = new THREE.MeshStandardMaterial({color:'""" + paint_hex + """', metalness:0.78, roughness:0.20});
-    const chromeMat = new THREE.MeshStandardMaterial({color:'#f1f5f9', metalness:0.95, roughness:0.1});
-    const glassMat = new THREE.MeshStandardMaterial({color:'#0f172a', metalness:0.9, roughness:0.08});
-    const tireMat = new THREE.MeshStandardMaterial({color:'#111827', roughness:0.88});
-
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.15, 1.55, 1.9), paintMat);
-    cab.position.set(0, 1.18, -1.25); cab.castShadow = true;
-    const roofVisor = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 0.5), chromeMat);
-    roofVisor.position.set(0, 1.98, -2.0);
-    const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.65, 0.08), glassMat);
-    windshield.position.set(0, 1.48, -2.21);
-    const grille = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 0.1), chromeMat);
-    grille.position.set(0, 0.85, -2.21);
-    const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.3, 0.28), chromeMat);
-    bumper.position.set(0, 0.45, -2.24);
-    const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.0, 3.5), new THREE.MeshStandardMaterial({color:'#f8fafc', metalness:0.25, roughness:0.4}));
-    cargo.position.set(0, 1.42, 1.55); cargo.castShadow = true;
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.35, 3.52), paintMat);
-    stripe.position.set(0, 1.42, 1.55);
-    const driverHead = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshStandardMaterial({color:'#fbbf24'}));
-    driverHead.position.set(-0.45, 1.55, -1.35);
-    // Glowing Headlights + Tail Lights
-    [-0.78, 0.78].forEach(lx => {
-      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.08), new THREE.MeshBasicMaterial({color:'#fef9c3'}));
-      hl.position.set(lx, 0.75, -2.22); truck.add(hl);
-      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08), new THREE.MeshBasicMaterial({color:'#ef4444'}));
-      tl.position.set(lx, 0.65, 3.31); truck.add(tl);
-    });
-    truck.add(cab, roofVisor, windshield, grille, bumper, cargo, stripe, driverHead);
-
-    const wheels = [];
-    [[-1.06,0.44,-1.3],[1.06,0.44,-1.3],[-1.06,0.44,1.2],[-1.06,0.44,2.4],[1.06,0.44,1.2],[1.06,0.44,2.4]].forEach(pos => {
-      const wg = new THREE.Group();
-      const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,18), tireMat);
-      wh.rotation.z = Math.PI/2; wh.castShadow = true;
-      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.36,12), chromeMat);
-      rim.rotation.z = Math.PI/2;
-      wg.add(wh, rim);
-      wg.position.set(pos[0], pos[1], pos[2]);
-      truck.add(wg);
-      wheels.push(wg);
-    });
-    scene.add(truck);
-
-    // Optional HD Custom GLB Loader from user's own GitHub 3d-assets repo (zero white demo van!)
-    if(typeof THREE.GLTFLoader !== 'undefined'){
-      new THREE.GLTFLoader().load('https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/""" + spec_id + """.glb', gltf => {
-        const m = gltf.scene;
-        const box = new THREE.Box3().setFromObject(m);
-        const sz = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(sz.x, sz.y, sz.z) || 1;
-        const sc = 4.2 / maxDim;
-        m.scale.set(sc, sc, sc);
-        const c = box.getCenter(new THREE.Vector3());
-        m.position.set(-c.x * sc, -box.min.y * sc, -c.z * sc);
-        m.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; }});
-        truck.clear();
-        truck.add(m);
-      }, undefined, ()=>{});
-    }
-
-    let spd = 0.30;
-    function tick(){
-      requestAnimationFrame(tick);
-      spd = gasDown ? Math.min(0.72, spd + 0.015) : Math.max(0.25, spd - 0.005);
-      roadTex.offset.y -= spd * 0.08;
-      dashes.forEach(d => { d.position.z += spd; if(d.position.z > 25) d.position.z -= 220; });
-      props.forEach(p => { p.position.z += spd; if(p.position.z > 20) p.position.z -= 208; });
-      wheels.forEach(w => { w.rotation.x -= spd * 0.7; });
-      const se = document.getElementById('spdMini');
-      if(se) se.innerText = Math.round(spd * 150) + ' km/h';
-      renderer.render(scene, cam);
-    }
-    tick();
-  })();
-</script>""" if is_game else ""
-
-    html_studio = f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  *{{box-sizing:border-box;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}}
-  body{{margin:0;padding:6px;background:#070d1a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;}}
-  .hdr{{display:flex;justify-content:space-between;align-items:center;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:6px 10px;margin-bottom:8px;font-size:11px;}}
-  .split{{display:grid;grid-template-columns:148px 1fr;gap:8px;align-items:stretch;}}
-  .split-land{{display:flex;flex-direction:column;gap:8px;}}
-  .phone{{height:270px;border-radius:22px;border:4px solid #334155;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,0.6);position:relative;background:#000;}}
-  .phone-land{{width:100%;height:195px;border-radius:18px;border:4px solid #334155;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,0.6);position:relative;background:#000;}}
-  .editor-land{{width:100%;height:105px;background:#0b1120;border:1px solid #1e293b;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,monospace;font-size:10px;line-height:1.4;color:#7dd3fc;margin:0;}}
-  .notch{{position:absolute;top:4px;left:50%;transform:translateX(-50%);width:42px;height:8px;background:#000;border-radius:99px;z-index:10;}}
-  .editor{{height:270px;background:#0b1120;border:1px solid #1e293b;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,monospace;font-size:10px;line-height:1.45;color:#7dd3fc;margin:0;}}
-  .voice-bar{{margin-top:8px;display:flex;gap:8px;align-items:center;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:7px 10px;}}
-  .call-btn{{border:none;border-radius:999px;padding:6px 12px;font-weight:800;font-size:11px;cursor:pointer;background:#10b981;color:#fff;white-space:nowrap;}}
-  .call-btn.live{{background:#ef4444;}}
-  .v-log{{font-size:10.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}}
-</style></head><body>
-<div class="hdr">
-  <span style="font-weight:800;">Live Split Studio: {safe_title}</span>
-  <span style="background:{paint_hex};color:#fff;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800;">{spec_id} | {size_short}</span>
-</div>
-{split_block}
-<div class="voice-bar">
-  <button class="call-btn" id="callBtn" onclick="toggleVoiceCall()">Start Live Call</button>
-  <div class="v-log" id="voiceLog">Keep-Alive Active (18 Depts Awake) | Tap Reject to switch paint/layout</div>
-</div>
-{three_js_script}
-<script>
-  // Browser-side Keep-Alive ping every 25s
-  setInterval(()=>{{ try{{ localStorage.setItem('nexus_keepalive_ts', Date.now().toString()); }}catch(e){{}} }}, 25000);
-  let callOn=false, recog=null;
-  const qKey={json.dumps(groq_key)};
-  function speakFast(t){{if(!window.speechSynthesis)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='hi-IN';u.rate=1.08;window.speechSynthesis.speak(u);}}
-  async function fastAiReply(said){{
-    document.getElementById('voiceLog').innerText='You: '+said;
-    if(window.speechSynthesis)window.speechSynthesis.cancel();
-    try{{
-      let reply='Samajh gaya sir, design update ho raha hai.';
-      if(qKey){{
-        const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{{method:'POST',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+qKey}},body:JSON.stringify({{model:'openai/gpt-oss-120b',max_tokens:80,messages:[{{role:'system',content:'Reply in 1 short Hinglish sentence as app/game architect.'}},{{role:'user',content:said}}]}})}});
-        const d=await r.json();if(d.choices&&d.choices[0])reply=d.choices[0].message.content;
-      }}
-      document.getElementById('voiceLog').innerText='AI: '+reply;speakFast(reply);
-    }}catch(e){{document.getElementById('voiceLog').innerText='Use Native Mic backup below';}}
-  }}
-  function toggleVoiceCall(){{
-    const btn=document.getElementById('callBtn'), SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){{document.getElementById('voiceLog').innerText='Use Native Mic below';return;}}
-    if(!callOn){{
-      callOn=true;btn.classList.add('live');btn.innerText='End Call';
-      recog=new SR();recog.continuous=true;recog.interimResults=false;recog.lang='hi-IN';
-      recog.onresult=e=>{{const l=e.results[e.results.length-1][0].transcript.trim();if(l)fastAiReply(l);}};
-      recog.onerror=()=>{{document.getElementById('voiceLog').innerText='Mic blocked in iframe - use Native Mic below';}};
-      try{{recog.start();}}catch(e){{}}
-    }}else{{
-      callOn=false;btn.classList.remove('live');btn.innerText='Start Live Call';
-      if(recog)try{{recog.stop();}}catch(e){{}}
-      if(window.speechSynthesis)window.speechSynthesis.cancel();
-    }}
-  }}
-</script></body></html>"""
-    st.components.v1.html(html_studio, height=430 if is_game else 372, scrolling=False)
-
-def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
-    """60-FPS Film-Style Real Human Office Studio: All 8 Named AI Devs, World Scout First, Done Corner Side-Line!"""
-    safe_cc = json.dumps(cross_check[:42])
-    safe_fid = json.dumps(factory_id)
-    scene_html = f"""
-    <div style="background:#030712;border:1.5px solid #38bdf8;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(56,189,248,0.24);">
-      <canvas id="factory3d" width="520" height="252" style="width:100%;height:auto;display:block;"></canvas>
-    </div>
-    <script>
-    (function() {{
-      const c = document.getElementById('factory3d');
-      if (!c) return;
-      const ctx = c.getContext('2d');
-      let t = 0;
-      const activeStage = {run_idx};
-      const doneCount = {done_cnt};
-      const fid = {safe_fid};
-      const msg = {safe_cc};
-
-      // All 8 AI Developers with their real names above their heads!
-      const devs = [
-        {{ id: 0, name: 'World Scout',  shirt: '#0284c7', hair: '#0f172a', deskX: 62,  deskY: 132, talk: 'Dev photo & assets ready!' }},
-        {{ id: 1, name: 'Chief Cmdr',   shirt: '#059669', hair: '#1e293b', deskX: 142, deskY: 132, talk: 'Strict Play-Store order!' }},
-        {{ id: 2, name: 'Gemini Web',   shirt: '#2563eb', hair: '#334155', deskX: 222, deskY: 132, talk: 'Live trends synced!' }},
-        {{ id: 3, name: 'GPT-OSS UX',   shirt: '#7c3aed', hair: '#0f172a', deskX: 302, deskY: 132, talk: 'UX & controls locked!' }},
-        {{ id: 4, name: 'Logo 3D',      shirt: '#db2777', hair: '#1e293b', deskX: 62,  deskY: 196, talk: '3D Wings Logo ready!' }},
-        {{ id: 5, name: 'Three/Unity',  shirt: '#d97706', hair: '#0f172a', deskX: 152, deskY: 196, talk: '3D scene & sound wired!' }},
-        {{ id: 6, name: 'APK Coder',    shirt: '#0d9488', hair: '#334155', deskX: 242, deskY: 196, talk: 'Dart/C# files built!' }},
-        {{ id: 7, name: 'Kimi Fix',     shirt: '#e11d48', hair: '#111827', deskX: 332, deskY: 196, talk: 'All checks 100% PASS!' }}
-      ];
-
-      function drawSpeech(x, y, txt, col) {{
-        ctx.font = 'bold 8px sans-serif';
-        const w = Math.min(138, Math.max(66, ctx.measureText(txt).width + 10));
-        const bx = Math.max(6, Math.min(388 - w, x - w / 2));
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-        ctx.strokeStyle = col; ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.roundRect(bx, y - 42, w, 14, 5); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = col; ctx.textAlign = 'center';
-        ctx.fillText(txt, bx + w / 2, y - 32);
-      }}
-
-      function drawHuman(d, x, y, walking, isActive, isDone) {{
-        const badgeCol = isDone ? '#34d399' : (isActive ? '#fbbf24' : '#94a3b8');
-        ctx.fillStyle = 'rgba(0,0,0,0.42)';
-        ctx.beginPath(); ctx.ellipse(x, y + 23, 10, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-
-        const stride = walking ? Math.sin(t * 0.22 + d.id) * 5.5 : 0;
-        ctx.strokeStyle = '#334155'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(x - 3, y + 10); ctx.lineTo(x - 4 + stride, y + 22); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + 3, y + 10); ctx.lineTo(x + 4 - stride, y + 22); ctx.stroke();
-
-        ctx.fillStyle = d.shirt;
-        ctx.beginPath(); ctx.roundRect(x - 7.5, y - 4, 15, 16, 4); ctx.fill();
-
-        ctx.fillStyle = '#fcd34d';
-        ctx.beginPath(); ctx.arc(x, y - 11, 6.8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = d.hair;
-        ctx.beginPath(); ctx.arc(x, y - 13.5, 6.8, Math.PI, Math.PI * 2); ctx.fill();
-
-        const armW = isActive ? Math.sin(t * 0.2 + d.id) * 5 : 1;
-        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 2.4;
-        ctx.beginPath(); ctx.moveTo(x - 7.5, y - 1); ctx.lineTo(x - 13, y + 5 - armW); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + 7.5, y - 1); ctx.lineTo(x + 13, y + 5 + armW); ctx.stroke();
-
-        // Name Tag ABOVE Head!
-        ctx.font = 'bold 7.5px sans-serif';
-        const nw = ctx.measureText(d.name + (isDone ? ' ✓' : '')).width + 8;
-        ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
-        ctx.beginPath(); ctx.roundRect(x - nw / 2, y - 28, nw, 11, 4); ctx.fill();
-        ctx.strokeStyle = badgeCol; ctx.lineWidth = 1; ctx.stroke();
-        ctx.fillStyle = badgeCol; ctx.textAlign = 'center';
-        ctx.fillText(d.name + (isDone ? ' ✓' : ''), x, y - 20);
-      }}
-
-      function frame() {{
-        t += 1;
-        ctx.clearRect(0, 0, 520, 252);
-        const grd = ctx.createLinearGradient(0, 0, 0, 252);
-        grd.addColorStop(0, '#0a1329'); grd.addColorStop(1, '#020617');
-        ctx.fillStyle = grd; ctx.fillRect(0, 0, 520, 252);
-
-        // Main Office Floor + Right-Side DONE CORNER
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)'; ctx.lineWidth = 1;
-        ctx.strokeRect(8, 34, 384, 210);
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
-        ctx.fillRect(398, 34, 114, 210);
-        ctx.strokeStyle = '#10b981'; ctx.strokeRect(398, 34, 114, 210);
-        ctx.fillStyle = '#34d399'; ctx.font = 'bold 8.5px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('✅ DONE CORNER', 455, 48);
-
-        // Draw Office Desks
-        for (let d of devs) {{
-          ctx.fillStyle = '#0f172a'; ctx.fillRect(d.deskX - 20, d.deskY + 12, 40, 12);
-          ctx.strokeStyle = 'rgba(56,189,248,0.35)'; ctx.strokeRect(d.deskX - 20, d.deskY + 12, 40, 12);
-        }}
-
-        // Determine Done vs Active vs Standby for all 8 AI Devs
-        const doneThreshold = Math.min(8, doneCount * 2);
-        let doneSlot = 0;
-        for (let i = 0; i < devs.length; i++) {{
-          const d = devs[i];
-          const isDone = (i < doneThreshold);
-          const isActive = (!isDone && i <= doneThreshold + 1);
-          if (isDone) {{
-            const col = doneSlot % 2;
-            const row = Math.floor(doneSlot / 2);
-            const sx = 428 + col * 54;
-            const sy = 78 + row * 44;
-            drawHuman(d, sx, sy, false, false, true);
-            doneSlot++;
-          }} else if (isActive) {{
-            const wx = d.deskX + Math.sin(t * 0.04 + i) * 26;
-            const wy = d.deskY + Math.cos(t * 0.03 + i) * 6;
-            drawHuman(d, wx, wy, true, true, false);
-            drawSpeech(wx, wy, d.talk, '#fde047');
-          }} else {{
-            drawHuman(d, d.deskX, d.deskY, false, false, false);
-          }}
-        }}
-
-        // Top HUD Banner
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-        ctx.fillRect(8, 6, 504, 22);
-        ctx.strokeStyle = '#38bdf8'; ctx.strokeRect(8, 6, 504, 22);
-        ctx.fillStyle = '#fde68a'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('HUMAN AI STUDIO | ' + fid + ' | ' + msg, 16, 20);
-
-        requestAnimationFrame(frame);
-      }}
-      frame();
-    }})();
-    </script>
-    """
-    components.html(scene_html, height=260)
-
-def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
-    """Display 1 (3D Cartoon Factory Movie + Live Fetched Visual Icons) & Display 3 (Cross-Sync Steps)."""
-    factory_id = project_bus.get("factory_id", "AUTO")
-    boss_msg = project_bus.get("boss_status", "Standing by...")
-    radar_msg = project_bus.get("radar_status", "Scanning pipeline...")
-    repair_msg = project_bus.get("repair_status", "Kimi Self-Repair ready.")
-    human_note = project_bus.get("human_brain_note", "Chief Human Developer Brain standing by...")
-    cross_check = project_bus.get("cross_check_msg", "All 16 departments synced on Shared Project Bus.")
-
-    done_cnt = sum(1 for s in stages if s.get("status") == "done")
-    run_idx = next((i for i, s in enumerate(stages) if s.get("status") == "running"), done_cnt)
-
-    with cmd_slot.container():
-        render_live_assembly_studio(factory_id, project_bus.get("app_title","Nexus Project"), project_bus.get("user_prompt",""), resolve_lane_id_and_specs(project_bus.get("user_prompt",""), factory_id), PAINT_4_COLORS[done_cnt % 4], project_bus.get("size_tier", APK_SIZE_TIERS[2]), load_json_file("assembly_studio_state.json", {}))
-        fetched_icons = project_bus.get("fetched_icons", [])
-        icons_html = ""
-        if fetched_icons:
-            cards = []
-            for ic in [x for x in fetched_icons if factory_id != "GAMING_FACTORY_01" or not any(b in x.get("name","").lower() for b in ("shopping","cart","bag","store","receipt","wallet"))][:6]:
-                b64_s = base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8")
-                short_n = ic["name"].split(":")[-1][:12]
-                cards.append(f'<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;text-align:center;min-width:58px;"><img src="data:image/svg+xml;base64,{b64_s}" width="26" height="26"/><div style="font-size:8.5px;color:#cbd5e1;margin-top:2px;">{short_n}</div></div>')
-            icons_html = f'<div style="margin:6px 0 8px 0;"><div style="font-size:10.5px;color:#38bdf8;font-weight:700;margin-bottom:4px;">Live Open-Source Icons Pulled From Web ({factory_id}):</div><div style="display:flex;gap:6px;overflow-x:auto;">{"".join(cards)}</div></div>'
-        st.markdown(f"""{icons_html}<div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:8px;">
-  <div style="background:rgba(15,23,42,0.95);border:1px solid #8b5cf6;border-radius:10px;padding:8px 10px;font-size:11px;color:#ddd6fe;"><strong style="color:#a78bfa;">Chief Human Dev Brain (GPT-OSS 120B / Llama 90B):</strong> {human_note}</div>
-  <div style="background:rgba(15,23,42,0.95);border:1px solid #38bdf8;border-radius:10px;padding:8px 10px;font-size:11px;color:#bae6fd;"><strong style="color:#38bdf8;">Boss + Radar:</strong> {boss_msg} | {radar_msg}</div>
-  <div style="background:rgba(15,23,42,0.95);border:1px solid #f59e0b;border-radius:10px;padding:8px 10px;font-size:11px;color:#fef3c7;"><strong style="color:#fbbf24;">Kimi Step 16 Self-Repair:</strong> {repair_msg}</div>
-</div>""", unsafe_allow_html=True)
-
-    rows = ""
-    for stg in stages:
-        st_s = stg["status"]
-        ic = "✅" if st_s == "done" else ("⏳" if st_s == "running" else "⬜")
-        col = "#34d399" if st_s == "done" else ("#fbbf24" if st_s == "running" else "#94a3b8")
-        sync_tag = f"<div style='font-size:10px;color:#38bdf8;'>Synced: {stg['sync']}</div>" if stg.get("sync") else ""
-        note = f"<div style='font-size:10.5px;color:#cbd5e1;'>{stg['note']}</div>" if stg.get("note") else ""
-        rows += f"<div style='background:rgba(15,23,42,0.9);border:1px solid #1e293b;border-radius:10px;padding:7px 10px;margin-bottom:4px;display:flex;gap:8px;align-items:flex-start;'><span style='font-size:14px;'>{ic}</span><div><div style='font-size:11.5px;font-weight:700;color:{col};'>{stg['title']}</div>{sync_tag}{note}</div></div>"
-    sync_slot.markdown(rows, unsafe_allow_html=True)
-
-def generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, icon_svg, fetched_icons=None):
-    """Builds a real playable HTML5/Three.js preview with Bot Auto-Test -> Self-Play button + real Iconify SVGs."""
-    b64_ic = base64.b64encode(icon_svg.encode("utf-8")).decode("utf-8")
-    pal = design_doc.get("palette", {})
-    is_game = (factory_id == "GAMING_FACTORY_01")
-    ic_b64s = [base64.b64encode(ic["svg"].encode("utf-8")).decode("utf-8") for ic in (fetched_icons or [])[:4]]
-    prev_sys = (
-        "You are a Senior Playable App & Game Prototyper building a 296x540 interactive HTML5+CSS3+JS mobile frame.\n"
-        "STRICT RULES:\n"
-        "1. Output ONLY raw HTML+CSS+JS (NO markdown fences).\n"
-        "2. Use ONLY the owner's brand name and prompt — ZERO third-party brand names.\n"
-        "3. Start in '🤖 Bot Auto-Testing' mode for 4 seconds (auto-steering/auto-playing or auto-filling sample data), with a glowing '🎮 Self-Play / Take Control' button so the user can take over immediately.\n"
-        "4. Include a real <canvas> game loop with Target Goal, Level 1->2->3 Model Unlocks, Win/Lose/Retry (if GAMING), OR interactive Add Entry + Chart + Razorpay-Ready Checkout + Profile (if MARKET).\n"
-        "5. Embed <img src=\"__APP_ICON__\" width=\"32\" height=\"32\" style=\"border-radius:10px;\"/> and optionally __ICON_0__, __ICON_1__."
-    )
-    usr_p = f"Brand: {app_title}\nFactory: {factory_id}\nPrompt: {user_prompt[:850]}\nPalette: {json.dumps(pal)}\nDesign: {json.dumps(design_doc)[:950]}"
-    raw_html, _, _ = call_specialist_ai("live_preview", prev_sys, usr_p, max_tokens=3600)
-    if raw_html and "<div" in raw_html.lower() and ("<script" in raw_html.lower() or "onclick" in raw_html.lower()) and ("<canvas" in raw_html.lower() or not is_game):
-        out = raw_html.replace("__APP_ICON__", f"data:image/svg+xml;base64,{b64_ic}")
-        for idx, b_s in enumerate(ic_b64s):
-            out = out.replace(f"__ICON_{idx}__", f"data:image/svg+xml;base64,{b_s}")
-        return out
-    return ""
-
-def render_live_mobile_preview(locked_bus):
-    """Display 2: Guaranteed Real Playable Preview (Bot Auto-Test -> Self-Play Button) for ANY Gaming or Market Genre."""
-    ai_html = locked_bus.get("preview_html", "")
-    if ai_html:
-        components.html(f"<div style='display:flex;justify-content:center;'>{ai_html}</div>", height=575, scrolling=True)
-        return
-
-    dd = locked_bus.get("design_doc", {})
-    pal = dd.get("palette", {})
-    bg = pal.get("bg", "#0B1120")
-    surf = pal.get("surface", "#162032")
-    prim = pal.get("primary", "#E11D48" if locked_bus.get("app_type") == "GAMING" else "#4F46E5")
-    acc = pal.get("accent", "#F59E0B" if locked_bus.get("app_type") == "GAMING" else "#10B981")
-    txt = pal.get("text", "#F8FAFC")
-    title = locked_bus.get("app_title", "Brand App")
-    tagline = dd.get("tagline", "Smart Interactive Experience")
-    is_game = (locked_bus.get("factory_id") == "GAMING_FACTORY_01")
-    b64_ic = base64.b64encode(locked_bus["icon_svg"].encode("utf-8")).decode("utf-8")
-    low_p = (title + " " + locked_bus.get("user_prompt", "")).lower()
-
-    if re.search(r'\b(truck|bus|wheel|wheels|highway|drive|driving|car|race|tipper|tractor)\b', low_p):
-        game_mode = "DRIVE"
-        models_js = '["Bharat Cargo Truck", "Deluxe Sleeper Bus", "18-Wheeler Rig"]'
-        action_lbl = "⚡ NITRO BOOST"
-    elif re.search(r'\b(construction|excavator|digging|crane|mining|jcb|loader)\b', low_p):
-        game_mode = "CONSTRUCTION"
-        models_js = '["JCB Excavator", "Heavy Mining Dumper", "Mega Tower Crane"]'
-        action_lbl = "⛏️ DIG"
-    elif any(k in low_p for k in ["cricket", "bat", "xi", "pitch", "match"]):
-        game_mode = "CRICKET"
-        models_js = '["Street Bat", "Pro Willow", "Champion Gold Bat"]'
-        action_lbl = "🏏 HIT SIX!"
-    else:
-        game_mode = "ARCADE"
-        models_js = '["Starter Gear", "Turbo Pro", "Apex Legend"]'
-        action_lbl = "⚡ POWER PULSE"
-
-    fetched_ics = locked_bus.get("fetched_icons", [])
-    ic0_b64 = base64.b64encode(fetched_ics[0]["svg"].encode("utf-8")).decode("utf-8") if fetched_ics else b64_ic
-
-    fallback_html = f"""
-    <div style="display:flex;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-      <div style="width:298px;height:560px;background:{bg};border:4px solid #334155;border-radius:34px;box-shadow:0 20px 45px rgba(0,0,0,0.78);overflow:hidden;display:flex;flex-direction:column;color:{txt};position:relative;">
-        <div id="topChrome" style="display:{'none' if is_game else 'block'};">
-          <div style="height:18px;background:#020617;display:flex;justify-content:center;align-items:center;"><div style="width:64px;height:8px;background:#1e293b;border-radius:999px;"></div></div>
-          <div style="padding:8px 10px;background:linear-gradient(135deg,{prim},{surf});display:flex;align-items:center;gap:7px;">
-            <img src="data:image/svg+xml;base64,{b64_ic}" width="30" height="30" style="border-radius:8px;border:1px solid rgba(255,255,255,0.3);"/>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{title}</div>
-              <div style="font-size:8.5px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{tagline}</div>
-            </div>
-            <button onclick="openSheet('wallet')" style="background:rgba(0,0,0,0.35);border:1px solid {acc};color:#fff;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:700;cursor:pointer;">₹<span id="topVal">2450</span></button>
-            <button onclick="openSheet('profile')" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:23px;height:23px;font-size:10px;cursor:pointer;">👤</button>
-          </div>
-          <div style="background:#0f172a;padding:4px 9px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;">
-            <span id="botBannerM" style="font-size:9px;font-weight:700;color:#34d399;">🤖 AI Bot Testing Flow...</span>
-            <button id="takeCtrlBtnM" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:2px 8px;font-size:9px;font-weight:800;cursor:pointer;">🎮 Self-Test</button>
-          </div>
-        </div>
-        <div id="phoneBody" style="flex:1;padding:{'0' if is_game else '7px'};overflow-y:auto;position:relative;"></div>
-        <div id="phoneNav" style="background:{surf};padding:7px 5px;display:{'none' if is_game else 'flex'};justify-content:space-around;border-top:1px solid rgba(255,255,255,0.1);"></div>
-      </div>
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script>
-      const isGame = {'true' if is_game else 'false'};
-      const gameMode = '{game_mode}';
-      const models = {models_js};
-      let autoBot = true, score = 0, level = 1, lives = 3, xp = 1000, bal = 2450, vip = false, tab = 0, cat = 0;
-      let steerVal = 0, gasPressed = false, brakePressed = false, gear = 'D', camMode = 0, speed = 0;
-      let audioCtx = null, engOsc = null, engGain = null;
-      function _ensureAudio() {{
-        if (!audioCtx) {{
-          const AC = window.AudioContext || window.webkitAudioContext;
-          if (AC) audioCtx = new AC();
-        }}
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-        return audioCtx;
-      }}
-      function updateEngineAudio(spd) {{
-        if (autoBot || !audioCtx || audioCtx.state !== 'running') {{
-          if (engGain) engGain.gain.value = 0;
-          return;
-        }}
-        if (!engOsc) {{
-          engOsc = audioCtx.createOscillator();
-          engGain = audioCtx.createGain();
-          engOsc.type = 'sawtooth';
-          engOsc.frequency.value = 52;
-          engGain.gain.value = 0.03;
-          engOsc.connect(engGain); engGain.connect(audioCtx.destination);
-          engOsc.start();
-        }}
-        engOsc.frequency.value = 48 + spd * 0.95;
-        engGain.gain.value = spd > 2 ? 0.045 : 0.015;
-      }}
-      function playTruckHorn() {{
-        const ac = _ensureAudio();
-        if (!ac) return;
-        for (let f of [340, 425]) {{
-          const o = ac.createOscillator(), g = ac.createGain();
-          o.type = 'sawtooth'; o.frequency.value = f;
-          g.gain.setValueAtTime(0.11, ac.currentTime);
-          g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.38);
-          o.connect(g); g.connect(ac.destination);
-          o.start(); o.stop(ac.currentTime + 0.4);
-        }}
-      }}
-      function playUpiDing() {{
-        const ac = _ensureAudio();
-        if (!ac) return;
-        const o = ac.createOscillator(), g = ac.createGain();
-        o.type = 'sine'; o.frequency.setValueAtTime(880, ac.currentTime);
-        o.frequency.exponentialRampToValueAtTime(1320, ac.currentTime + 0.14);
-        g.gain.setValueAtTime(0.14, ac.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
-        o.connect(g); g.connect(ac.destination);
-        o.start(); o.stop(ac.currentTime + 0.36);
-      }}
-      let ledger = [{{title:'Opening Balance', amt:2450, t:'CR'}}, {{title:'Express Booking #1', amt:480, t:'CR'}}];
-
-      function toggleSelfPlay() {{
-        autoBot = !autoBot;
-        const b = document.getElementById('botBanner') || document.getElementById('botBannerM');
-        const btn = document.getElementById('takeCtrlBtn') || document.getElementById('takeCtrlBtnM');
-        if (b) {{ b.innerText = autoBot ? '🤖 Bot Auto-Play' : '🎮 Self-Play Active'; b.style.color = autoBot ? '#34d399' : '#fde047'; }}
-        if (btn) btn.innerText = autoBot ? '🎮 Self-Play' : '🤖 Bot';
-      }}
-
-      function renderGameShell() {{
-        document.getElementById('phoneBody').innerHTML = `
-          <div oncontextmenu="return false;" style="position:relative;width:100%;height:100%;background:#38bdf8;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;">
-            <div id="threeWrap" style="width:100%;height:100%;"></div>
-            <div style="position:absolute;top:10px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:center;pointer-events:auto;">
-              <div style="display:flex;align-items:center;gap:5px;background:rgba(2,6,23,0.68);backdrop-filter:blur(4px);padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,0.2);">
-                <img src="data:image/svg+xml;base64,{b64_ic}" width="20" height="20" style="border-radius:5px;"/>
-                <span style="font-size:9.5px;font-weight:800;">LVL <b id="topVal">1</b> • <b id="gScore" style="color:{acc};">0</b> XP</span>
-              </div>
-              <div style="display:flex;gap:4px;">
-                <button id="takeCtrlBtn" onclick="toggleSelfPlay()" style="background:{acc};color:#000;border:none;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;cursor:pointer;">🎮 Self-Play</button>
-                <button onclick="openSheet('gateway')" style="background:rgba(2,6,23,0.72);color:#fde047;border:1px solid #fde047;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:800;cursor:pointer;">👑 VIP</button>
-              </div>
-            </div>
-            <div style="position:absolute;top:40px;left:10px;background:rgba(2,6,23,0.58);padding:2px 8px;border-radius:8px;font-size:9px;font-weight:700;">
-              <span id="botBanner" style="color:#34d399;">🤖 Bot Auto-Play</span> • <span id="gModel" style="color:#7dd3fc;">${{models[0]}}</span>
-            </div>
-            <button onclick="camMode=(camMode+1)%3;" style="position:absolute;top:40px;right:10px;background:rgba(2,6,23,0.65);color:#fff;border:1px solid rgba(255,255,255,0.35);border-radius:8px;padding:3px 7px;font-size:9px;font-weight:700;cursor:pointer;">🎥 Cam</button>
-            <div id="gBanner" style="position:absolute;top:66px;left:50%;transform:translateX(-50%);font-size:9.5px;font-weight:800;color:#fde047;text-shadow:0 1px 4px #000;white-space:nowrap;"></div>
-            <div style="position:absolute;bottom:16px;left:12px;">
-              <div id="wheelSvg" style="width:82px;height:82px;border-radius:50%;border:7px solid rgba(255,255,255,0.72);background:rgba(15,23,42,0.25);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.4);cursor:grab;">
-                <div style="width:100%;height:6px;background:rgba(255,255,255,0.75);"></div>
-                <div style="position:absolute;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,0.85);"></div>
-              </div>
-            </div>
-            <div style="position:absolute;bottom:62px;right:12px;background:rgba(2,6,23,0.72);padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;color:#38bdf8;border:1px solid rgba(56,189,248,0.4);"><span id="spdHud">0</span> km/h</div>
-            <div style="position:absolute;bottom:14px;right:10px;display:flex;align-items:flex-end;gap:5px;">
-              <button onclick="playTruckHorn();" style="width:34px;height:32px;border:1px solid #f59e0b;border-radius:50%;background:rgba(2,6,23,0.58);color:#fde047;font-weight:900;font-size:11px;">📢</button>
-              <button onclick="gear=(gear==='D'?'R':'D');this.innerText=gear;" style="width:28px;height:32px;border:1px solid rgba(255,255,255,0.5);border-radius:50%;background:rgba(2,6,23,0.52);color:{acc};font-weight:900;font-size:11px;">D</button>
-              <button onmousedown="if(autoBot)toggleSelfPlay();brakePressed=true;" ontouchstart="if(autoBot)toggleSelfPlay();brakePressed=true;" onmouseup="brakePressed=false;" ontouchend="brakePressed=false;" style="width:32px;height:40px;border:1px solid rgba(239,68,68,0.8);border-radius:7px;background:rgba(127,29,29,0.48);color:#fff;font-weight:800;font-size:9px;">BRK</button>
-              <button onmousedown="_ensureAudio();if(autoBot)toggleSelfPlay();gasPressed=true;" ontouchstart="_ensureAudio();if(autoBot)toggleSelfPlay();gasPressed=true;" onmouseup="gasPressed=false;" ontouchend="gasPressed=false;" style="width:34px;height:56px;border:1px solid rgba(16,185,129,0.85);border-radius:7px;background:rgba(6,95,70,0.52);color:#fff;font-weight:800;font-size:9px;">GAS</button>
-            </div>
-          </div>`;
-        initThreeScene();
-      }}
-
-      function initThreeScene() {{
-        const wrap = document.getElementById('threeWrap');
-        if (!wrap || typeof THREE === 'undefined') return;
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x60a5fa);
-        scene.fog = new THREE.Fog(0x93c5fd, 28, 125);
-        const camera = new THREE.PerspectiveCamera(62, wrap.clientWidth / wrap.clientHeight, 0.1, 180);
-        const renderer = new THREE.WebGLRenderer({{ antialias: true }});
-        renderer.setSize(wrap.clientWidth, wrap.clientHeight);
-        renderer.shadowMap.enabled = true;
-        wrap.innerHTML = '';
-        wrap.appendChild(renderer.domElement);
-
-        scene.add(new THREE.HemisphereLight(0xe0f2fe, 0x365314, 0.95));
-        const sun = new THREE.DirectionalLight(0xfffbeb, 1.25);
-        sun.position.set(14, 28, 14);
-        sun.castShadow = true;
-        scene.add(sun);
-
-        // Daytime Ground, Textured Highway & Shoulders
-        function makeGrainTex(baseCol, speckCol, repX, repY) {{
-          const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
-          const c2 = cv.getContext('2d'); c2.fillStyle = baseCol; c2.fillRect(0, 0, 128, 128);
-          c2.fillStyle = speckCol;
-          for (let i = 0; i < 900; i++) c2.fillRect(Math.random()*128, Math.random()*128, 2, 2);
-          const tx = new THREE.CanvasTexture(cv);
-          tx.wrapS = THREE.RepeatWrapping; tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(repX, repY);
-          return tx;
-        }}
-        const grassTex = makeGrainTex(gameMode === 'CONSTRUCTION' ? '#6b4c35' : '#365314', '#1a2e05', 24, 24);
-        const roadTex = makeGrainTex('#28303d', '#475569', 2, 28);
-        const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 280), new THREE.MeshStandardMaterial({{ map: grassTex, roughness: 0.95 }}));
-        ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 280), new THREE.MeshStandardMaterial({{ map: roadTex, bumpMap: roadTex, bumpScale: 0.12, roughness: 0.85 }}));
-        road.rotation.x = -Math.PI / 2; road.position.y = 0.02; road.receiveShadow = true; scene.add(road);
-        for (let sx of [-5.6, 5.6]) {{
-          const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 280), new THREE.MeshBasicMaterial({{ color: 0xf8fafc }}));
-          edge.rotation.x = -Math.PI / 2; edge.position.set(sx, 0.03, 0); scene.add(edge);
-        }}
-
-        const dashes = [];
-        for (let z = -130; z < 40; z += 8) {{
-          const d = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 3.4), new THREE.MeshBasicMaterial({{ color: 0xfacc15 }}));
-          d.position.set(0, 0.04, z); scene.add(d); dashes.push(d);
-        }}
-
-        // Distant 3D Mountains
-        for (let mx = -70; mx <= 70; mx += 28) {{
-          const mt = new THREE.Mesh(new THREE.ConeGeometry(18 + (Math.abs(mx)%7), 22 + (Math.abs(mx)%10), 5), new THREE.MeshStandardMaterial({{ color: 0x475569 }}));
-          mt.position.set(mx, 10, -110); scene.add(mt);
-        }}
-
-        // 3D Trees & Roadside Poles
-        const props = [];
-        for (let z = -120; z < 30; z += 12) {{
-          for (let side of [-1, 1]) {{
-            const tree = new THREE.Group();
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 2.2, 8), new THREE.MeshStandardMaterial({{ color: 0x78350f }}));
-            trunk.position.y = 1.1; tree.add(trunk);
-            const crown = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.4, 8), new THREE.MeshStandardMaterial({{ color: 0x15803d }}));
-            crown.position.y = 3.2; tree.add(crown);
-            tree.position.set(side * (9 + (Math.abs(z)%3)), 0, z);
-            scene.add(tree); props.push(tree);
-          }}
-        }}
-
-        // Detailed Multi-Part Indian Cargo Truck (Immediate Frame 1 + Real GLB Upgrade via GLTFLoader)
-        const truck = new THREE.Group();
-        const fallbackRig = new THREE.Group();
-        const bed = new THREE.Mesh(new THREE.BoxGeometry(2.15, 1.25, 3.3), new THREE.MeshStandardMaterial({{ color: 0xea580c }}));
-        bed.position.set(0, 1.35, 0.75); bed.castShadow = true; fallbackRig.add(bed);
-        const cab = new THREE.Mesh(new THREE.BoxGeometry(2.05, 1.45, 1.55), new THREE.MeshStandardMaterial({{ color: 0xdc2626 }}));
-        cab.position.set(0, 1.45, -1.7); cab.castShadow = true; fallbackRig.add(cab);
-        const glass = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.62, 0.1), new THREE.MeshStandardMaterial({{ color: 0x38bdf8, metalness: 0.6, roughness: 0.1 }}));
-        glass.position.set(0, 1.72, -2.46); fallbackRig.add(glass);
-        for (let hx of [-0.72, 0.72]) {{
-          const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.1), new THREE.MeshBasicMaterial({{ color: 0xfef08a }}));
-          hl.position.set(hx, 0.95, -2.48); fallbackRig.add(hl);
-        }}
-        const wheels = [];
-        for (let wx of [-1.08, 1.08]) {{
-          for (let wz of [-1.75, 0.35, 1.65]) {{
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.36, 16), new THREE.MeshStandardMaterial({{ color: 0x0f172a }}));
-            w.rotation.z = Math.PI / 2; w.position.set(wx, 0.46, wz);
-            fallbackRig.add(w); wheels.push(w);
-          }}
-        }}
-        truck.add(fallbackRig);
-        scene.add(truck);
-
-        // Load real Open-Source CC0 3D Truck GLB via GLTFLoader
-        if (typeof THREE.GLTFLoader !== 'undefined') {{
-          try {{
-            const gltfLoader = new THREE.GLTFLoader();
-            gltfLoader.load('https://raw.githubusercontent.com/sarfealam2246-coder/3d-assets/main/models/vehicle.glb', function(gltf) {{
-              const model = gltf.scene;
-              model.scale.set(0.85, 0.85, 0.85);
-              model.rotation.y = Math.PI;
-              truck.remove(fallbackRig);
-              truck.add(model);
-            }});
-          }} catch (e) {{}}
-        }}
-
-        // AI Oncoming Traffic Vehicle
-        const aiCar = new THREE.Group();
-        const aiBody = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 3.6), new THREE.MeshStandardMaterial({{ color: 0x2563eb }}));
-        aiBody.position.y = 0.85; aiCar.add(aiBody);
-        aiCar.position.set(-2.6, 0, -75);
-        scene.add(aiCar);
-
-        // Collectible 3D Gold Cargo Crate
-        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
-        crate.position.set(2.2, 0.7, -36); scene.add(crate);
-
-        // Multi-Touch Independent Steering (by touch.identifier!) + 360-Degree Orbit Camera
-        let wheelTouchId = null, wheelCx = 0, wheelCy = 0, wheelActive = false;
-        let orbitTouchId = null, orbitYaw = 0, orbitPitch = 0.35, orbitDrag = false, lastOx = 0, lastOy = 0;
-        const wheelEl = document.getElementById('wheelSvg');
-        if (wheelEl) {{
-          wheelEl.addEventListener('touchstart', (ev) => {{
-            ev.preventDefault(); ev.stopPropagation();
-            if (autoBot) toggleSelfPlay();
-            const tc = ev.changedTouches[0];
-            wheelTouchId = tc.identifier; wheelActive = true;
-            const r = wheelEl.getBoundingClientRect();
-            wheelCx = r.left + r.width / 2; wheelCy = r.top + r.height / 2;
-          }}, {{ passive: false }});
-          wheelEl.addEventListener('mousedown', (ev) => {{
-            ev.preventDefault(); ev.stopPropagation();
-            if (autoBot) toggleSelfPlay();
-            wheelActive = true;
-            const r = wheelEl.getBoundingClientRect();
-            wheelCx = r.left + r.width / 2; wheelCy = r.top + r.height / 2;
-          }});
-        }}
-        wrap.addEventListener('touchstart', (ev) => {{
-          const tc = ev.changedTouches[0];
-          orbitTouchId = tc.identifier; orbitDrag = true;
-          lastOx = tc.clientX; lastOy = tc.clientY;
-        }}, {{ passive: true }});
-        wrap.addEventListener('mousedown', (ev) => {{ orbitDrag = true; lastOx = ev.clientX; lastOy = ev.clientY; }});
-        window.addEventListener('touchmove', (ev) => {{
-          for (let tc of ev.changedTouches) {{
-            if (wheelTouchId !== null && tc.identifier === wheelTouchId) {{
-              steerVal = Math.max(-1, Math.min(1, (tc.clientX - wheelCx) / 38));
-            }} else if (orbitTouchId !== null && tc.identifier === orbitTouchId) {{
-              orbitYaw -= (tc.clientX - lastOx) * 0.012;
-              orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (tc.clientY - lastOy) * 0.008));
-              lastOx = tc.clientX; lastOy = tc.clientY;
-            }}
-          }}
-        }}, {{ passive: true }});
-        window.addEventListener('mousemove', (ev) => {{
-          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (ev.clientX - wheelCx) / 38)); }}
-          else if (orbitDrag) {{ orbitYaw -= (ev.clientX - lastOx) * 0.012; orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (ev.clientY - lastOy) * 0.008)); lastOx = ev.clientX; lastOy = ev.clientY; }}
-        }});
-        window.addEventListener('touchend', (ev) => {{
-          for (let tc of ev.changedTouches) {{
-            if (tc.identifier === wheelTouchId) {{ wheelTouchId = null; wheelActive = false; steerVal = 0; }}
-            if (tc.identifier === orbitTouchId) {{ orbitTouchId = null; orbitDrag = false; }}
-          }}
-        }});
-        window.addEventListener('mouseup', () => {{ wheelActive = false; steerVal = 0; orbitDrag = false; }});
-
-        let tx = 1.6;
-        function animate() {{
-          if (!document.getElementById('threeWrap')) return;
-          if (autoBot) {{
-            speed = 64;
-            steerVal = Math.max(-1, Math.min(1, (crate.position.x - tx) * 0.42));
-          }} else {{
-            if (gasPressed) speed = Math.min(98, speed + 2.4);
-            else if (brakePressed) speed = Math.max(0, speed - 4.2);
-            else speed = Math.max(0, speed - 0.8);
-          }}
-          const dir = (gear === 'R' ? -1 : 1);
-          const dz = (speed * 0.013) * dir;
-          tx = Math.max(-3.6, Math.min(3.6, tx + steerVal * 0.09));
-          truck.position.x = tx; truck.rotation.y = -steerVal * 0.14;
-          wheels.forEach(w => w.rotation.x -= dz * 0.85);
-
-          dashes.forEach(d => {{ d.position.z += dz; if (d.position.z > 25) d.position.z -= 170; if (d.position.z < -145) d.position.z += 170; }});
-          props.forEach(p => {{ p.position.z += dz; if (p.position.z > 25) p.position.z -= 150; if (p.position.z < -125) p.position.z += 150; }});
-          aiCar.position.z += (dz + 0.35);
-          if (aiCar.position.z > 20) {{ aiCar.position.z = -95; aiCar.position.x = -2.6; }}
-
-          crate.position.z += dz; crate.rotation.y += 0.04;
-          if (Math.abs(crate.position.z) < 2.4 && Math.abs(crate.position.x - tx) < 2.0) {{
-            score += 25; xp += 25;
-            if (score >= level * 100 && level < 3) {{ level++; document.getElementById('gBanner').innerText = '🎉 UNLOCKED: ' + models[level-1]; }}
-            crate.position.z = -48; crate.position.x = (Math.random() - 0.5) * 6;
-          }}
-          if (crate.position.z > 15) {{ crate.position.z = -48; crate.position.x = (Math.random() - 0.5) * 6; }}
-
-          if (camMode === 0) {{
-            const dist = 9.0;
-            const camX = tx + Math.sin(orbitYaw) * dist;
-            const camZ = Math.cos(orbitYaw) * dist;
-            const camY = 1.6 + orbitPitch * 7.5;
-            camera.position.set(camX, camY, camZ);
-            camera.lookAt(tx, 1.2, -2);
-          }} else if (camMode === 1) {{
-            camera.position.set(tx, 2.25, -1.6); camera.lookAt(tx, 1.6, -24);
-          }} else {{
-            camera.position.set(tx, 14, 10); camera.lookAt(tx, 0, -10);
-          }}
-
-          const wh = document.getElementById('wheelSvg'); if (wh) wh.style.transform = `rotate(${{steerVal * 52}}deg)`;
-          const sh = document.getElementById('spdHud'); if (sh) sh.innerText = Math.round(speed);
-          const gs = document.getElementById('gScore'); if (gs) gs.innerText = score;
-          const gm = document.getElementById('gModel'); if (gm) gm.innerText = models[Math.min(2, level - 1)];
-          const tv = document.getElementById('topVal'); if (tv) tv.innerText = level;
-
-          if (typeof updateEngineAudio === 'function') updateEngineAudio(speed);
-          renderer.render(scene, camera);
-          requestAnimationFrame(animate);
-        }}
-        animate();
-      }}
-
-      function renderMarketShell() {{
-        const tabs = ['Home', 'Add', 'Passbook', 'Profile'];
-        document.getElementById('phoneNav').innerHTML = tabs.map((t, i) => `<button onclick="if(autoBot)toggleSelfPlay();tab=${{i}};renderMarketShell();" style="background:${{tab===i?'{prim}':'transparent'}};color:{txt};border:none;padding:4px 8px;border-radius:8px;font-size:10px;font-weight:700;cursor:pointer;">${{t}}</button>`).join('');
-        const b = document.getElementById('phoneBody');
-        document.getElementById('topVal').innerText = bal;
-        if (tab === 1) {{
-          b.innerHTML = `<div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
-            <div style="font-size:13px;font-weight:800;margin-bottom:8px;">➕ Add Entry / Order</div>
-            <input id="eTitle" value="Order #${{ledger.length+1}}" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:6px;"/>
-            <input id="eAmt" type="number" value="450" style="width:92%;padding:7px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff;margin-bottom:8px;"/>
-            <button onclick="const t=document.getElementById('eTitle').value;const a=Number(document.getElementById('eAmt').value||0);bal+=a;ledger.unshift({{title:t,amt:a,t:'CR'}});tab=0;renderMarketShell();" style="width:100%;padding:9px;border:none;border-radius:9px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Save &amp; Update Graph</button>
-          </div>`;
-          return;
-        }}
-        const cats = ['All', 'Live', 'Deals', 'Vault'];
-        const catPills = cats.map((c, ci) => `<button onclick="cat=${{ci}};renderMarketShell();" style="flex:1;padding:4px 2px;border-radius:999px;border:1px solid ${{cat===ci?'{acc}':'rgba(255,255,255,0.18)'}};background:${{cat===ci?'{prim}':'{surf}'}};color:#fff;font-size:9.5px;font-weight:700;cursor:pointer;">${{c}}</button>`).join('');
-        b.innerHTML = `
-          <div style="display:flex;gap:4px;margin-bottom:6px;">${{catPills}}</div>
-          <input placeholder="🔍 Search services, records, deals..." style="width:93%;padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:#0f172a;color:#fff;font-size:10px;margin-bottom:7px;"/>
-          <div style="background:linear-gradient(135deg,{prim},{acc});border-radius:12px;padding:9px 10px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;">
-            <div><div style="font-size:9px;font-weight:700;color:#0f172a;">LIVE WALLET &amp; OFFERS</div><div style="font-size:17px;font-weight:900;color:#fff;">₹${{bal.toLocaleString()}}</div></div>
-            <button onclick="if(autoBot)toggleSelfPlay();openSheet('gateway');" style="padding:5px 9px;border:none;border-radius:8px;background:#0f172a;color:#fff;font-weight:800;font-size:9.5px;cursor:pointer;">⚡ Pay UPI</button>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px;">
-            <div onclick="tab=1;renderMarketShell();" style="background:{surf};border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:7px;cursor:pointer;"><span style="font-size:8px;background:#10b981;color:#000;padding:1px 5px;border-radius:4px;font-weight:800;">FAST</span><div style="font-size:11px;font-weight:800;margin-top:3px;">➕ Quick Entry</div></div>
-            <div onclick="openSheet('wallet');" style="background:{surf};border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:7px;cursor:pointer;"><span style="font-size:8px;background:#f59e0b;color:#000;padding:1px 5px;border-radius:4px;font-weight:800;">UP TO 25% OFF</span><div style="font-size:11px;font-weight:800;margin-top:3px;">💳 Passbook</div></div>
-          </div>
-          <div style="display:flex;gap:5px;margin-bottom:7px;">
-            <div style="flex:1;background:rgba(244,63,94,0.18);border:1px solid #f43f5e;border-radius:8px;padding:4px 6px;font-size:9px;font-weight:800;">🎟️ Flat ₹50 Off</div>
-            <div style="flex:1;background:rgba(16,185,129,0.18);border:1px solid #10b981;border-radius:8px;padding:4px 6px;font-size:9px;font-weight:800;">🚀 Zero Fee Cloud</div>
-          </div>
-          <div style="background:{surf};border-radius:10px;padding:7px;">
-            <div style="display:flex;justify-content:space-between;font-size:9.5px;font-weight:700;margin-bottom:4px;"><span>📊 Live Growth (${{ledger.length}} txns)</span><span style="color:#34d399;">78% Target</span></div>
-            <div style="height:6px;background:#0f172a;border-radius:999px;overflow:hidden;margin-bottom:5px;"><div style="width:78%;height:100%;background:linear-gradient(90deg,{prim},{acc});"></div></div>
-            <div style="display:flex;align-items:flex-end;gap:5px;height:30px;">${{ledger.slice(0,5).map((x,idx)=>`<div style="flex:1;background:{acc};height:${{Math.min(28,10+idx*4)}}px;border-radius:3px;"></div>`).join('')}}</div>
-          </div>`;
-      }}
-
-      function openSheet(kind) {{
-        const b = document.getElementById('phoneBody');
-        const backFn = isGame ? 'renderGameShell()' : 'renderMarketShell()';
-        if (kind === 'gateway') {{
-          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1.5px solid {acc};border-radius:14px;padding:12px;">
-            <div style="font-size:13px;font-weight:800;color:{acc};">🔒 Razorpay-Ready Checkout</div>
-            <div style="font-size:11px;margin:6px 0;opacity:0.9;">Direct Owner Payment • UPI / Card / NetBanking</div>
-            <button onclick="playUpiDing();vip=true;bal+=500;xp+=200;${{backFn}};" style="width:100%;padding:10px;border:none;border-radius:10px;background:#10b981;color:#fff;font-weight:800;cursor:pointer;">Simulate Pay Success</button>
-            <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Back</button>
-          </div></div>`;
-        }} else if (kind === 'profile') {{
-          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1px solid {prim};border-radius:14px;padding:12px;">
-            <div style="font-size:14px;font-weight:800;">👤 Verified Profile</div>
-            <div style="font-size:11px;margin:6px 0;">Level: ${{level}} | Supabase Cloud Synced</div>
-            <button onclick="${{backFn}};" style="width:100%;padding:9px;border:none;border-radius:10px;background:{prim};color:#fff;font-weight:700;cursor:pointer;">Save &amp; Back</button>
-          </div></div>`;
-        }} else {{
-          b.innerHTML = `<div style="padding:12px;"><div style="background:{surf};border:1px solid {acc};border-radius:14px;padding:12px;">
-            <div style="font-size:14px;font-weight:800;">💳 Wallet &amp; Passbook</div>
-            <div style="font-size:12px;margin:6px 0;">Balance: ${'{isGame ? xp + " XP" : "₹" + bal}'}</div>
-            <button onclick="openSheet('gateway')" style="width:100%;padding:9px;border:none;border-radius:10px;background:{acc};color:#000;font-weight:800;cursor:pointer;">Open Checkout Gateway</button>
-            <button onclick="${{backFn}};" style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:10px;background:#334155;color:#fff;font-weight:700;cursor:pointer;">Close</button>
-          </div></div>`;
-        }}
-      }}
-
-      if (isGame) {{
-        renderGameShell();
-      }} else {{
-        renderMarketShell();
-        setInterval(() => {{
-          if (autoBot && document.getElementById('phoneBody') && tab === 0) {{
-            bal += 120;
-            ledger.unshift({{title:'Bot Auto-Test #'+ledger.length, amt:120, t:'CR'}});
-            renderMarketShell();
-          }}
-        }}, 3500);
-      }}
-    </script>
-    """
-    locked_bus["rendered_preview_html"] = fallback_html
-    components.html(fallback_html, height=575)
-
-# ==============================================================================
-# WORLD SCOUT BOT + CHIEF COMMANDER DEEP AUDIT (BACKGROUND THREAD + HEARTBEAT)
-# ==============================================================================
-def _extract_svg_inner(svg_txt):
-    """Extracts pure vector geometry (<path>,<circle>,<rect>,<polygon>,<g>) and viewBox from Iconify SVG."""
-    if not svg_txt or "<svg" not in svg_txt.lower():
-        return "0 0 24 24", '<circle cx="12" cy="12" r="9" fill="#38bdf8"/>'
-    vb_m = re.search(r"viewBox=[\'\"]([^\'\"]+)[\'\"]", svg_txt, flags=re.IGNORECASE)
-    vb = vb_m.group(1) if vb_m else "0 0 24 24"
-    inner = re.sub(r'^.*?<svg[^>]*>', '', svg_txt, flags=re.IGNORECASE | re.DOTALL)
-    inner = re.sub(r'</svg>.*$', '', inner, flags=re.IGNORECASE | re.DOTALL).strip()
-    inner = re.sub(r'currentColor', '#ffffff', inner)
-    return vb, (inner or '<circle cx="12" cy="12" r="9" fill="#38bdf8"/>')
-
-def build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=True):
-    """Play-Store-Grade 512x512 Pure-Vector 3D Emblem (Sunburst + Metallic Wings/Stars or Aurora Ring + Gloss + 3D Ribbon)."""
-    badge_words = re.sub(r'[^A-Za-z0-9 ]', '', app_title or "PRO").upper().split()
-    badge_txt = " ".join(badge_words[:2])[:11] or "PRO 3D"
-    ic_svg = fetched_icons[0]["svg"] if fetched_icons else ""
-    vb, inner = _extract_svg_inner(ic_svg)
-    try:
-        parts = [float(x) for x in vb.replace(",", " ").split()]
-        vw, vh = (parts[2], parts[3]) if len(parts) >= 4 and parts[2] > 0 and parts[3] > 0 else (24.0, 24.0)
-    except Exception:
-        vw, vh = 24.0, 24.0
-    scale = min(195.0 / vw, 195.0 / vh)
-    tx = 256.0 - (vw * scale) / 2.0
-    ty = 232.0 - (vh * scale) / 2.0
-
-    wings_and_stars = (
-        '<polygon points="256,256 60,150 90,195 45,215 95,245 55,275 135,285" fill="url(#gold3d)" opacity="0.92"/>'
-        '<polygon points="256,256 452,150 422,195 467,215 417,245 457,275 377,285" fill="url(#gold3d)" opacity="0.92"/>'
-        '<polygon points="156,74 162,90 179,90 165,100 170,116 156,106 142,116 147,100 133,90 150,90" fill="#fde047"/>'
-        '<polygon points="206,56 212,72 229,72 215,82 220,98 206,88 192,98 197,82 183,72 200,72" fill="#fde047"/>'
-        '<polygon points="256,46 263,65 283,65 267,77 273,96 256,84 239,96 245,77 229,65 249,65" fill="#fef08a"/>'
-        '<polygon points="306,56 312,72 329,72 315,82 320,98 306,88 292,98 297,82 283,72 300,72" fill="#fde047"/>'
-        '<polygon points="356,74 362,90 379,90 365,100 370,116 356,106 342,116 347,100 333,90 350,90" fill="#fde047"/>'
-    ) if is_game else (
-        '<circle cx="256" cy="236" r="142" fill="none" stroke="url(#gold3d)" stroke-width="10" opacity="0.88"/>'
-        '<circle cx="256" cy="236" r="122" fill="#0f172a" opacity="0.72" stroke="#ffffff" stroke-opacity="0.35" stroke-width="4"/>'
-    )
-
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">'
-        f'<defs>'
-        f'<radialGradient id="aurora3d" cx="50%" cy="38%" r="65%"><stop offset="0%" stop-color="{c2}"/><stop offset="55%" stop-color="{c1}"/><stop offset="100%" stop-color="#090d1a"/></radialGradient>'
-        f'<linearGradient id="gold3d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#b45309"/></linearGradient>'
-        f'<linearGradient id="rib3d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0f172a"/><stop offset="50%" stop-color="{c1}"/><stop offset="100%" stop-color="#0f172a"/></linearGradient>'
-        f'</defs>'
-        f'<rect width="512" height="512" rx="112" fill="url(#aurora3d)"/>'
-        f'<polygon points="256,236 0,60 95,0" fill="#ffffff" opacity="0.06"/><polygon points="256,236 512,60 417,0" fill="#ffffff" opacity="0.06"/>'
-        f'<polygon points="256,236 0,430 0,310" fill="#ffffff" opacity="0.05"/><polygon points="256,236 512,430 512,310" fill="#ffffff" opacity="0.05"/>'
-        f'<rect x="18" y="18" width="476" height="476" rx="98" fill="none" stroke="url(#gold3d)" stroke-width="8"/>'
-        f'{wings_and_stars}'
-        f'<polygon points="256,118 358,176 358,294 256,352 154,294 154,176" fill="#0b1120" opacity="0.92" stroke="url(#gold3d)" stroke-width="9"/><circle cx="256" cy="236" r="96" fill="#0f172a" opacity="0.85" stroke="#ffffff" stroke-opacity="0.4" stroke-width="3"/>'
-        f'<g transform="translate({tx+4:.1f},{ty+6:.1f}) scale({scale:.2f})" opacity="0.45">{inner}</g>'
-        f'<g transform="translate({tx:.1f},{ty:.1f}) scale({scale:.2f})">{inner}</g>'
-        f'<path d="M58 112 Q256 32 454 112" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" opacity="0.18"/>'
-        f'<polygon points="62,386 450,386 430,446 82,446" fill="url(#rib3d)" stroke="url(#gold3d)" stroke-width="5"/>'
-        f'<text x="258" y="427" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#000000" opacity="0.55" text-anchor="middle">{badge_txt}</text>'
-        f'<text x="256" y="424" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#ffffff" text-anchor="middle">{badge_txt}</text>'
-        f'</svg>'
-    )
-
-def fetch_github_top_starred_repos(query_text, is_game):
-    """World Scout Pass 1: Finds top-starred open-source Unity/Three.js/Flame/Material3 repos + real developer avatars."""
-    q_words = [w for w in re.findall(r'[a-zA-Z]{3,}', (query_text or "").lower()) if w not in ("build", "app", "make", "with", "using", "and", "the", "for", "pro", "free")]
-    topic = " ".join(q_words[:2]) or ("truck" if is_game else "wallet")
-    q = urllib.parse.quote(f"{topic} {'unity threejs game' if is_game else 'flutter material3'}")
-    url = f"https://api.github.com/search/repositories?q={q}&sort=stars&order=desc&per_page=5"
-    results = []
-    try:
-        data = github_api_request(url, method="GET", timeout=10)
-        for r in data.get("items", [])[:4]:
-            own = r.get("owner") or {}
-            results.append({
-                "name": r.get("full_name", ""),
-                "stars": r.get("stargazers_count", 0),
-                "desc": (r.get("description") or "")[:90],
-                "url": r.get("html_url", ""),
-                "owner_login": own.get("login", "dev"),
-                "owner_avatar": own.get("avatar_url", "")
-            })
-    except Exception:
-        pass
-    if not results:
-        results = [
-            {
-                "name": "mrdoob/three.js" if is_game else "flutter/samples",
-                "stars": 104000 if is_game else 17500,
-                "desc": "Open-Source 3D WebGL & Material 3 Architecture",
-                "url": "https://github.com/mrdoob/three.js" if is_game else "https://github.com/flutter/samples",
-                "owner_login": "mrdoob" if is_game else "flutter",
-                "owner_avatar": "https://avatars.githubusercontent.com/u/97088?v=4" if is_game else "https://avatars.githubusercontent.com/u/14101776?v=4"
-            }
-        ]
-    return results
-
-def _update_scout_state(job_id, updates):
-    st_obj = _SCOUT_JOBS.get(job_id) or load_json_file(SCOUT_STATE_FILE, {})
-    st_obj.update(updates)
-    _SCOUT_JOBS[job_id] = st_obj
-    save_json_file(SCOUT_STATE_FILE, st_obj)
-
-def run_world_scout_background(job_id, app_title, user_prompt, selected_factory):
-    """Deep multi-pass World Scout + Chief Commander Audit running safely in a background thread."""
-    try:
-        is_g = ("GAMING" in selected_factory) or any(k in (app_title + " " + user_prompt).lower() for k in ["game", "racing", "arcade", "11", "3d", "fantasy", "construct", "excavator", "truck", "cricket"])
-        fid = selected_factory if selected_factory in FACTORY_REGISTRY else ("GAMING_FACTORY_01" if is_g else "MARKET_FACTORY_02")
-
-        _update_scout_state(job_id, {
-            "pass_msg": "Pass 1/4: World Scout searching Top-Starred GitHub Repos...",
-            "factory_id": fid,
-            "workers_status": "STANDBY - Reading Scout Board (Waiting for Chief Commander ACCESS GRANTED)"
-        })
-        gh_repos = fetch_github_top_starred_repos(app_title + " " + user_prompt, is_g)
-        _update_scout_state(job_id, {
-            "gh_repos": gh_repos,
-            "pass_msg": f"Pass 2/4: World Scout studying real-world Play-Store mechanics ({fid})..."
-        })
-
-        web_sys = "You are World Scout Bot. Research how real-world Play-Store apps/games of this genre work (exact screens, controllers, levels/unlocks or charts/checkout). Give 4 concrete findings + 1 recommended hex palette (#bg, #surface, #primary, #accent)."
-        web_notes, web_m, _ = call_specialist_ai("design_brain", web_sys, f"Title: {app_title}\nPrompt: {user_prompt}\nTop GitHub Refs: {json.dumps(gh_repos)}", max_tokens=500)
-        _update_scout_state(job_id, {
-            "web_findings": web_notes or "Use tactile controls, progressive level/model unlocks, and verified Material 3 layout.",
-            "pass_msg": "Pass 3/4: Fetching Pure-Vector Iconify Assets & Palette..."
-        })
-
-        icons = fetch_live_iconify_icons(app_title + " " + user_prompt, fid)
-        _update_scout_state(job_id, {
-            "fetched_icons": icons,
-            "pass_msg": "Pass 4/4: Chief Quality Director auditing & issuing strict orders..."
-        })
-
-        chief_sys = (
-            "You are the Chief Quality Director sitting above 16 app/game workers. "
-            "Review the World Scout's Top-Star GitHub repos and real-world findings. "
-            "Issue a strict, non-negotiable Play-Store Blueprint so workers NEVER build cheap/generic drafts. "
-            "Output ONLY JSON: "
-            '{"palette": {"bg": "#0B1120", "surface": "#162032", "primary": "#2563EB", "accent": "#F59E0B", "text": "#F8FAFC"}, '
-            '"commander_order": "3-sentence strict directive for Designers, Logo Studio & Flutter Coders", '
-            '"access_status": "ACCESS GRANTED"}'
-        )
-        chief_raw, chief_m, _ = call_specialist_ai("reviewer", chief_sys, f"App: {app_title} ({fid})\nPrompt: {user_prompt}\nGitHub Top-Star: {json.dumps(gh_repos)}\nWorld Findings: {web_notes}", max_tokens=450)
-        chief_json = extract_json_object(chief_raw) or {}
-        pal = chief_json.get("palette") or {"bg": "#0B1120", "surface": "#162032", "primary": "#E11D48" if is_g else "#4F46E5", "accent": "#F59E0B" if is_g else "#10B981", "text": "#F8FAFC"}
-        cmd_order = chief_json.get("commander_order") or f"Build {app_title} strictly matching real-world {fid} standards with domain icons, playable mechanics/charts, and zero placeholders."
-
-        _update_scout_state(job_id, {
-            "status": "granted",
-            "pass_msg": "Chief Commander Audit Complete -> ACCESS GRANTED!",
-            "workers_status": "ACCESS GRANTED - 16 Workers Executing Chief Commander Blueprint",
-            "palette": pal,
-            "commander_order": f"[{chief_m or 'Chief Director'}] {cmd_order}",
-            "scout_brief": {
-                "gh_repos": gh_repos,
-                "web_findings": web_notes,
-                "fetched_icons": icons,
-                "palette": pal,
-                "commander_order": cmd_order
-            }
-        })
-    except Exception as e:
-        _update_scout_state(job_id, {"status": "error", "pass_msg": f"Scout Error: {str(e)[:120]}"})
-
-def render_scout_command_board(scout_st):
-    """Renders live World Scout findings, GitHub Stars, Colors, Icons & Chief Commander Access Gate on Display 1."""
-    if not scout_st:
-        return
-    stt = scout_st.get("status", "scouting")
-    w_stat = scout_st.get("workers_status", "STANDBY")
-    pass_msg = scout_st.get("pass_msg", "Scouting...")
-    gh_repos = scout_st.get("gh_repos", [])
-    pal = scout_st.get("palette", {})
-    cmd_ord = scout_st.get("commander_order", "Chief Commander reviewing World Scout findings before granting worker access...")
-    badge_col = "#10b981" if stt == "granted" else "#f59e0b"
-    repo_cards = []
-    for r in gh_repos[:3]:
-        av = r.get("owner_avatar") or ""
-        lg = r.get("owner_login") or r.get("name", "").split("/")[0]
-        img_tag = f"<img src='{av}' width='26' height='26' style='border-radius:50%;border:1.5px solid #38bdf8;object-fit:cover;'/>" if av else "<span style='font-size:16px;'>👨‍💻</span>"
-        repo_cards.append(f"<div style='display:flex;align-items:center;gap:8px;background:rgba(30,41,59,0.7);padding:5px 7px;border-radius:9px;margin-top:4px;'>{img_tag}<div style='min-width:0;'><div style='font-size:10px;color:#f8fafc;font-weight:700;'>@{lg} • ⭐ {r['stars']}</div><div style='font-size:9.5px;color:#38bdf8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'><a href='{r['url']}' style='color:#38bdf8;text-decoration:none;'>{r['name']}</a></div></div></div>")
-    repo_html = "".join(repo_cards) or "<div style='font-size:10px;color:#94a3b8;'>Scanning GitHub top-starred developers...</div>"
-    pal_html = "".join([f"<span style='display:inline-block;width:14px;height:14px;border-radius:4px;background:{v};border:1px solid #fff;margin-right:4px;' title='{k}:{v}'></span>" for k, v in pal.items()]) if pal else "<span style='font-size:10px;color:#94a3b8;'>Analyzing optimal palette...</span>"
-    st.markdown(f"""
-    <div style="background:rgba(15,23,42,0.96);border:1.5px solid {badge_col};border-radius:14px;padding:10px 12px;margin:8px 0;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <b style="color:#38bdf8;font-size:12px;">🌍 World Scout &amp; Chief Commander Board</b>
-        <span style="background:{badge_col}22;border:1px solid {badge_col};color:{badge_col};padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:800;">{stt.upper()}</span>
-      </div>
-      <div style="font-size:11px;color:#fde68a;margin-bottom:5px;"><b>Live Step:</b> {pass_msg}</div>
-      <div style="font-size:10.5px;color:#a78bfa;margin-bottom:6px;"><b>16 Workers Gate:</b> {w_stat}</div>
-      <div style="margin-bottom:6px;"><b style="font-size:10.5px;color:#e2e8f0;">Top-Star GitHub Refs:</b>{repo_html}</div>
-      <div style="margin-bottom:6px;"><b style="font-size:10.5px;color:#e2e8f0;">Selected Palette:</b> {pal_html}</div>
-      <div style="font-size:10.5px;color:#6ee7b7;background:rgba(16,185,129,0.1);padding:6px 8px;border-radius:8px;"><b>Commander Order:</b> {cmd_ord}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ==============================================================================
-# PHASE 1: 16-DEPT DESIGN-FIRST PIPELINE (STEPS 1-8 — ZERO CODE WRITTEN!)
-# ==============================================================================
-def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, selected_factory="AUTO", design_feedback="", scout_brief=None, target_engine="Flutter 3.50 (Apps + Three.js 3D WebGL)"):
-    """Executes Depts 1-8: Factory ID Router, Iconify Fetcher, Gemini Search, Human UX Brain, Frame Director, Premium Studio, Brand Logo & Live Preview."""
-    stages = [
-        {"title": "Dept 1-2: Factory ID Router + Live Iconify/Game-Icons Fetcher", "status": "running", "sync": "User Prompt + External Icon API", "note": "Routing to GAMING_FACTORY_01 or MARKET_FACTORY_02..."},
-        {"title": "Dept 3-4: Live Web Trend Search + Chief Human Developer Brain", "status": "pending", "sync": "Laws of UX + Market Trends", "note": ""},
-        {"title": "Dept 5-6: Dedicated Frame Director + Premium Polish Studio", "status": "pending", "sync": "Factory Tool Store + Human UX", "note": ""},
-        {"title": "Dept 7: Brand Logo Studio — Own Brand 3D Symbol Icon", "status": "pending", "sync": "Design Document", "note": ""},
-        {"title": "Dept 8: Realistic Interactive Mobile Preview & Approval Gate", "status": "pending", "sync": "All Above Shared", "note": ""}
-    ]
-    project_bus = {
+        f_files = build_flutter_files(app_title, user_prompt)
+        for fp, body in f_files.items():
+            push_file_to_github(repo_name, fp, body, f"Add {fp}")
+        push_file_to_github(repo_name, ".github/workflows/build_flutter_apk.yml", FLUTTER_APK_WORKFLOW, "Activate Flutter 3.50 APK Build")
+        logs.append("Pushed Flutter 3.50 project + Playwright Visual Audit to GitHub.")
+
+    state = {
         "app_title": app_title,
-        "user_prompt": user_prompt,
-        "factory_id": selected_factory,
-        "target_engine": target_engine,
-        "boss_status": "Orchestrator routing Factory ID...",
-        "radar_status": "Watching Dept 1...",
-        "repair_status": "Kimi Self-Repair monitoring from Dept 1.",
-        "human_brain_note": "Chief Human Developer Brain standing by...",
-        "cross_check_msg": "Dept 1 Router -> Iconify External API",
-        "extra_deps": {},
-        "design_locked": False
+        "prompt": user_prompt,
+        "is_game": is_game,
+        "repo": repo_name,
+        "repo_url": repo_url,
+        "actions_url": f"{repo_url}/actions",
+        "releases_url": f"{repo_url}/releases",
+        "admin_url": f"https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app={repo_name}",
+        "preview_html": preview_html,
+        "vision_passes": 0,
+        "heal_passes": 0,
+        "logs": logs,
+        "status": "building",
     }
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    # Dept 1: Orchestrator -> Select GAMING_FACTORY_01 or MARKET_FACTORY_02
-    if selected_factory in FACTORY_REGISTRY:
-        factory_id = selected_factory
-        app_type = FACTORY_REGISTRY[factory_id]["app_type"]
-        orch_m = "MANUAL_LOCK"
-        orch_json = {"factory_id": factory_id, "app_type": app_type, "category": FACTORY_REGISTRY[factory_id]["name"], "goals": ["Realistic UI", "Working Wallet & Gateway", "Cloud Sync"]}
-    else:
-        orch_sys = """You are Dept 1 Factory Router. Classify prompt into GAMING_FACTORY_01 (games, fantasy, 3D, prediction, arcade) or MARKET_FACTORY_02 (business, commerce, fintech, service, delivery, ledger). Also pick 4 exact Iconify search nouns matching the REAL subject (e.g. truck, bus, steering, highway for a vehicle game). Output ONLY JSON:
-{"factory_id": "GAMING_FACTORY_01 or MARKET_FACTORY_02", "category": "short domain", "icon_keywords": ["word1", "word2", "word3", "word4"], "goals": ["goal 1", "goal 2", "goal 3"]}"""
-        raw_orch, orch_m, err_o = call_specialist_ai("orchestrator", orch_sys, f"Title: {app_title}\nPrompt: {user_prompt}", max_tokens=450)
-        if not raw_orch:
-            return None, err_o or "Orchestrator failed"
-        orch_json = extract_json_object(raw_orch) or {}
-        is_g = "GAMING" in str(orch_json.get("factory_id", "")).upper() or any(k in (app_title + " " + user_prompt).lower() for k in ["game", "racing", "arcade", "11", "3d", "fantasy", "prediction"])
-        factory_id = "GAMING_FACTORY_01" if is_g else "MARKET_FACTORY_02"
-        app_type = FACTORY_REGISTRY[factory_id]["app_type"]
-
-    f_meta = FACTORY_REGISTRY[factory_id]
-    project_bus["factory_id"] = factory_id
-    project_bus["app_type"] = app_type
-    project_bus["orchestrator"] = orch_json
-
-    # Dept 2: Live Open-Source SVG Icon Fetcher (api.iconify.design / game-icons.net)
-    fetched_icons = (scout_brief.get("fetched_icons") if scout_brief and scout_brief.get("fetched_icons") else fetch_live_iconify_icons(app_title + " " + user_prompt, factory_id, ai_keywords=orch_json.get("icon_keywords", [])))
-    project_bus["fetched_icons"] = fetched_icons
-    stages[0]["status"] = "done"
-    stages[0]["note"] = f"[{orch_m}] Routed to {factory_id} | Pulled {len(fetched_icons)} live SVG icons."
-    stages[1]["status"] = "running"
-    project_bus["cross_check_msg"] = f"Pulled {len(fetched_icons)} external SVGs -> Gemini Search + Human Dev Brain"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    # Dept 3: Live Web Trend Search (Gemini Search)
-    brain_sys = "You are Dept 3 Live Design Trend Researcher. Research current 2026 UI/UX best practices (Material 3, Laws of UX, interactive game HUDs, wallet & profile sheets). Give 5 concrete UI/UX rules for an original, trustworthy, high-contrast mobile app WITHOUT copying any third-party brand names."
-    brain_notes, brain_m, _ = call_specialist_ai("design_brain", brain_sys, f"Own Brand: {app_title} ({factory_id})\nIdea: {user_prompt}\nStore Modules: {json.dumps(f_meta['tool_store'])}", max_tokens=550)
-    project_bus["market_brain"] = brain_notes or "Use clean thumb-friendly navigation, high-contrast surfaces, clear Wallet & Profile icons, and instant touch feedback."
-    project_bus["brain_model"] = brain_m or "Design Brain"
-
-    # Dept 4: Chief Human Developer & UX Brain (GPT-OSS 120B / Llama 90B)
-    hum_sys = """You are Dept 4 Chief Human Developer & UX Architect (independent senior engineer applying Laws of UX & Nielsen Norman heuristics).
-Review the idea and Factory Tool Store, and output 4 sharp developer mandates so nothing feels basic or broken in the real world (e.g. confirm dialogs, empty states, one-way VIP/checkout wallet clarity, own-brand originality)."""
-    hum_notes, hum_m, _ = call_specialist_ai("human_architect", hum_sys, f"Brand: {app_title}\nFactory: {factory_id}\nIdea: {user_prompt}\nTool Store: {json.dumps(f_meta['tool_store'])}\nTrends: {project_bus['market_brain'][:600]}", max_tokens=450)
-    clean_hum = re.sub(r"[#*|>`]+", " ", hum_notes or "Enforce thumb-reach controls, Wallet & Profile sheets, and zero dead-end screens."); clean_hum = re.sub(r"\s+", " ", clean_hum).strip()
-    project_bus["human_brain_note"] = f"[{hum_m or 'Human Brain'}] {clean_hum[:175]}"
-    stages[1]["status"] = "done"
-    stages[1]["note"] = f"[{brain_m}] Trends + [{hum_m}] Human Dev Mandates locked."
-    stages[2]["status"] = "running"
-    project_bus["cross_check_msg"] = f"Human Dev Brain -> {factory_id} Frame Director -> Premium Studio"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    # Dept 5: Dedicated Frame Director (GAMING_FACTORY_01 vs MARKET_FACTORY_02)
-    director_role = "frame_director_gaming" if factory_id == "GAMING_FACTORY_01" else "frame_director_market"
-    des_sys = f"""You are Dept 5 Dedicated Frame Director for {factory_id} ({f_meta['name']}).
-PRO ARCHITECT MANDATE:
-- Think ABOVE the user's short prompt like a Senior Play-Store App/Game Architect! Automatically add rich pro features (Gaming: 3 progressive levels, target goals, model/vehicle unlocks, particle/HUD feedback, 0% cash prize pool; Market: live fl_chart analytics, smart search/filters, instant receipt summary, Razorpay-ready UPI checkout, Gmail OTP).
-STRICT RULES:
-- Use ONLY the owner's own brand '{app_title}' — NEVER copy or mention any third-party brand names.
-- Incorporate these Factory Tool Store modules: {json.dumps(f_meta['tool_store'])}.
-- {'Set bottom_nav_enabled=false (Fullscreen Arena Lobby + One-Way VIP Unlock Store, 0% cash prize pool).' if factory_id == 'GAMING_FACTORY_01' else 'Set bottom_nav_enabled=true (4-tab Material 3 Bottom Navigation + Hero Card + Wallet & Checkout Sheet).'}
-Output ONLY valid JSON:
-{{
-  "tagline": "4-6 word original brand tagline",
-  "palette": {{"bg": "#0B1120", "surface": "#162032", "primary": "#2563EB", "accent": "#10B981", "text": "#F8FAFC"}},
-  "typography": "Plus Jakarta Sans Bold + 14sp Body",
-  "spacing": "16dp outer padding, 12dp gap, 18dp radius",
-  "bottom_nav_enabled": {str(f_meta['bottom_nav']).lower()},
-  "nav_items": [{{"label": "Home", "icon": "home", "opens": "Dashboard"}}],
-  "icon_style": "Original 3D layered metallic/neon emblem concept (NO letters/initials!)",
-  "screens": [{{"name": "Main Hub", "layout": "Hero + Wallet + Interactive Cards", "buttons": ["Primary Action"]}}]
-}}"""
-    chief_ctx = json.dumps(scout_brief)[:900] if scout_brief else ""
-    raw_des, des_m, _ = call_specialist_ai(director_role, des_sys, f"Brand: {app_title}\nPrompt: {user_prompt}\nChief Commander Blueprint: {chief_ctx}\nHuman Dev Mandates:\n{hum_notes}\nTrends:\n{project_bus['market_brain'][:700]}\nOwner Changes: {design_feedback}", max_tokens=1500)
-    design_doc = extract_json_object(raw_des)
-    if not design_doc:
-        fix_des, _, _ = call_specialist_ai("repair_center", "Convert into valid JSON only matching the design schema.", raw_des[:2200], max_tokens=1400)
-        design_doc = extract_json_object(fix_des)
-    if not design_doc:
-        design_doc = {
-            "tagline": "Built For Speed & Trust",
-            "palette": {"bg": "#0B1120", "surface": "#162032", "primary": "#E11D48" if app_type == "GAMING" else "#4F46E5", "accent": "#F59E0B" if app_type == "GAMING" else "#10B981", "text": "#F8FAFC"},
-            "typography": "Plus Jakarta Sans Bold + Clean 14sp Body",
-            "spacing": "16dp padding, 12dp gap, 18dp radius",
-            "bottom_nav_enabled": f_meta["bottom_nav"],
-            "nav_items": [] if app_type == "GAMING" else [{"label": "Home", "icon": "home", "opens": "Hub"}, {"label": "Actions", "icon": "bolt", "opens": "Workspace"}, {"label": "Wallet", "icon": "wallet", "opens": "Passbook"}, {"label": "Profile", "icon": "person", "opens": "Account"}],
-            "icon_style": "3D Layered Gold & Crimson Crest" if app_type == "GAMING" else "3D Royal Indigo & Emerald Shield",
-            "screens": [
-                {"name": "Main Hub", "layout": "Header + Wallet Pill + Interactive Cards", "buttons": ["Start Primary Action"]},
-                {"name": "VIP / Checkout", "layout": "One-Way Unlock / Payment Gateway Sheet", "buttons": ["Confirm Pay"]},
-                {"name": "Profile", "layout": "Verified Account + Stats + Edit Sheet", "buttons": ["Save Profile"]}
-            ]
-        }
-    if factory_id == "GAMING_FACTORY_01":
-        design_doc["bottom_nav_enabled"] = False
-
-    # Dept 6: Premium Polish & Motion Studio (Step 5 Preview / GLM-5-3-Flash)
-    pol_sys = "You are Dept 6 Premium Polish Studio. Enhance this JSON design_doc's palette contrast, tagline, and micro-interaction notes for a high-budget studio feel. Output ONLY valid JSON with the exact same keys."
-    raw_pol, pol_m, _ = call_specialist_ai("premium_studio", pol_sys, json.dumps(design_doc), max_tokens=1400)
-    pol_json = extract_json_object(raw_pol)
-    if isinstance(pol_json, dict) and pol_json.get("palette") and pol_json.get("screens"):
-        if factory_id == "GAMING_FACTORY_01":
-            pol_json["bottom_nav_enabled"] = False
-        design_doc = pol_json
-
-    project_bus["design_doc"] = design_doc
-    project_bus["designer_model"] = f"{des_m} + {pol_m or 'Studio'}"
-    stages[2]["status"] = "done"
-    stages[2]["note"] = f"[{project_bus['designer_model']}] Design & Studio Polish locked."
-    stages[3]["status"] = "running"
-    project_bus["cross_check_msg"] = "Brand Logo Studio creating original 3D SVG emblem (0 letters)..."
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    # Dept 7: Brand Logo Studio (Own Brand 3D Symbol SVG — ZERO letters!)
-    pal = design_doc.get("palette", {})
-    c1 = pal.get("primary", "#2563EB")
-    c2 = pal.get("accent", "#10B981")
-    raw_svg = build_pure_vector_3d_logo(app_title, c1, c2, fetched_icons, is_game=(app_type == "GAMING"))
-    ic_m = "PureVector3D-Iconify"
-    project_bus["icon_svg"] = raw_svg
-    project_bus["icon_model"] = ic_m or "Logo AI"
-    stages[3]["status"] = "done"
-    stages[3]["note"] = f"[{project_bus['icon_model']}] Original Brand Symbol ready."
-    stages[4]["status"] = "running"
-    project_bus["radar_status"] = "Building Display 2 Realistic Interactive Phone Preview..."
-    project_bus["cross_check_msg"] = "Logo Studio -> Realistic Interactive Phone Preview"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    # Dept 8: Realistic Interactive Mobile Preview
-    prev_res = generate_rich_live_preview_html(app_title, factory_id, user_prompt, design_doc, raw_svg, fetched_icons)
-    project_bus["preview_html"] = prev_res
-    if factory_id == "GAMING_FACTORY_01":
-        project_bus["extra_deps"]["webview_flutter"] = "^4.14.0"
-        project_bus["extra_deps"]["flame"] = "^1.38.2"
-    else:
-        project_bus["extra_deps"]["fl_chart"] = "^0.69.0"
-        project_bus["extra_deps"]["flutter_animate"] = "^4.5.2"
-        project_bus["extra_deps"]["lucide_icons_flutter"] = "^4.0.2"
-    stages[4]["status"] = "done"
-    stages[4]["note"] = "Test Wallet, Gateway, Profile & Buttons below, then Lock Design."
-    project_bus["boss_status"] = f"{factory_id} Design & Live Preview ready! Waiting for Owner Lock."
-    project_bus["radar_status"] = "Phase 1 Complete — All Tool Store Modules Synced."
-    project_bus["cross_check_msg"] = "Ready for Owner Touch Test & Lock -> Coding Depts Standing By"
-    project_bus["stages_p1"] = stages
-
-    msg_p1 = f"Wah {OWNER_NAME} Boss! {app_title} ka {factory_id} design, live icons aur mobile preview ekdum mast taiyar ho gaya hai. Check karke lock karein!"
-    project_bus["last_voice_msg"] = msg_p1
-    save_json_file(DESIGN_LOCK_FILE, project_bus)
-    return project_bus, None
+    save_json_file(STATE_FILE, state)
+    return state
 
 # ==============================================================================
-# PHASE 2: FULL-FILE CODING, BOSS AUDIT & KIMI SELF-REPAIR (DEPTS 9-16)
+# CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
-def run_phase2_flutter_coding(project_bus, cmd_slot, sync_slot):
-    """Executes Depts 9-16 sequentially — each coder writes 100% of its file cleanly."""
-    app_title = project_bus["app_title"]
-    user_prompt = project_bus["user_prompt"]
-    t_eng = project_bus.get("target_engine", "Flutter")
-    if project_bus.get("factory_id") == "GAMING_FACTORY_01" and ("Unity 3D" in t_eng or "Godot 4" in t_eng):
-        app_slug = re.sub(r'[^a-z0-9_]', '_', app_title.lower()) or "smart_app"
-        if not app_slug[0].isalpha():
-            app_slug = "sf_" + app_slug
-        project_bus["pkg_slug"] = app_slug
-        project_bus["backend_dart"] = "// Direct " + t_eng
-        project_bus["gateway_dart"] = "// Direct " + t_eng
-        project_bus["screens_dart"] = "// Direct " + t_eng
-        project_bus["main_dart"] = "// Direct " + t_eng
-        project_bus["pubspec_yaml"] = build_pubspec_yaml(app_title, {})
-        if "Unity 3D" in t_eng:
-            u_files = build_unity_3d_project_files(app_title, app_slug)
-            project_bus["unity_files"] = u_files
-            project_bus["review_verdict"] = "APPROVED (Direct Unity 3D C# + AutoBuildScene + Audio/Touch HUD)"
-        else:
-            g_files = build_godot4_3d_project_files(app_title, app_slug, project_bus.get("design_doc", {}).get("palette", {}))
-            project_bus["godot_files"] = g_files
-            project_bus["review_verdict"] = "APPROVED (Direct Godot 4 VehicleBody3D + Touch HUD)"
-        save_json_file(CODED_APP_FILE, project_bus)
-        return project_bus, None
-    app_type = project_bus["app_type"]
-    factory_id = project_bus.get("factory_id", "MARKET_FACTORY_02")
-    design_doc = project_bus["design_doc"]
-    app_slug = re.sub(r'[^a-z0-9_]', '_', app_title.lower()) or "smart_app"
-    if not app_slug[0].isalpha():
-        app_slug = "sf_" + app_slug
 
-    stages = [
-        {"title": "Dept 9: Tech Stack — Flutter 3.50 + Dart Configured", "status": "done", "sync": "Locked Design Doc", "note": "pubspec.yaml + Android Manifest template ready."},
-        {"title": "Dept 10-11: Backend (Supabase) + PaymentGatewayService", "status": "running", "sync": "Factory Tool Store", "note": "Writing supabase_api.dart & payment_gateway.dart..."},
-        {"title": "Dept 12: Full UI Screens Coder (Wallet, Profile, Store/Hub)", "status": "pending", "sync": "Backend + Gateway + Design", "note": ""},
-        {"title": "Dept 13: Navigation & Deep-Link Specialist (main.dart)", "status": "pending", "sync": "Frontend Screens + Design", "note": ""},
-        {"title": "Dept 14-15: Boss Gatekeeper + Human UX Audit", "status": "pending", "sync": "Full Project Bus", "note": ""},
-        {"title": "Dept 16: Kimi AI Self-Repair & Final APK Gate", "status": "pending", "sync": "All 15 Depts", "note": ""}
-    ]
-    project_bus["boss_status"] = f"{factory_id} Locked! Full-file coders running sequentially..."
-    project_bus["cross_check_msg"] = "Backend Coder -> Gateway Coder -> Full UI Coder -> Navigation -> Boss"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+st.set_page_config(page_title="Sarfealam Auto-Studio v30.0", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v30.0 (Grok-Mode)")
+st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
-    # Dept 10: Full Backend + Profile + Wallet Service (supabase_api.dart)
-    backend_sys = """You are Dept 10 Backend Coder (Flutter/Dart). Write `lib/services/supabase_api.dart` defining class `SupabaseApi` with:
-- Static const `url` and `anonKey` provided in prompt.
-- `sendEmailOtp(String email)`, `verifyEmailOtp(String email, String otp)`, `saveLocalSession(Map<String,dynamic> user)`, `getLocalSession()`, `updateProfile(String name, String phone)`, `logout()`.
-- `saveItem(String type, [dynamic titleOrData = '', Map<String,dynamic>? data])`, `getItems([String type = 'all'])`, `recordTx([String type = 'entry', num amount = 0, String title = 'Action'])`, `getTransactions()`.
-Use `package:http/http.dart` and `package:shared_preferences/shared_preferences.dart` with clean try/catch offline fallback. Output ONLY raw Dart code."""
-    backend_dart, be_m, err_be = call_specialist_ai(
-        "backend_coder", backend_sys,
-        f"Brand: {app_title} ({factory_id})\nAPP_ID: {app_slug}\nSUPABASE_URL: {SUPABASE_URL}\nSUPABASE_KEY: {SUPABASE_KEY}\nDesign: {json.dumps(design_doc)[:1000]}",
-        max_tokens=2600
-    )
-    if not backend_dart:
-        return None, err_be or "Backend Coder failed"
-    project_bus["backend_dart"] = backend_dart
+tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
 
-    # Dept 11: Razorpay-Ready Payment Gateway & One-Way VIP Store Service (payment_gateway.dart)
-    gw_sys = """You are Dept 11 Payment Gateway Architect (Flutter/Dart). Write `lib/services/payment_gateway.dart` importing `package:flutter/material.dart` and `supabase_api.dart`.
-Define class `PaymentGatewayService` with:
-- `static Future<bool> openCheckoutSheet(BuildContext context, {required String title, required num amount, required String mode})` showing a realistic ModalBottomSheet with UPI / Card / NetBanking options (Razorpay-Ready hook) and recording the transaction via `SupabaseApi.recordTx(mode, amount, title)` on confirm.
-- Note: For GAMING, only One-Way VIP Pass / Booster / Gems unlocks (0% cash prize pool, 0% withdrawal).
-Output ONLY raw Dart code."""
-    gateway_dart, gw_m, err_gw = call_specialist_ai(
-        "gateway_coder", gw_sys,
-        f"Brand: {app_title} ({factory_id})\nDesign Palette: {json.dumps(design_doc.get('palette', {}))}",
-        max_tokens=2200
-    )
-    if not gateway_dart:
-        return None, err_gw or "Payment Gateway Coder failed"
-    project_bus["gateway_dart"] = gateway_dart
-    stages[1]["status"] = "done"
-    stages[1]["note"] = f"[{be_m}] + [{gw_m}] Backend & Gateway modules written."
-    stages[2]["status"] = "running"
-    project_bus["cross_check_msg"] = "Backend & Gateway -> Full UI Screens Coder (app_screens.dart)"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+with tab_factory:
+    st_state = load_json_file(STATE_FILE, None)
 
-    # Dept 12: Full UI Screens Coder (app_screens.dart — 100% written by ONE specialist)
-    fe_sys = f"""You are Dept 12 Full UI Screens Coder (Flutter/Dart) for {factory_id}. Strictly follow the Locked Design Document and use ONLY the owner's brand '{app_title}'!
-Write `lib/screens/app_screens.dart` importing `package:flutter/material.dart`, `../services/supabase_api.dart`, and `../services/payment_gateway.dart`.
-Define clean StatefulWidget screen classes:
-- `LoginOrEntryScreen` (with `VoidCallback onAuthenticated` — {'1-tap Instant Play + optional Gmail OTP' if app_type == 'GAMING' else 'Gmail 6-digit OTP verification + quick demo skip'}).
-- `HomeDashboardScreen` (with top-right Wallet pill opening Wallet BottomSheet + Profile icon opening `ProfileOrSettingsScreen`, 3D-elevated Gradient Cards with `BoxShadow`, and interactive buttons opening Detail Pages or `PaymentGatewayService.openCheckoutSheet`).
-- `WorkspaceOrActionScreen` ({'11-Player Credit Squad / Challenge Builder + One-Way VIP Store Unlocks (0% cash prize pool)' if app_type == 'GAMING' else 'Interactive Order/Ledger/Service Creator calling SupabaseApi.saveItem + PaymentGatewayService.openCheckoutSheet'}).
-- `RecordsOrRankScreen` (searchable live list + Wallet Passbook tab).
-- `ProfileOrSettingsScreen` (User Profile Overview, Edit Name/Phone saved via `SupabaseApi.updateProfile`, Logout).
-{'Include `PlayGameScreen` using `webview_flutter` (`WebViewWidget` loading `assets/game.html` via `loadFlutterAsset`) + fallback `CustomPainter` mini-game awarding Free XP!' if app_type == 'GAMING' else 'Build Play-Store Super-App UI: Top Category Pill Switcher, Search Bar, Promo Hero Banner, 2x2 Service Grid with offer badges, Coupon Strip, `fl_chart` Live Progress/Graph, `flutter_animate`, and `lucide_icons_flutter`!'}
-Flutter 3.50 Rules: NEVER use `headline4`/`headline5`/`headline6`/`bodyText1`/`bodyText2`; ALWAYS use `CardThemeData`; NEVER put `const ` before Screen constructors; ZERO empty `() {{}}` buttons. Output ONLY raw Dart code."""
-    screens_dart, fe_m, err_fe = call_specialist_ai(
-        "frontend_coder", fe_sys,
-        f"Brand: {app_title} ({factory_id})\nPrompt: {user_prompt}\nLocked Design:\n{json.dumps(design_doc)}\nBackend:\n{backend_dart[:1200]}\nGateway:\n{gateway_dart[:1000]}",
-        max_tokens=4200
-    )
-    if not screens_dart:
-        return None, err_fe or "Frontend Coder failed"
-    project_bus["screens_dart"] = screens_dart
-    stages[2]["status"] = "done"
-    stages[2]["note"] = f"[{fe_m}] Full lib/screens/app_screens.dart written."
-    stages[3]["status"] = "running"
-    project_bus["cross_check_msg"] = f"Full UI ({fe_m}) -> Navigation Specialist (main.dart)"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+    if st_state:
+        st.subheader(f"Active Studio: {st_state['app_title']}")
+        c_disp1, c_disp2 = st.columns(2)
 
-    # Dept 13: Navigation Specialist (lib/main.dart)
-    nav_rule = "NO BottomNavigationBar (use clean Fullscreen Arena Lobby header + Navigator routes)" if app_type == "GAMING" else "Use sleek Material 3 4-tab BottomNavigationBar matching Design Doc"
-    nav_sys = f"""You are Dept 13 Navigation Specialist (Flutter/Dart). Write `lib/main.dart` importing `package:flutter/material.dart`, `screens/app_screens.dart`, and `services/supabase_api.dart`.
-Rule: {nav_rule}.
-Define `void main() => runApp(const SarfealamApp());` with `const SarfealamApp({{super.key}});`.
-Flutter 3.50 Rules: Use `CardThemeData(...)` (NEVER `CardTheme(...)`), use Material 3 `TextTheme` (`headlineMedium`, `titleLarge`, `bodyMedium`, NEVER `headline4`/`headline6`), and NEVER put `const ` before any `*Screen()` constructor! Output ONLY raw Dart code."""
-    main_dart, nav_m, err_nav = call_specialist_ai(
-        "nav_specialist", nav_sys,
-        f"Brand: {app_title} ({factory_id})\nDesign:\n{json.dumps(design_doc)[:1200]}\nScreens:\n{screens_dart[:2200]}",
-        max_tokens=2600
-    )
-    if not main_dart:
-        return None, err_nav or "Navigation Specialist failed"
-    project_bus["main_dart"] = main_dart
-    stages[3]["status"] = "done"
-    stages[3]["note"] = f"[{nav_m}] lib/main.dart wired cleanly."
-    stages[4]["status"] = "running"
-    project_bus["cross_check_msg"] = "Boss Gatekeeper (Nemotron 550B) auditing all 4 Dart files..."
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+        with c_disp1:
+            st.markdown("**Live Interactive Preview**")
+            components.html(st_state.get("preview_html", ""), height=380, scrolling=False)
 
-    # Dept 14-15: Independent Boss Gatekeeper
-    rev_sys = "You are Dept 14 Independent Boss Gatekeeper. Audit main.dart, app_screens.dart, payment_gateway.dart, and supabase_api.dart for visual polish, Wallet/Profile completeness, and Flutter 3.50 safety. Reply ONLY 'APPROVED' if solid, else list concise exact fixes."
-    rev_txt, rev_m, _ = call_specialist_ai(
-        "reviewer", rev_sys,
-        f"Factory: {factory_id}\nDesign: {json.dumps(design_doc)[:1000]}\nmain.dart:\n{main_dart[:1800]}\napp_screens.dart:\n{screens_dart[:2400]}",
-        max_tokens=380
-    )
-    project_bus["review_verdict"] = rev_txt or "APPROVED"
-    stages[4]["status"] = "done"
-    stages[4]["note"] = f"[{rev_m}] {project_bus['review_verdict'][:95]}"
-    stages[5]["status"] = "running"
-    project_bus["repair_status"] = "Running Dept 16 Kimi Self-Repair & Flutter 3.50 verification..."
-    project_bus["cross_check_msg"] = "Boss Approved -> Kimi Step 16 Self-Repair Gate"
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
+        with c_disp2:
+            st.markdown("**Playwright Browser Screenshot + Vision Audit**")
+            shot_bytes = fetch_latest_playwright_screenshot(st_state["repo"])
+            if shot_bytes:
+                st.image(shot_bytes, caption="Captured by GitHub Playwright Chromium", use_container_width=True)
+                if st_state.get("vision_passes", 0) < 3 and st_state.get("status") == "building":
+                    verdict = call_vision_ai(
+                        f"Inspect this screenshot for '{st_state['prompt']}'. Reply PASS if it looks bright, 3D, and complete; otherwise list exact visual fixes.",
+                        shot_bytes,
+                    )
+                    if verdict and "PASS" not in verdict.upper():
+                        st_state["vision_passes"] = st_state.get("vision_passes", 0) + 1
+                        st_state["logs"].append(f"Vision Pass #{st_state['vision_passes']} caught issue: {verdict[:120]} -> Auto-fixing...")
+                        fixed_html = strip_markdown_fences(call_ai(
+                            "Fix ALL visual bugs in this HTML5/Three.js code. Output ONLY valid full HTML.",
+                            f"Visual Bugs:\n{verdict}\n\nCode:\n{st_state['preview_html'][:9500]}",
+                            max_tokens=3800,
+                        ))
+                        if "<html" in fixed_html.lower():
+                            st_state["preview_html"] = fixed_html
+                            push_file_to_github(st_state["repo"], "assets/game.html", fixed_html, f"Vision Auto-Fix #{st_state['vision_passes']}")
+                        save_json_file(STATE_FILE, st_state)
+                        st.rerun()
+            else:
+                st.info("Waiting for GitHub Playwright Chromium to capture live screenshot (auto-refreshing)...")
 
-    # Dept 16: Kimi Self-Repair & Final APK Gate
-    ok_rep, rep_logs, _ = auto_detect_and_repair_bundle(project_bus)
-    if not ok_rep:
-        project_bus["boss_status"] = "BLOCKED by Dept 16 Kimi Self-Repair."
-        project_bus["repair_status"] = " | ".join(rep_logs)
-        render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-        return None, "Dept 16 Self-Repair blocked broken Dart code: " + "; ".join(rep_logs)
-
-    stages[5]["status"] = "done"
-    stages[5]["note"] = " | ".join(rep_logs) if rep_logs else "All 4 Dart files & pubspec.yaml passed 100%."
-    project_bus["boss_status"] = "ALL 16 DEPTS APPROVED! Ready to build Native APK on GitHub."
-    project_bus["radar_status"] = "16/16 Departments Synced & Verified."
-    project_bus["repair_status"] = stages[5]["note"]
-    project_bus["cross_check_msg"] = "16/16 Passed! Connected to GitHub APK Builder."
-    project_bus["stages_p2"] = stages
-    project_bus["pkg_slug"] = app_slug
-    render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages)
-
-    msg_p2 = f"Shabash {OWNER_NAME} Boss! Sabhi 16 departments ne coding aur Kimi auto-wiring pass kar li hai. Ab APK build dabayein!"
-    project_bus["last_voice_msg"] = msg_p2
-    save_json_file(CODED_APP_FILE, project_bus)
-    return project_bus, None
-
-# ==============================================================================
-# STREAMLIT UI: 3-DISPLAY ENTERPRISE 16-DEPT FLUTTER FACTORY
-# ==============================================================================
-st.set_page_config(page_title=f"{OWNER_NAME} Nexus Forge 3D", page_icon="🚀", layout="centered")
-st.markdown("""
-<style>
-#MainMenu, footer, header, .stDeployButton, div[data-testid="stToolbar"], div[data-testid="stDecoration"], div[data-testid="stStatusWidget"] {visibility: hidden !important; height: 0 !important;}
-.block-container {padding: 0.4rem 0.7rem 3rem 0.7rem; max-width: 560px;}
-.stApp {background: radial-gradient(circle at 50% 0%, #111827 0%, #030712 100%); color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;}
-textarea, input[type="text"], input[type="password"] {background-color: #1e293b !important; color: #ffffff !important; border: 1.5px solid #3b82f6 !important; border-radius: 12px !important;}
-label, .stSelectbox label p, .stTextInput label p, .stTextArea label p, .stAudioInput label p {color: #e2e8f0 !important; font-weight: 700 !important;}
-.stButton > button, button[data-testid="stBaseButton-secondary"], button[kind="secondary"] {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important; color: #f8fafc !important;
-    border: 1px solid #38bdf8 !important; border-radius: 12px !important; font-weight: 700 !important;
-}
-.stButton > button:hover {background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important; color: #ffffff !important;}
-.factory-header {background: linear-gradient(135deg, rgba(30,58,138,0.65), rgba(17,24,39,0.92)); border: 1px solid rgba(59,130,246,0.4); border-radius: 16px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;}
-.step-card {background: rgba(17,24,39,0.85); border: 1px solid rgba(59,130,246,0.28); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;}
-div[data-testid="stExpander"] {background: rgba(15,23,42,0.94) !important; border: 1px solid #38bdf8 !important; border-radius: 12px !important;}
-div[data-testid="stExpander"] summary, div[data-testid="stExpander"] summary p {color: #38bdf8 !important; font-weight: 700 !important;}
-</style>
-""", unsafe_allow_html=True)
-
-deep_admin_repo = st.query_params.get("admin_app", None)
-
-st.markdown(f"""
-<div class="factory-header">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px;">👑</div>
-    <div>
-      <h3 style="margin:0;font-size:16px;font-weight:800;color:#fff;">{OWNER_NAME.upper()} NEXUS FORGE</h3>
-      <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
-    </div>
-  </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v18.0 LANDSCAPE-STUDIO</span>
-</div>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# PRO STUDIO COMMAND & QUALITY RADAR (OPEN-SOURCE STACK + 1-TAP PRESETS)
-# ==============================================================================
-with st.expander("⚡ Studio Command & Quality Radar (Open-Source Stack + Presets)", expanded=True):
-    st.markdown("""
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-      <span style="background:rgba(56,189,248,0.16);border:1px solid #38bdf8;color:#7dd3fc;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Three.js + Phaser 3</span>
-      <span style="background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#6ee7b7;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Flame + WebView APK</span>
-      <span style="background:rgba(168,85,247,0.18);border:1px solid #a855f7;color:#d8b4fe;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Quaternius CC0 3D + Iconify</span>
-      <span style="background:rgba(245,158,11,0.16);border:1px solid #f59e0b;color:#fde68a;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;">Bot Auto-Test + Self-Play</span>
-    </div>
-    """, unsafe_allow_html=True)
-    p_c1, p_c2, p_c3, p_c4 = st.columns(4)
-    presets = [
-        ("🏗️ 3D Build", "MegaSite 3D Builder", "3D construction excavator digging and house building simulator with level progression, vehicle model unlocks, joystick controller, and driver profile.", "GAMING_FACTORY_01"),
-        ("🚛 Heavy Drive", "BharatWheels Heavy Drive", "3D highway & village truck, bus, and heavy vehicle driving simulator with steering, gearbox, level unlocks, and Supabase leaderboard.", "GAMING_FACTORY_01"),
-        ("🏏 Cricket XI", "StrikeLine XI", "Fantasy cricket team builder with live pitch mini-game, XP progression, level unlocks, and one-way VIP booster store (0% cash prize pool).", "GAMING_FACTORY_01"),
-        ("💳 Fintech App", "HisabFlow Pro", "Shopkeeper khata ledger, instant invoice, live revenue charts, Razorpay-ready UPI checkout sheet, and Supabase cloud sync.", "MARKET_FACTORY_02")
-    ]
-    for col_obj, (btn_lbl, p_title, p_desc, p_fac) in zip([p_c1, p_c2, p_c3, p_c4], presets):
-        with col_obj:
-            if st.button(btn_lbl, use_container_width=True, key=f"preset_{p_title}"):
-                st.session_state["preset_title"] = p_title
-                st.session_state["preset_prompt"] = p_desc
-                st.session_state["preset_factory"] = p_fac
+        # Check Live APK Build Status + Silent Auto-Heal
+        tele = get_live_build_telemetry(st_state["repo"])
+        conc = tele.get("conclusion")
+        if conc == "success":
+            st_state["status"] = "done"
+            save_json_file(STATE_FILE, st_state)
+            save_to_vault({
+                "name": st_state["app_title"],
+                "repo": st_state["repo"],
+                "releases_url": st_state["releases_url"],
+                "admin_url": st_state["admin_url"],
+                "time": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+            })
+            st.success("Native APK Ready!")
+            st.markdown(f"**Download APK:** {st_state['releases_url']}  \n**Admin Link:** {st_state['admin_url']}")
+        elif conc == "failure":
+            hp = st_state.get("heal_passes", 0)
+            if hp < 3:
+                st_state["heal_passes"] = hp + 1
+                err_tail = fetch_github_job_error_tail(st_state["repo"], tele.get("job_id"))
+                st_state["logs"].append(f"Auto-Heal #{st_state['heal_passes']}: Reading GitHub error & repairing automatically...")
+                if st_state.get("is_game"):
+                    push_file_to_github(st_state["repo"], ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, f"Auto-Heal Godot #{st_state['heal_passes']}")
+                else:
+                    cur_main = fetch_file_from_github(st_state["repo"], "lib/main.dart")
+                    fixed_dart = strip_markdown_fences(call_ai(
+                        "Fix the Flutter compilation error in lib/main.dart. Output ONLY valid Dart code.",
+                        f"Error:\n{err_tail}\n\nCode:\n{cur_main[:8000]}",
+                        max_tokens=3400,
+                    ))
+                    if "void main()" in fixed_dart:
+                        push_file_to_github(st_state["repo"], "lib/main.dart", fixed_dart, f"Auto-Heal Dart #{st_state['heal_passes']}")
+                save_json_file(STATE_FILE, st_state)
+                time.sleep(3)
                 st.rerun()
-
-tab_build, tab_tracker, tab_vault, tab_admin = st.tabs([
-    "🚀 Design & Build",
-    "📡 Live Tracker",
-    "📦 Dual-Link Vault",
-    "🔐 Private Admin"
-])
-
-# ==============================================================================
-# TAB 1: 3-DISPLAY 16-DEPT WORKBENCH
-# ==============================================================================
-with tab_build:
-    active_build = recover_active_build_if_needed()
-    locked_bus = load_json_file(DESIGN_LOCK_FILE, None)
-    coded_bundle = load_json_file(CODED_APP_FILE, None)
-
-    if active_build:
-        b_eng_lbl = active_build.get("engine_label", "Godot 4 3D / Flutter")
-        st.subheader(f"Live {b_eng_lbl} Build: `{active_build['name']}`")
-        tele = get_live_build_telemetry(active_build["repo"])
-        gh_conc = tele.get("conclusion")
-        gh_steps = tele.get("steps", [])
-
-        st.markdown("""<div style="background:linear-gradient(135deg,rgba(16,185,129,0.18),rgba(37,99,235,0.22));border:1px solid #38bdf8;border-radius:12px;padding:10px 12px;margin-bottom:10px;">
-            <strong style="color:#38bdf8;font-size:12.5px;">Connected to GitHub APK Builder &amp; Kimi Self-Repair</strong>
-            <div style="color:#e2e8f0;font-size:11.5px;margin-top:3px;">18-Dept Pipeline -> Memory Vault -> Dept 17-18 Quality Gate -> Release APK...</div>
-        </div>""", unsafe_allow_html=True)
-
-        if gh_conc == "success":
-            st.success("Native Flutter APK Compiled & Published Successfully!")
-            st.markdown(f"<a href='{active_build['releases_url']}' style='display:block;text-align:center;background:#10b981;color:#fff;padding:12px;border-radius:12px;font-weight:800;text-decoration:none;margin-bottom:10px;'>Download Native Flutter APK</a>", unsafe_allow_html=True)
-            if st.button("Create Another New App", use_container_width=True):
-                reject_and_clear_project(active_build.get("repo"))
-                st.rerun()
-        elif gh_conc == "failure":
-            st.error(f"GitHub {active_build.get('engine_label', 'APK')} Build Failed — Dept 16/17-18 Self-Repair Ready!")
-            st.markdown(f"<a href='{active_build['actions_url']}' style='display:block;text-align:center;background:#991b1b;color:#fff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700;margin-bottom:8px;'>View GitHub Error Log</a>", unsafe_allow_html=True)
-            c_f1, c_f2 = st.columns(2)
-            with c_f1:
-                if st.button("Kimi Auto-Fix & Rebuild", use_container_width=True):
-                    with st.spinner("Kimi Self-Repair reading GitHub error log & fixing all 4 Dart files..."):
-                        try:
-                            repo_n = active_build["repo"]
-                            err_tail = fetch_github_job_error_tail(repo_n, tele.get("job_id"))
-                            cur_be = fetch_file_from_github(repo_n, "lib/services/supabase_api.dart")
-                            cur_scr = fetch_file_from_github(repo_n, "lib/screens/app_screens.dart")
-                            cur_main = fetch_file_from_github(repo_n, "lib/main.dart")
-                            cur_be, _ = apply_flutter3_deterministic_fixes(cur_be)
-                            cur_scr, _ = apply_flutter3_deterministic_fixes(cur_scr)
-                            cur_main, _ = apply_flutter3_deterministic_fixes(cur_main)
-                            rep_sys = "You are Dept 16 Kimi AI Self-Repair Center. Read the GitHub Actions error log and fix ALL Dart compile errors (use CardThemeData, headlineMedium/titleLarge, no const on Screen constructors). Output ONLY raw Dart code."
-                            fx_scr, _, _ = call_specialist_ai("repair_center", rep_sys, f"GitHub Error Log:\n{err_tail}\n\nsupabase_api.dart:\n{cur_be[:1200]}\n\nFix lib/screens/app_screens.dart:\n{cur_scr}", max_tokens=4200)
-                            fx_main, _, _ = call_specialist_ai("repair_center", rep_sys, f"GitHub Error Log:\n{err_tail}\n\napp_screens.dart classes:\n{(fx_scr or cur_scr)[:1500]}\n\nFix lib/main.dart:\n{cur_main}", max_tokens=2800)
-                            scr_to_push = fx_scr if (fx_scr and validate_dart_code(fx_scr)[0]) else cur_scr
-                            main_to_push = fx_main if (fx_main and validate_dart_code(fx_main)[0]) else cur_main
-                            scr_to_push, _ = apply_flutter3_deterministic_fixes(scr_to_push)
-                            main_to_push, _ = apply_flutter3_deterministic_fixes(main_to_push)
-                            push_file_to_github(repo_n, "lib/screens/app_screens.dart", scr_to_push, "Kimi Auto-Fix Screens")
-                            push_file_to_github(repo_n, "lib/main.dart", main_to_push, "Kimi Auto-Fix Main")
-                            push_file_to_github(repo_n, "build.sh", make_flutter_build_script(active_build["name"], repo_n.replace("-", "_")), "Clean Test Dir & Rebuild")
-                            st.success("All Dart files & build.sh repaired and pushed! Fresh APK build started.")
-                            time.sleep(1.5)
-                            st.rerun()
-                        except Exception as fx_e:
-                            st.error(f"Repair failed: {fx_e}")
-            with c_f2:
-                if st.button("Reject & Start Fresh", use_container_width=True):
-                    reject_and_clear_project(active_build.get("repo"))
-                    st.rerun()
+            else:
+                st.error(f"Build stopped after 3 Auto-Heal retries. Logs: {st_state['actions_url']}")
         else:
-            step_map = {s.get("name"): (s.get("status"), s.get("conclusion")) for s in gh_steps}
-            for raw_n, lbl in [
-                ("Checkout Code", "1. GitHub Received 16-Dept Flutter Code & Icon"),
-                ("Set up Flutter Stable SDK", "2. Flutter 3.50 Stable SDK Initialized"),
-                ("Install ImageMagick for Brand App Icon", "3. Applying Own Brand Symbol Icon"),
-                ("Build Native Flutter Release APK", "4. Compiling Native APK (2-4 min)"),
-                ("Publish Production Flutter APK to Releases", "5. Publishing Public Flutter APK")
-            ]:
-                stt, conc = step_map.get(raw_n, ("queued", None))
-                ic = "✅" if conc == "success" else ("⏳" if stt == "in_progress" else "⬜")
-                col = "#34d399" if conc == "success" else ("#fbbf24" if stt == "in_progress" else "#9ca3af")
-                st.markdown(f"<div class='step-card'><div style='font-size:18px;'>{ic}</div><div style='font-size:12.5px;font-weight:700;color:{col};'>{lbl}</div></div>", unsafe_allow_html=True)
-            c_r1, c_r2 = st.columns(2)
-            with c_r1:
-                if st.button("Refresh Live Status", use_container_width=True):
-                    st.rerun()
-            with c_r2:
-                if st.button("Reject & Start Fresh", use_container_width=True, key="reject_running_build"):
-                    reject_and_clear_project(active_build.get("repo"))
-                    st.rerun()
+            st.info(f"GitHub Cloud Building APK & Running Playwright... ({tele.get('status', 'queued')})")
+
+        with st.expander("Autonomous AI Execution Log", expanded=False):
+            for lg in st_state.get("logs", []):
+                st.write("-", lg)
+
+        if st.button("Stop & Start New Project", use_container_width=True):
+            remove_json_file(STATE_FILE)
+            st.rerun()
+
+        if st_state.get("status") == "building":
             time.sleep(10)
             st.rerun()
     else:
-        st.subheader("1. Choose Mode & APK Size (20 MB / 50 MB / 100 MB)")
-        c_m1, c_m2 = st.columns(2)
-        with c_m1:
-            p_fac_ss = st.session_state.get("preset_factory", "")
-            mode_opts = ["3D Game (Godot 4 Native 3D)", "Commercial App (Flutter 3.50)"]
-            m_idx = 1 if p_fac_ss == "MARKET_FACTORY_02" else 0
-            mode_pick = st.radio("Select Studio Mode:", mode_opts, index=m_idx, horizontal=True)
-            is_g_lane = ("3D Game" in mode_pick)
-            fac_key = "GAMING_FACTORY_01" if is_g_lane else "MARKET_FACTORY_02"
-            target_eng_choice = "Godot 4 Native 3D Engine (Zero-License 3D APK)" if is_g_lane else "Flutter 3.50 (Super-App / WebGL APK)"
-        with c_m2:
-            size_tier_choice = st.radio("APK Build Size:", APK_SIZE_TIERS, index=2, horizontal=True)
-
-        asm_state = load_json_file("assembly_studio_state.json", {"reject_count": 0, "confirmed": False, "items": None})
-        explicit_dc_id = "AUTO"
-        selected_paint_obj = PAINT_4_COLORS[int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)]
-        _cur_title = st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else "")
-        _cur_prompt = st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else "")
-        preview_spec = resolve_lane_id_and_specs(_cur_prompt, fac_key, "AUTO")
-
-        with st.expander("Live Split Studio (Phone Screen + Live Code + <1s Voice Call)", expanded=True):
-            render_live_assembly_studio(
-                fac_key,
-                _cur_title or ("Desi Highway Cargo King 3D" if is_g_lane else "BharatPay MegaBazaar Pro"),
-                _cur_prompt,
-                preview_spec,
-                selected_paint_obj,
-                size_tier_choice,
-                asm_state,
-            )
-            if is_g_lane:
-                tool_opts = [
-                    "Multi-Touch 3D Steering + GAS/BRK",
-                    "D/N/R Gear + Pressure Air Horn (HRN)",
-                    "Headlights & Blinkers (LGT)",
-                    "3D Driver Character (GM-51)",
-                    "3D Flyover & Highway World (GM-52)",
-                    "Dual Portrait + Landscape Fullscreen",
-                ]
-                kept_tools = st.multiselect("Owner Controller — Select 3D Vehicles & Tools to Keep:", tool_opts, default=tool_opts, key="owner_kept_tools")
-                asm_state["kept_tools"] = kept_tools
-            va_col1, va_col2, va_col3, va_col4 = st.columns(4)
-            with va_col1:
-                if st.button("Reject & Change Paint/Layout", use_container_width=True):
-                    asm_state["reject_count"] = int(asm_state.get("reject_count", 0)) + 1
-                    asm_state["confirmed"] = False
-                    persist_assembly_state(asm_state)
-                    st.rerun()
-            with va_col2:
-                if st.button("Confirm & Lock Design", use_container_width=True):
-                    asm_state["confirmed"] = True
-                    persist_assembly_state(asm_state)
-                    st.success("Design Locked & Saved to Keep-Alive Cloud!")
-            with va_col3:
-                if st.button("Stop & Delete Project", use_container_width=True, key="stop_del_studio"):
-                    reject_and_clear_project()
-                    remove_json_file("assembly_studio_state.json")
-                    remove_json_file(SCOUT_STATE_FILE)
-                    for k in ("preset_factory", "preset_title", "preset_prompt"):
-                        st.session_state.pop(k, None)
-                    st.rerun()
-            with va_col4:
-                audio_clip = st.audio_input("Native Mic Backup")
-                if audio_clip is not None:
-                    st.info("Voice captured! Ready for Groq Whisper.")
-
-
-        in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
-        in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
-
-        active_scout = load_json_file(SCOUT_STATE_FILE, None)
-        if active_scout and active_scout.get("status") == "scouting":
-            render_live_assembly_studio(active_scout.get("factory_id", "GAMING_FACTORY_01"), active_scout.get("app_title", "Nexus Studio"), active_scout.get("user_prompt", ""), resolve_lane_id_and_specs(active_scout.get("user_prompt", ""), active_scout.get("factory_id", "GAMING_FACTORY_01")), PAINT_4_COLORS[0], APK_SIZE_TIERS[1], load_json_file("assembly_studio_state.json", {}))
-            render_scout_command_board(active_scout)
-            if st.button("Cancel & Reset Scout", use_container_width=True, key="cancel_scout_btn"):
-                remove_json_file(SCOUT_STATE_FILE)
-                st.rerun()
-            time.sleep(2.5)
+        st.markdown("### Enter 1 Prompt — AI Does Everything Automatically")
+        user_prompt = st.text_area("What should I build? (3D Game, Building, or Commercial App)", height=120, placeholder="e.g. Indian Highway Cargo Truck 3D with hydraulic unloading and cockpit view")
+        if st.button("Start Auto-Studio", type="primary", use_container_width=True) and user_prompt.strip():
+            with st.spinner("Auto-Studio generating code, 3D scene, Playwright audit & GitHub APK..."):
+                run_autonomous_build(user_prompt.strip())
             st.rerun()
-        elif active_scout and active_scout.get("status") == "granted":
-            render_scout_command_board(active_scout)
-            cmd_slot = st.empty()
-            sync_slot = st.empty()
-            _, err_p1 = run_phase1_design_studio(
-                active_scout.get("app_title", "Sarfealam Pro App"),
-                active_scout.get("user_prompt", ""),
-                cmd_slot, sync_slot,
-                selected_factory=active_scout.get("selected_factory", "AUTO"),
-                target_engine=active_scout.get("target_engine", "Unity 3D Engine (Direct C# APK)"),
-                scout_brief=active_scout.get("scout_brief")
-            )
-            remove_json_file(SCOUT_STATE_FILE)
-            if err_p1:
-                st.error(err_p1)
-            else:
-                st.rerun()
-        elif active_scout and active_scout.get("status") == "error":
-            st.error(active_scout.get("pass_msg", "Scout failed"))
-            remove_json_file(SCOUT_STATE_FILE)
 
-        if st.button("Run World Scout + Depts 1-8: Deep Research, 3D Logo & Live Preview", use_container_width=True):
-            if not in_prompt.strip():
-                st.error("Please enter your app idea first.")
-            else:
-                remove_json_file(DESIGN_LOCK_FILE)
-                remove_json_file(CODED_APP_FILE)
-                job_id = f"sc_{int(time.time())}"
-                init_st = {
-                    "job_id": job_id,
-                    "status": "scouting",
-                    "app_title": in_title.strip() or "Sarfealam Pro App",
-                    "user_prompt": in_prompt.strip(),
-                    "selected_factory": fac_key,
-                    "factory_id": fac_key,
-                    "target_engine": target_eng_choice,
-                    "pass_msg": "Launching World Scout Bot in background thread...",
-                    "workers_status": "STANDBY - Reading Scout Board (Waiting for Chief Commander ACCESS GRANTED)"
-                }
-                _SCOUT_JOBS[job_id] = init_st
-                save_json_file(SCOUT_STATE_FILE, init_st)
-                th = threading.Thread(target=run_world_scout_background, args=(job_id, init_st["app_title"], init_st["user_prompt"], fac_key), daemon=True)
-                th.start()
-                st.rerun()
-
-        # DISPLAY 1 + 2 + 3 WHEN PHASE 1 IS READY
-        locked_bus = load_json_file(DESIGN_LOCK_FILE, None)
-        if locked_bus:
-            st.markdown("---")
-            if locked_bus.get("stages_p1"):
-                render_command_and_sync_panels(st.empty(), st.empty(), locked_bus, locked_bus["stages_p1"])
-
-            st.subheader(f"Display 2: Realistic Mobile Preview ({locked_bus.get('factory_id')})")
-            dd = locked_bus.get("design_doc", {})
-            pal = dd.get("palette", {})
-            b64_ic = base64.b64encode(locked_bus["icon_svg"].encode("utf-8")).decode("utf-8")
-
-            c_ic, c_info = st.columns([1, 2])
-            with c_ic:
-                st.markdown(f'<img src="data:image/svg+xml;base64,{b64_ic}" width="92" style="border-radius:20px;border:2px solid #38bdf8;"/>', unsafe_allow_html=True)
-            with c_info:
-                st.markdown(f"**Brand:** `{locked_bus.get('app_title')}` | *{dd.get('tagline', '')}*")
-                swatches = "".join([f"<span style='display:inline-block;width:18px;height:18px;border-radius:5px;background:{v};border:1px solid #fff;margin-right:4px;' title='{k}: {v}'></span>" for k, v in pal.items()])
-                st.markdown(f"**Palette:** {swatches}", unsafe_allow_html=True)
-
-            render_live_mobile_preview(locked_bus)
-
-            des_chg = st.text_input("Request Design Changes (Optional):", placeholder="e.g. Make palette emerald-gold or add Tournament leaderboard")
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                if st.button("Update Design Only", use_container_width=True):
-                    if des_chg.strip():
-                        run_phase1_design_studio(locked_bus["app_title"], locked_bus["user_prompt"], st.empty(), st.empty(), selected_factory=locked_bus.get("factory_id", "AUTO"), design_feedback=des_chg.strip())
-                        st.rerun()
-            with col_d2:
-                if st.button("Lock Design & Start Coding (Depts 9-16)", use_container_width=True):
-                    bundle, err_p2 = run_phase2_flutter_coding(locked_bus, st.empty(), st.empty())
-                    if err_p2:
-                        st.error(err_p2)
-                    else:
-                        st.rerun()
-            if st.button("Reject Project & Start Fresh", use_container_width=True, key="reject_design_studio"):
-                reject_and_clear_project()
-                st.rerun()
-
-        # DISPLAY 3: CODED FLUTTER BUNDLE READY FOR GITHUB APK COMPILER
-        coded_bundle = load_json_file(CODED_APP_FILE, None)
-        if coded_bundle:
-            st.markdown("---")
-            st.subheader("Display 3: 16-Dept Coded Bundle Ready for APK Build")
-            st.success(f"Boss: {coded_bundle.get('review_verdict', 'APPROVED')[:80]} | Packages: {', '.join(coded_bundle.get('extra_deps', {}).keys()) or 'Core Flutter'}")
-            with st.expander("Inspect Generated Dart Files (4 Modules)"):
-                st.code(coded_bundle.get("main_dart", "")[:1000], language="dart")
-
-            c_b1, c_b2 = st.columns(2)
-            with c_b1:
-                d3_opts = ["Godot 4 Native 3D Engine (Zero-License 3D APK)", "Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)", "Unity 3D Engine (Requires .ulf License)"]
-            cb_eng = coded_bundle.get("target_engine", "")
-            d3_idx = 0 if ("Godot" in cb_eng or not cb_eng) else (1 if "Flutter" in cb_eng else 2)
-            apk_engine = st.radio("Select APK Build Engine:", d3_opts, index=d3_idx, horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
-            if st.button("Approve & Build Native Android APK on GitHub", use_container_width=True):
-                    safe_repo = re.sub(r'[^a-z0-9-]', '', coded_bundle["app_title"].lower().replace(" ", "-")) or "flutter-app"
-                    safe_repo = f"{safe_repo}-{int(time.time()) % 100000}"
-                    with st.spinner("Creating GitHub Repo & Pushing 16-Dept Flutter Project..."):
-                        try:
-                            repo_res = create_github_repo(safe_repo, f"{coded_bundle['app_title']} - {coded_bundle.get('factory_id')}")
-                            repo_html = repo_res.get("html_url", f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{safe_repo}")
-                            push_file_to_github(safe_repo, "pubspec.yaml", coded_bundle["pubspec_yaml"], "Add pubspec.yaml")
-                            push_file_to_github(safe_repo, "assets/icon.svg", coded_bundle["icon_svg"], "Add Brand Symbol Icon")
-                            game_html_doc = coded_bundle.get("preview_html") or coded_bundle.get("rendered_preview_html") or ""
-                            if game_html_doc:
-                                full_game_doc = f"<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='margin:0;background:#030712;'>{game_html_doc}</body></html>"
-                                push_file_to_github(safe_repo, "assets/game.html", full_game_doc, "Bundle Playable Game Asset for WebView APK")
-                            push_file_to_github(safe_repo, "lib/services/supabase_api.dart", coded_bundle["backend_dart"], "Add Supabase Backend")
-                            push_file_to_github(safe_repo, "lib/services/payment_gateway.dart", coded_bundle["gateway_dart"], "Add Payment Gateway")
-                            push_file_to_github(safe_repo, "lib/screens/app_screens.dart", coded_bundle["screens_dart"], "Add UI Screens")
-                            push_file_to_github(safe_repo, "lib/main.dart", coded_bundle["main_dart"], "Add Navigation Entry")
-                            push_file_to_github(safe_repo, "build.sh", make_flutter_build_script(coded_bundle["app_title"], coded_bundle["pkg_slug"]), "Add Flutter APK Build Script")
-                            d17_notes = run_dept_17_18_memory_enforcer(coded_bundle, apk_engine)
-                            for d_note in d17_notes:
-                                st.info(d_note)
-                            if "Godot 4" in apk_engine:
-                                g_spec = coded_bundle.get("gm_spec") or GAMING_DATA_CENTER["GM-01"]
-                                p_hex = coded_bundle.get("paint_hex", "#dc2626")
-                                s_tier = coded_bundle.get("size_tier", APK_SIZE_TIERS[1])
-                                g_files = build_godot4_3d_project_files(
-                                    coded_bundle["app_title"],
-                                    coded_bundle["pkg_slug"],
-                                    coded_bundle.get("design_doc", {}).get("palette", {}),
-                                    gm_spec=g_spec,
-                                    paint_hex=p_hex,
-                                    size_tier=s_tier,
-                                )
-                                for gf_path, gf_body in g_files.items():
-                                    push_file_to_github(safe_repo, gf_path, gf_body, f"Add Godot 4 3D {gf_path}")
-                                push_file_to_github(safe_repo, ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, "Activate Godot 4 3D Android APK Workflow")
-                            elif "Unity 3D" in apk_engine:
-                                u_files = build_unity_3d_project_files(coded_bundle["app_title"], coded_bundle["pkg_slug"])
-                                for uf_path, uf_body in u_files.items():
-                                    push_file_to_github(safe_repo, uf_path, uf_body, f"Add Unity 3D {uf_path}")
-                                push_github_repo_secret(safe_repo, "UNITY_EMAIL", DEFAULT_UNITY_EMAIL)
-                                push_github_repo_secret(safe_repo, "UNITY_PASSWORD", DEFAULT_UNITY_PASSWORD)
-                                push_file_to_github(safe_repo, ".github/workflows/build_unity_apk.yml", UNITY_APK_WORKFLOW, "Activate Unity 3D Android APK Workflow")
-                            else:
-                                push_file_to_github(safe_repo, ".github/workflows/build_flutter_apk.yml", AUTOMATED_APK_WORKFLOW, "Activate Flutter APK Workflow")
-                            rec = {
-                                "id": f"APP-{int(time.time()) % 100000}",
-                                "name": coded_bundle["app_title"],
-                                "engine_label": ("Godot 4 3D" if "Godot 4" in apk_engine else ("Unity 3D" if "Unity 3D" in apk_engine else "Flutter 3.50")),
-                                "repo": safe_repo,
-                                "repo_url": repo_html,
-                                "actions_url": f"{repo_html}/actions",
-                                "releases_url": f"{repo_html}/releases",
-                                "admin_url": f"https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app={safe_repo}",
-                                "time": datetime.now().strftime("%d %b %Y, %I:%M %p")
-                            }
-                            save_to_vault(rec)
-                            save_json_file(ACTIVE_BUILD_FILE, rec)
-                            remove_json_file(DESIGN_LOCK_FILE)
-                            remove_json_file(CODED_APP_FILE)
-                            st.rerun()
-                        except Exception as gh_e:
-                            st.error(f"GitHub Push Error: {gh_e}")
-            with c_b2:
-                if st.button("Reject Bundle & Start Fresh", use_container_width=True, key="reject_coded_bundle"):
-                    reject_and_clear_project()
-                    st.rerun()
-
-# ==============================================================================
-# TAB 2: PERSISTENT LIVE TRACKER + 5-ENGINE & ICONIFY DIAGNOSTICS
-# ==============================================================================
 with tab_tracker:
-    st.subheader("Persistent GitHub Live Build Tracker")
-    c_tr1, c_tr2 = st.columns(2)
-    with c_tr1:
-        if st.button("Refresh Live GitHub Status", use_container_width=True, key="tracker_refresh"):
-            st.rerun()
-    with c_tr2:
-        if st.button("Check Live AI Engines & Iconify", use_container_width=True, key="check_ai_tracker"):
-            with st.spinner("Probing NVIDIA, Groq, Gemini, OpenRouter, Cohere & Iconify..."):
-                st.session_state["ai_diag_report"] = run_live_engine_diagnostics()
-
-    if "ai_diag_report" in st.session_state:
-        st.markdown("**5-Engine + Iconify Health Report:**")
-        for lbl, ok, detail, extra_ids in st.session_state["ai_diag_report"]:
-            ic = "✅" if ok else "⚠️"
-            st.markdown(f"- {ic} **{lbl}**: `{detail}`")
-            if extra_ids:
-                with st.expander(f"Sample Live NVIDIA Models ({len(extra_ids)} shown)"):
-                    st.code("\n".join(extra_ids), language="text")
-
-    live_repos = fetch_github_user_repos()
-    if not live_repos:
-        st.info("No active or recent builds found on GitHub yet.")
+    st_state = load_json_file(STATE_FILE, None)
+    if st_state:
+        tele = get_live_build_telemetry(st_state["repo"])
+        st.write("Repository:", st_state["repo_url"])
+        st.write("Status:", tele.get("status"), "| Conclusion:", tele.get("conclusion"))
+        for sp in tele.get("steps", []):
+            st.write(f"- {sp.get('name')}: {sp.get('status')} ({sp.get('conclusion')})")
     else:
-        for repo_obj in live_repos[:4]:
-            r_name = repo_obj.get("name", "")
-            r_url = repo_obj.get("html_url", "")
-            tele = get_live_build_telemetry(r_name)
-            st_state = tele.get("status", "unknown")
-            st_conc = tele.get("conclusion")
-            rel_url = f"{r_url}/releases"
-            badge = "✅ READY" if st_conc == "success" else ("❌ FAILED" if st_conc == "failure" else f"⏳ {st_state.upper()}")
-            bcol = "#10b981" if st_conc == "success" else ("#ef4444" if st_conc == "failure" else "#f59e0b")
-            st.markdown(f"<div style='background:rgba(17,24,39,0.9);border:1.5px solid {bcol};border-radius:14px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;'><b>{r_name}</b><a href='{rel_url}' style='color:{bcol};font-weight:800;text-decoration:none;'>{badge}</a></div>", unsafe_allow_html=True)
+        st.info("No active build.")
 
-# ==============================================================================
-# TAB 3: DUAL-LINK LIFETIME VAULT (STORE)
-# ==============================================================================
 with tab_vault:
-    st.subheader("All Generated Apps Vault (Dual-Link Store)")
-    local_records = load_json_file(VAULT_FILE, [])
-    gh_repos = fetch_github_user_repos()
-    known_repos = {r.get("repo") for r in local_records}
-    for gr in gh_repos:
-        r_name = gr.get("name")
-        if r_name not in known_repos:
-            r_url = gr.get("html_url")
-            local_records.append({
-                "id": f"GH-{gr.get('id')}",
-                "name": r_name.replace("-", " ").title(),
-                "repo": r_name,
-                "repo_url": r_url,
-                "releases_url": f"{r_url}/releases",
-                "admin_url": f"https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app={r_name}",
-                "time": gr.get("created_at", "")[:10]
-            })
-    if not local_records:
-        st.info("No applications generated yet.")
+    vault = load_json_file(VAULT_FILE, [])
+    if not vault:
+        st.info("No completed apps in Vault yet.")
     else:
-        for item in local_records:
-            r_name = item.get("repo", "")
-            adm_url = item.get("admin_url", f"https://supreme-agent-vlqyfohdlkxxwpsdc4tiuy.streamlit.app/?admin_app={r_name}")
-            st.markdown(f"""
-            <div style="background:rgba(31,41,55,0.75);border:1px solid rgba(59,130,246,0.3);border-radius:14px;padding:14px;margin-bottom:10px;">
-              <div style="display:flex;justify-content:space-between;"><b style="color:#fff;">📱 {item.get('name', r_name)}</b><span style="font-size:11px;color:#38bdf8;">{item.get('time', '')}</span></div>
-              <div style="display:flex;gap:8px;margin-top:10px;">
-                <a href="{item.get('releases_url', '#')}" style="flex:1;text-align:center;background:#059669;color:#fff;padding:8px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;">Public APK</a>
-                <a href="{adm_url}" style="flex:1;text-align:center;background:#2563eb;color:#fff;padding:8px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;">Admin Link</a>
-              </div>
-            </div>""", unsafe_allow_html=True)
+        for item in vault:
+            st.markdown(f"**{item.get('name')}** ({item.get('time')})  \nAPK: {item.get('releases_url')}  \nAdmin: {item.get('admin_url')}")
 
-# ==============================================================================
-# TAB 4: PRIVATE OWNER ADMIN CONTROL CENTER
-# ==============================================================================
 with tab_admin:
-    st.subheader("Private Owner Admin Control")
-    pin_input = st.text_input("Enter Master Admin Password:", type="password", placeholder="Enter Password")
-    if pin_input == ADMIN_PASSWORD:
-        st.success(f"Verified Owner: {OWNER_NAME} | Full Admin Access Granted")
-        try:
-            live_users = supabase_rest("factory_users?order=created_at.desc&limit=25")
-            live_txs = supabase_rest("factory_transactions?order=created_at.desc&limit=20")
-            m1, m2 = st.columns(2)
-            m1.metric("Cloud Users", len(live_users))
-            m2.metric("Cloud Transactions", len(live_txs))
-        except Exception:
-            st.info("Supabase tables ready.")
-        gh_list = fetch_github_user_repos()
-        repo_names = [r.get("name") for r in gh_list]
-        if repo_names:
-            default_idx = repo_names.index(deep_admin_repo) if deep_admin_repo in repo_names else 0
-            selected_repo = st.selectbox("Select App to Manage:", repo_names, index=default_idx)
-            target_file = st.selectbox("Select File to Edit:", ["lib/main.dart", "lib/screens/app_screens.dart", "lib/services/payment_gateway.dart", "lib/services/supabase_api.dart", "pubspec.yaml"])
-            c_adm1, c_adm2 = st.columns(2)
-            with c_adm1:
-                if st.button("Load Selected File", use_container_width=True):
-                    try:
-                        st.session_state[f"edit_{selected_repo}_{target_file}"] = fetch_file_from_github(selected_repo, target_file)
-                    except Exception:
-                        st.warning(f"{target_file} not found.")
-            with c_adm2:
-                if st.button("Delete App Repo", use_container_width=True):
-                    try:
-                        delete_github_repo(selected_repo)
-                        st.success(f"Deleted `{selected_repo}`")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as de:
-                        st.error(f"Delete failed: {de}")
-            edit_key = f"edit_{selected_repo}_{target_file}"
-            if edit_key in st.session_state:
-                upd = st.text_area(f"Editing {target_file}:", value=st.session_state[edit_key], height=200)
-                if st.button(f"Save {target_file} & Rebuild APK", use_container_width=True):
-                    push_file_to_github(selected_repo, target_file, upd, f"Admin Update: {target_file}")
-                    st.success("Updated! Fresh Flutter APK building on GitHub.")
-    elif pin_input:
-        st.error("Invalid Password!")
-    else:
-        st.info("Enter Master Admin Password to unlock.")
+    pin = st.text_input("Admin Password", type="password")
+    if pin == ADMIN_PASSWORD:
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v30.0 Active")
+        st.write("Configured Engines:", {
+            "Gemini": bool(GEMINI_KEY),
+            "Groq": bool(GROQ_KEY),
+            "NVIDIA": bool(NVIDIA_KEY),
+            "OpenRouter": bool(OPENROUTER_KEY),
+            "Cohere": bool(COHERE_KEY),
+            "GitHub": bool(GITHUB_TOKEN),
+        })
+    elif pin:
+        st.error("Invalid Password")
