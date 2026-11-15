@@ -12,7 +12,7 @@ import urllib.error
 from datetime import datetime
 
 # ==============================================================================
-# SARFEALAM ENTERPRISE AI APP FACTORY v16.0 STUDIO-6W 16-DEPT 2-FACTORY SYSTEM
+# SARFEALAM ENTERPRISE AI APP FACTORY v18.0 LANDSCAPE-STUDIO 16-DEPT 2-FACTORY SYSTEM
 # ==============================================================================
 # Sole Owner & Legal Copyright: Sarfealam (Package Prefix: com.sarfealam)
 # 2 Dedicated Factory IDs: GAMING_FACTORY_01 & MARKET_FACTORY_02
@@ -1812,172 +1812,158 @@ def persist_assembly_state(asm_state):
     """Workflow 5 Keep-Alive: Saves assembly state locally + Supabase cloud for 1.5hr+ zero-loss sessions."""
     save_json_file("assembly_studio_state.json", asm_state)
 
-def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state):
-    """Workflow 5: Replaces Cartoon Office in Display 1 with Live Touch Drag-Drop Assembly + <1s Voice Call."""
+def render_live_assembly_studio(factory_id, app_title, user_prompt, spec, selected_paint, size_tier, asm_state, step_stage=4, live_code_snippet=""):
+    """Workflow 5 (v17.0): codeflix-style Split Live Phone Screen (Left) + Live Code Editor (Right) + <1s Voice Call."""
     is_game = (factory_id == "GAMING_FACTORY_01")
-    paint_hex = selected_paint.get("hex", "#dc2626")
-    paint_name = selected_paint.get("name", "Crimson Red")
-    items = asm_state.get("items") or (
-        [
-            {"id": "steering", "label": "3D Steering", "x": 16, "y": 68, "status": "locked"},
-            {"id": "pedals", "label": "GAS / BRK", "x": 72, "y": 72, "status": "locked"},
-            {"id": "driver", "label": f"Driver {spec.get('chr_id','CHR-01')}", "x": 42, "y": 32, "status": "active"},
-            {"id": "sound", "label": f"{spec.get('sfx_id','SFX-01')} + {spec.get('hrn_id','HRN-01')}", "x": 66, "y": 18, "status": "active"},
-            {"id": "world", "label": f"World {spec.get('env_id','ENV-01')}", "x": 14, "y": 18, "status": "active"},
-        ] if is_game else [
-            {"id": "otp", "label": "MK-51 OTP + Profile ID", "x": 14, "y": 16, "status": "locked"},
-            {"id": "hero", "label": f"{spec.get('id','MK-01')} 3D Hero Card", "x": 18, "y": 38, "status": "active"},
-            {"id": "pay", "label": "UPI / Razorpay + Ding!", "x": 58, "y": 54, "status": "active"},
-            {"id": "nav", "label": "MK-52 4-Tab Nav", "x": 24, "y": 78, "status": "locked"},
-        ]
-    )
-    groq_key = _get_secret("GROQ_API_KEY", "")
-    gemini_key = _get_secret("GEMINI_API_KEY", "")
-    items_json = json.dumps(items)
-    mode_badge = f"GODOT 4 NATIVE 3D | {spec.get('id','GM-01')}" if is_game else f"FLUTTER PLAY-STORE 3D | {spec.get('id','MK-01')}"
-    lead_note = "3D Game Studio Architect" if is_game else "Principal Super-App Architect"
+    paint_idx = int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)
+    active_paint = PAINT_4_COLORS[paint_idx] if int(asm_state.get("reject_count", 0)) > 0 else selected_paint
+    paint_hex = active_paint.get("hex", "#dc2626")
+    paint_accent = active_paint.get("accent", "#f87171")
+    paint_name = active_paint.get("name", "Crimson Red")
+    safe_title = (app_title or ("Desi Cargo King 3D" if is_game else "BharatPay Pro"))[:26]
+    spec_id = spec.get("id", "GM-01" if is_game else "MK-01")
+    spec_name = spec.get("name", "Indian Cargo Truck" if is_game else "Mega Store")
+    size_short = size_tier.split("(")[0].strip()
 
+    if not live_code_snippet:
+        if is_game:
+            live_code_snippet = (
+                f"// Godot 4 Native 3D | {spec_id}: {spec_name}\n"
+                f"extends VehicleBody3D\n"
+                f"var paint = Color(\"{paint_hex}\") # {paint_name}\n"
+                f"var driver = \"{spec.get('chr_id','CHR-01')}\"\n"
+                f"var world  = \"{spec.get('env_id','ENV-01')}\"\n"
+                f"var audio  = \"{spec.get('sfx_id','SFX-01')}\"\n"
+                f"func _physics_process(delta):\n"
+                f"  steering = move_toward(steering, h * 0.48, delta*3.4)\n"
+                f"  engine_force = gas * 360.0\n"
+                f"  # Build Tier: {size_short} | Dual Portrait+Landscape"
+            )
+        else:
+            live_code_snippet = (
+                f"// Flutter 3.50 | {spec_id}: {spec_name}\n"
+                f"class HomeScreen extends StatelessWidget {{\n"
+                f"  final String themeColor = \"{paint_hex}\"; // {paint_name}\n"
+                f"  final String profileId  = \"MK-51-OTP-VERIFIED\";\n"
+                f"  Widget build(ctx) => Scaffold(\n"
+                f"    body: Column([WalletHeroCard(), Grid2x2Offers()]),\n"
+                f"    bottomNavigationBar: Floating4TabNav(),\n"
+                f"  ); // Build Tier: {size_short}\n"
+                f"}}"
+            )
+
+    code_escaped = (
+        live_code_snippet.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+    if is_game:
+        phone_inner = f"""
+        <div style="position:relative;height:100%;background:linear-gradient(180deg,#38bdf8 0%,#93c5fd 42%,#4ade80 42%,#15803d 100%);overflow:hidden;">
+          <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;">
+            <span>{safe_title}</span><span>{spec_id}</span>
+          </div>
+          <div style="position:absolute;top:26px;left:8px;background:rgba(15,23,42,0.75);color:#fbbf24;font-size:8px;padding:2px 6px;border-radius:99px;font-weight:700;">
+            World: {spec.get('env_id','ENV-01')} | {paint_name}
+          </div>
+          <div style="position:absolute;left:50%;bottom:54px;transform:translateX(-50%);width:68%;height:110px;background:linear-gradient(180deg,#475569,#1e293b);clip-path:polygon(25% 0%,75% 0%,100% 100%,0% 100%);">
+            <div style="width:4px;height:100%;margin:0 auto;background:repeating-linear-gradient(180deg,#facc15 0 12px,transparent 12px 24px);"></div>
+          </div>
+          <div style="position:absolute;left:50%;bottom:84px;transform:translateX(-50%);width:64px;height:44px;background:linear-gradient(135deg,{paint_hex},{paint_accent});border-radius:10px;border:2px solid #fff;box-shadow:0 8px 18px rgba(0,0,0,0.65);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:10px;">
+            <span>{spec_id}</span>
+            <span style="font-size:7px;opacity:0.9;">{spec.get('chr_id','CHR-01')}</span>
+          </div>
+          <div style="position:absolute;bottom:10px;left:10px;width:44px;height:44px;border-radius:50%;border:4px solid #e2e8f0;background:rgba(15,23,42,0.6);box-shadow:0 2px 8px #000;"></div>
+          <div style="position:absolute;bottom:10px;right:10px;display:flex;gap:4px;">
+            <div style="background:#ef4444;color:#fff;font-size:8px;font-weight:800;padding:8px 6px;border-radius:6px;">BRK</div>
+            <div style="background:#10b981;color:#fff;font-size:8px;font-weight:800;padding:10px 7px;border-radius:6px;">GAS</div>
+          </div>
+        </div>"""
+    else:
+        phone_inner = f"""
+        <div style="height:100%;background:linear-gradient(180deg,#e0f2fe 0%,#f8fafc 45%);padding:10px 8px;color:#0f172a;display:flex;flex-direction:column;gap:7px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:10px;font-weight:900;color:{paint_hex};">{safe_title}</span>
+            <span style="font-size:8px;background:{paint_hex};color:#fff;padding:2px 6px;border-radius:99px;font-weight:700;">OTP OK</span>
+          </div>
+          <div style="background:linear-gradient(135deg,{paint_hex},#0f172a);color:#fff;border-radius:10px;padding:8px;box-shadow:0 6px 14px rgba(0,0,0,0.22);">
+            <div style="font-size:8px;opacity:0.85;">Live Wallet ({paint_name})</div>
+            <div style="font-size:14px;font-weight:900;">Rs. 2,450.00</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+            <div style="background:#fff;border-radius:8px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);font-size:8px;font-weight:800;border-left:3px solid {paint_hex};">Quick Order<br><span style="color:#10b981;">10m</span></div>
+            <div style="background:#fff;border-radius:8px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);font-size:8px;font-weight:800;border-left:3px solid #10b981;">Profile ID<br><span style="color:#64748b;">MK-51</span></div>
+          </div>
+          <div style="margin-top:auto;background:#0f172a;color:#fff;border-radius:10px;padding:5px;display:flex;justify-content:space-around;font-size:8px;font-weight:700;">
+            <span style="color:{paint_accent};">Home</span><span>Apps</span><span>Shop</span><span>Wallet</span>
+          </div>
+        </div>"""
+
+    if is_game:
+        split_block = f'<div class="split-land"><div class="phone-land">{phone_inner}</div><pre class="editor-land">{code_escaped}</pre></div>'
+    else:
+        split_block = f'<div class="split"><div class="phone"><div class="notch"></div>{phone_inner}</div><pre class="editor">{code_escaped}</pre></div>'
+    groq_key = _get_secret("GROQ_API_KEY", "")
     html_studio = f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  *{{box-sizing:border-box;user-select:none;-webkit-user-select:none;}}
-  body{{margin:0;padding:8px;background:#070d1a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;}}
-  .top-bar{{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,#0f172a,#1e293b);border:1px solid #334155;border-radius:12px;padding:8px 10px;margin-bottom:8px;}}
-  .badge{{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;background:{paint_hex};color:#fff;}}
-  .stage{{position:relative;width:100%;height:260px;border-radius:14px;overflow:hidden;border:2px solid {paint_hex};background:radial-gradient(circle at 50% 35%, rgba(56,189,248,0.18), #030712 75%);touch-action:none;}}
-  .grid-bg{{position:absolute;inset:0;background-image:linear-gradient(rgba(148,163,184,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,0.1) 1px,transparent 1px);background-size:26px 26px;}}
-  .center-core{{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;}}
-  .core-box{{width:92px;height:62px;margin:0 auto 6px;border-radius:14px;background:linear-gradient(135deg,{paint_hex},#0f172a);border:2px solid rgba(255,255,255,0.45);box-shadow:0 12px 28px rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;}}
-  .drag-node{{position:absolute;padding:6px 10px;border-radius:10px;background:rgba(15,23,42,0.92);border:1.5px solid #38bdf8;color:#e2e8f0;font-size:11px;font-weight:700;cursor:grab;box-shadow:0 6px 16px rgba(0,0,0,0.45);touch-action:none;}}
-  .drag-node.locked{{border-color:#10b981;background:rgba(6,78,59,0.85);}}
-  .voice-bar{{margin-top:8px;display:flex;gap:8px;align-items:center;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;}}
-  .call-btn{{border:none;border-radius:999px;padding:7px 12px;font-weight:800;font-size:11px;cursor:pointer;background:#10b981;color:#fff;}}
-  .call-btn.live{{background:#ef4444;animation:pulse 1.2s infinite;}}
-  @keyframes pulse{{0%{{box-shadow:0 0 0 0 rgba(239,68,68,0.6);}}70%{{box-shadow:0 0 0 10px rgba(239,68,68,0);}}100%{{box-shadow:0 0 0 0 rgba(239,68,68,0);}}}}
-  .voice-log{{font-size:11px;color:#94a3b8;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+  *{{box-sizing:border-box;}}
+  body{{margin:0;padding:6px;background:#070d1a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;}}
+  .hdr{{display:flex;justify-content:space-between;align-items:center;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:6px 10px;margin-bottom:8px;font-size:11px;}}
+  .split{{display:grid;grid-template-columns:148px 1fr;gap:8px;align-items:stretch;}}
+  .split-land{{display:flex;flex-direction:column;gap:8px;}}
+  .phone-land{{width:100%;height:175px;border-radius:18px;border:4px solid #334155;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,0.6);position:relative;background:#000;}}
+  .editor-land{{width:100%;height:110px;background:#0b1120;border:1px solid #1e293b;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,monospace;font-size:10px;line-height:1.4;color:#7dd3fc;margin:0;}}
+  .phone{{height:270px;border-radius:22px;border:4px solid #334155;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,0.6);position:relative;background:#000;}}
+  .notch{{position:absolute;top:4px;left:50%;transform:translateX(-50%);width:42px;height:8px;background:#000;border-radius:99px;z-index:10;}}
+  .editor{{height:270px;background:#0b1120;border:1px solid #1e293b;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,monospace;font-size:10px;line-height:1.45;color:#7dd3fc;}}
+  .voice-bar{{margin-top:8px;display:flex;gap:8px;align-items:center;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:7px 10px;}}
+  .call-btn{{border:none;border-radius:999px;padding:6px 12px;font-weight:800;font-size:11px;cursor:pointer;background:#10b981;color:#fff;white-space:nowrap;}}
+  .call-btn.live{{background:#ef4444;}}
+  .v-log{{font-size:10.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}}
 </style></head><body>
-<div class="top-bar">
-  <div><div style="font-size:12px;font-weight:800;">Live Assembly Studio: {app_title}</div><div style="font-size:10px;color:#94a3b8;">{lead_note} | {paint_name} | {size_tier.split('(')[0].strip()}</div></div>
-  <span class="badge">{mode_badge}</span>
+<div class="hdr">
+  <span style="font-weight:800;">Live Split Studio: {safe_title}</span>
+  <span style="background:{paint_hex};color:#fff;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800;">{spec_id} | {size_short}</span>
 </div>
-<div class="stage" id="asmStage">
-  <div class="grid-bg"></div>
-  <div class="center-core">
-    <div class="core-box">{spec.get('id','GM-01')}</div>
-    <div style="font-size:10px;color:#cbd5e1;font-weight:700;">Drag any module with your finger</div>
-  </div>
-</div>
+{split_block}
 <div class="voice-bar">
   <button class="call-btn" id="callBtn" onclick="toggleVoiceCall()">Start Live Call</button>
-  <div class="voice-log" id="voiceLog">Ready: Tap Start Live Call or drag modules above</div>
+  <div class="v-log" id="voiceLog">Live Phone + Code Ready | Tap Reject below to switch color/layout</div>
 </div>
 <script>
-  const stage = document.getElementById('asmStage');
-  const items = {items_json};
-  items.forEach(it => {{
-    const el = document.createElement('div');
-    el.className = 'drag-node' + (it.status === 'locked' ? ' locked' : '');
-    el.style.left = it.x + '%';
-    el.style.top = it.y + '%';
-    el.innerText = (it.status === 'locked' ? '[LOCKED] ' : '[MOVE] ') + it.label;
-    let activeId = null;
-    el.addEventListener('touchstart', e => {{ activeId = e.changedTouches[0].identifier; }}, {{passive:true}});
-    el.addEventListener('touchmove', e => {{
-      for (const t of e.changedTouches) {{
-        if (t.identifier === activeId) {{
-          const r = stage.getBoundingClientRect();
-          const nx = Math.max(2, Math.min(72, ((t.clientX - r.left) / r.width) * 100));
-          const ny = Math.max(4, Math.min(82, ((t.clientY - r.top) / r.height) * 100));
-          el.style.left = nx + '%';
-          el.style.top = ny + '%';
-        }}
+  let callOn=false, recog=null;
+  const qKey={json.dumps(groq_key)};
+  function speakFast(t){{if(!window.speechSynthesis)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='hi-IN';u.rate=1.08;window.speechSynthesis.speak(u);}}
+  async function fastAiReply(said){{
+    document.getElementById('voiceLog').innerText='You: '+said;
+    if(window.speechSynthesis)window.speechSynthesis.cancel();
+    try{{
+      let reply='Samajh gaya sir, design update ho raha hai.';
+      if(qKey){{
+        const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{{method:'POST',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+qKey}},body:JSON.stringify({{model:'openai/gpt-oss-120b',max_tokens:80,messages:[{{role:'system',content:'Reply in 1 short Hinglish sentence as app/game architect.'}},{{role:'user',content:said}}]}})}});
+        const d=await r.json();if(d.choices&&d.choices[0])reply=d.choices[0].message.content;
       }}
-    }}, {{passive:true}});
-    el.addEventListener('mousedown', e => {{
-      const mv = ev => {{
-        const r = stage.getBoundingClientRect();
-        el.style.left = Math.max(2, Math.min(72, ((ev.clientX - r.left)/r.width)*100)) + '%';
-        el.style.top = Math.max(4, Math.min(82, ((ev.clientY - r.top)/r.height)*100)) + '%';
-      }};
-      const up = () => {{ window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); }};
-      window.addEventListener('mousemove', mv);
-      window.addEventListener('mouseup', up);
-    }});
-    stage.appendChild(el);
-  }});
-
-  // <1s Client-Side Live Voice Call (SpeechRecognition + Groq/Gemini + Barge-In TTS)
-  let callOn = false, recog = null;
-  const gKey = {json.dumps(gemini_key)};
-  const qKey = {json.dumps(groq_key)};
-  function speakFast(txt) {{
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(txt);
-    u.lang = 'hi-IN';
-    u.rate = 1.08;
-    window.speechSynthesis.speak(u);
+      document.getElementById('voiceLog').innerText='AI: '+reply;speakFast(reply);
+    }}catch(e){{document.getElementById('voiceLog').innerText='Use Native Mic backup below';}}
   }}
-  async function fastAiReply(said) {{
-    document.getElementById('voiceLog').innerText = 'You: ' + said;
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    try {{
-      let reply = 'Samajh gaya sir, module update kar diya.';
-      if (qKey) {{
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {{
-          method: 'POST',
-          headers: {{'Content-Type':'application/json','Authorization':'Bearer ' + qKey}},
-          body: JSON.stringify({{
-            model: 'openai/gpt-oss-120b',
-            max_tokens: 90,
-            messages: [
-              {{role:'system', content:'Reply in 1 short Hinglish sentence as a helpful app/game studio engineer.'}},
-              {{role:'user', content: said}}
-            ]
-          }})
-        }});
-        const d = await res.json();
-        if (d.choices && d.choices[0]) reply = d.choices[0].message.content;
-      }}
-      document.getElementById('voiceLog').innerText = 'AI: ' + reply;
-      speakFast(reply);
-    }} catch(e) {{
-      document.getElementById('voiceLog').innerText = 'Voice ready (use audio backup below if mic blocked)';
-    }}
-  }}
-  function toggleVoiceCall() {{
-    const btn = document.getElementById('callBtn');
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {{
-      document.getElementById('voiceLog').innerText = 'Use Native Mic button below (iframe mic restricted)';
-      return;
-    }}
-    if (!callOn) {{
-      callOn = true;
-      btn.classList.add('live');
-      btn.innerText = 'End Live Call';
-      recog = new SR();
-      recog.continuous = true;
-      recog.interimResults = false;
-      recog.lang = 'hi-IN';
-      recog.onresult = e => {{
-        const last = e.results[e.results.length - 1][0].transcript.trim();
-        if (last) fastAiReply(last);
-      }};
-      recog.onerror = () => {{
-        document.getElementById('voiceLog').innerText = 'Chrome mic blocked in iframe - use Native Mic below!';
-      }};
-      try {{ recog.start(); }} catch(e) {{}}
-    }} else {{
-      callOn = false;
-      btn.classList.remove('live');
-      btn.innerText = 'Start Live Call';
-      if (recog) try {{ recog.stop(); }} catch(e) {{}}
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
+  function toggleVoiceCall(){{
+    const btn=document.getElementById('callBtn'), SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){{document.getElementById('voiceLog').innerText='Use Native Mic below';return;}}
+    if(!callOn){{
+      callOn=true;btn.classList.add('live');btn.innerText='End Call';
+      recog=new SR();recog.continuous=true;recog.interimResults=false;recog.lang='hi-IN';
+      recog.onresult=e=>{{const l=e.results[e.results.length-1][0].transcript.trim();if(l)fastAiReply(l);}};
+      recog.onerror=()=>{{document.getElementById('voiceLog').innerText='Mic blocked in iframe - use Native Mic below';}};
+      try{{recog.start();}}catch(e){{}}
+    }}else{{
+      callOn=false;btn.classList.remove('live');btn.innerText='Start Live Call';
+      if(recog)try{{recog.stop();}}catch(e){{}}
+      if(window.speechSynthesis)window.speechSynthesis.cancel();
     }}
   }}
 </script></body></html>"""
-    st.components.v1.html(html_studio, height=368, scrolling=False)
-
+    st.components.v1.html(html_studio, height=405 if is_game else 372, scrolling=False)
 
 def render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check):
     """60-FPS Film-Style Real Human Office Studio: All 8 Named AI Devs, World Scout First, Done Corner Side-Line!"""
@@ -2128,7 +2114,7 @@ def render_command_and_sync_panels(cmd_slot, sync_slot, project_bus, stages):
     run_idx = next((i for i, s in enumerate(stages) if s.get("status") == "running"), done_cnt)
 
     with cmd_slot.container():
-        render_3d_cartoon_factory_scene(factory_id, done_cnt, run_idx, cross_check)
+        render_live_assembly_studio(factory_id, project_bus.get("app_title","Nexus Project"), project_bus.get("user_prompt",""), resolve_lane_id_and_specs(project_bus.get("user_prompt",""), factory_id), PAINT_4_COLORS[done_cnt % 4], project_bus.get("size_tier", APK_SIZE_TIERS[2]), load_json_file("assembly_studio_state.json", {}))
         fetched_icons = project_bus.get("fetched_icons", [])
         icons_html = ""
         if fetched_icons:
@@ -3217,7 +3203,7 @@ st.markdown(f"""
       <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v16.0 STUDIO-6W</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v18.0 LANDSCAPE-STUDIO</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -3340,63 +3326,61 @@ with tab_build:
             time.sleep(10)
             st.rerun()
     else:
-        st.subheader("1. Choose Factory ID & Enter App Idea")
-        fac_opts = ["AUTO (Smart AI Router)", "GAMING_FACTORY_01 (Gaming & Prediction)", "MARKET_FACTORY_02 (Commercial & Service)"]
-        p_fac_ss = st.session_state.get("preset_factory", "")
-        fac_idx = 1 if p_fac_ss == "GAMING_FACTORY_01" else (2 if p_fac_ss == "MARKET_FACTORY_02" else 0)
-        fac_choice = st.selectbox("Factory Lane:", fac_opts, index=fac_idx)
-        fac_key = "AUTO" if fac_choice.startswith("AUTO") else fac_choice.split(" ")[0]
-        eng_opts = ["Godot 4 Native 3D Engine (Zero-License 3D APK)", "Flutter 3.50 (Super-App / WebGL APK)", "Unity 3D Engine (Requires .ulf License)"]
-        eng_idx = 1 if fac_key == "MARKET_FACTORY_02" else 0
-        target_eng_choice = st.selectbox("Target APK Engine:", eng_opts, index=eng_idx)
-        c_oc1, c_oc2, c_oc3 = st.columns(3)
-        with c_oc1:
-            is_g_lane = (fac_key == "GAMING_FACTORY_01") or (fac_key == "AUTO" and "Flutter" not in target_eng_choice)
-            if is_g_lane:
-                gm_list = ["AUTO (World Scout Pick)"] + [f"{k}: {v['name']}" for k, v in GAMING_DATA_CENTER.items() if k not in ("GM-51", "GM-52")]
-                gm_pick = st.selectbox("Gaming 52-ID Vault:", gm_list, index=0)
-                explicit_dc_id = gm_pick.split(":")[0].strip() if ":" in gm_pick else "AUTO"
-            else:
-                mk_list = ["AUTO (World Scout Pick)"] + [f"{k}: {v['name']}" for k, v in MARKET_DATA_CENTER.items() if k not in ("MK-51", "MK-52")]
-                mk_pick = st.selectbox("Market 52-ID Vault:", mk_list, index=0)
-                explicit_dc_id = mk_pick.split(":")[0].strip() if ":" in mk_pick else "AUTO"
-        with c_oc2:
-            paint_names = [p["name"] for p in PAINT_4_COLORS]
-            paint_pick_name = st.selectbox("3D Metallic Paint / Theme (4 Colors):", paint_names, index=0)
-            selected_paint_obj = next((p for p in PAINT_4_COLORS if p["name"] == paint_pick_name), PAINT_4_COLORS[0])
-        with c_oc3:
-            size_tier_choice = st.selectbox("APK Build Size Target:", APK_SIZE_TIERS, index=1)
+        st.subheader("1. Choose Mode & APK Size (20 MB / 50 MB / 100 MB)")
+        c_m1, c_m2 = st.columns(2)
+        with c_m1:
+            p_fac_ss = st.session_state.get("preset_factory", "")
+            mode_opts = ["3D Game (Godot 4 Native 3D)", "Commercial App (Flutter 3.50)"]
+            m_idx = 1 if p_fac_ss == "MARKET_FACTORY_02" else 0
+            mode_pick = st.radio("Select Studio Mode:", mode_opts, index=m_idx, horizontal=True)
+            is_g_lane = ("3D Game" in mode_pick)
+            fac_key = "GAMING_FACTORY_01" if is_g_lane else "MARKET_FACTORY_02"
+            target_eng_choice = "Godot 4 Native 3D Engine (Zero-License 3D APK)" if is_g_lane else "Flutter 3.50 (Super-App / WebGL APK)"
+        with c_m2:
+            size_tier_choice = st.radio("APK Build Size:", APK_SIZE_TIERS, index=2, horizontal=True)
 
-        with st.expander("Live Interactive Assembly Studio (Display 1: Drag-Drop + <1s Voice Call + Keep-Alive)", expanded=False):
-            asm_state = load_json_file("assembly_studio_state.json", {"reject_count": 0, "confirmed": False, "items": None})
-            _cur_title = st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else "")
-            _cur_prompt = st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else "")
-            preview_spec = resolve_lane_id_and_specs(_cur_prompt, "GAMING_FACTORY_01" if is_g_lane else "MARKET_FACTORY_02", explicit_dc_id)
+        asm_state = load_json_file("assembly_studio_state.json", {"reject_count": 0, "confirmed": False, "items": None})
+        explicit_dc_id = "AUTO"
+        selected_paint_obj = PAINT_4_COLORS[int(asm_state.get("reject_count", 0)) % len(PAINT_4_COLORS)]
+        _cur_title = st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else "")
+        _cur_prompt = st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else "")
+        preview_spec = resolve_lane_id_and_specs(_cur_prompt, fac_key, "AUTO")
+
+        with st.expander("Live Split Studio (Phone Screen + Live Code + <1s Voice Call)", expanded=True):
             render_live_assembly_studio(
-                "GAMING_FACTORY_01" if is_g_lane else "MARKET_FACTORY_02",
-                _cur_title or "Nexus Project",
+                fac_key,
+                _cur_title or ("Desi Highway Cargo King 3D" if is_g_lane else "BharatPay MegaBazaar Pro"),
                 _cur_prompt,
                 preview_spec,
                 selected_paint_obj,
                 size_tier_choice,
                 asm_state,
             )
-            va_col1, va_col2, va_col3 = st.columns(3)
+            va_col1, va_col2, va_col3, va_col4 = st.columns(4)
             with va_col1:
-                if st.button("Reject & Ask AI New", use_container_width=True):
+                if st.button("Reject & Change Paint/Layout", use_container_width=True):
                     asm_state["reject_count"] = int(asm_state.get("reject_count", 0)) + 1
                     asm_state["confirmed"] = False
                     persist_assembly_state(asm_state)
-                    st.warning("Rejected! AI will propose a fresh layout/icon on next step.")
+                    st.rerun()
             with va_col2:
-                if st.button("Confirm & Lock Layout", use_container_width=True):
+                if st.button("Confirm & Lock Design", use_container_width=True):
                     asm_state["confirmed"] = True
                     persist_assembly_state(asm_state)
-                    st.success("Layout Locked & Saved to Persistent Keep-Alive Bus!")
+                    st.success("Design Locked & Saved to Keep-Alive Cloud!")
             with va_col3:
-                audio_clip = st.audio_input("Native Mic Backup (Groq Whisper)")
+                if st.button("Stop & Delete Project", use_container_width=True, key="stop_del_studio"):
+                    reject_and_clear_project()
+                    remove_json_file("assembly_studio_state.json")
+                    remove_json_file(SCOUT_STATE_FILE)
+                    for k in ("preset_factory", "preset_title", "preset_prompt"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
+            with va_col4:
+                audio_clip = st.audio_input("Native Mic Backup")
                 if audio_clip is not None:
-                    st.info("Voice clip captured — ready for <1s Groq Whisper transcription!")
+                    st.info("Voice captured! Ready for Groq Whisper.")
+
         in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
         in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
 
