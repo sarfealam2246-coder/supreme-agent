@@ -962,13 +962,13 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
             ("nvidia", "mistralai/mistral-large-4"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "design_brain": [
             ("gemini_search", "gemini-2.5-flash"),
             ("nvidia", "mistralai/mistral-large-4"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "human_architect": [
@@ -989,7 +989,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "mistralai/mistral-large-4"),
             ("nvidia", "z-ai/glm-5-3-flash"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "premium_studio": [
@@ -1003,7 +1003,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
             ("gemini", "gemini-2.5-flash"),
             ("nvidia", "google/gemma-4-31b-it"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "gateway_coder": [
@@ -1019,7 +1019,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "poolside/laguna-xs-2.1"),
             ("nvidia", "minimaxai/minimax-m3.1-flash"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "cohere/north-mini-code:free"),
             ("openrouter", "openrouter/free"),
             ("cohere", "command-a-03-2025")
@@ -1029,7 +1029,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
             ("nvidia", "google/gemma-4-31b-it"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "backend_coder": [
@@ -1037,14 +1037,14 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "moonshotai/kimi-k3.1-pro"),
             ("nvidia", "poolside/laguna-xs-2.1"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "reviewer": [
             ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
             ("groq", "openai/gpt-oss-120b"),
             ("nvidia", "meta/llama-3.2-90b-vision-instruct"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free")
         ],
         "repair_center": [
@@ -1053,7 +1053,7 @@ def call_specialist_ai(role, sys_prompt, usr_prompt, max_tokens=3000):
             ("nvidia", "deepseek-ai/deepseek-v4.1-flash"),
             ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"),
             ("gemini", "gemini-2.5-flash"),
-            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "openai/gpt-oss-120b"),
             ("openrouter", "openrouter/free"),
             ("cohere", "command-a-03-2025")
         ],
@@ -1754,7 +1754,7 @@ def render_live_mobile_preview(locked_bus):
                 <div style="position:absolute;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,0.85);"></div>
               </div>
             </div>
-            <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(2,6,23,0.62);padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;color:#ffffff;border:1px solid rgba(255,255,255,0.25);"><span id="spdHud">0</span> km/h</div>
+            <div style="position:absolute;bottom:62px;right:12px;background:rgba(2,6,23,0.72);padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;color:#38bdf8;border:1px solid rgba(56,189,248,0.4);"><span id="spdHud">0</span> km/h</div>
             <div style="position:absolute;bottom:14px;right:10px;display:flex;align-items:flex-end;gap:5px;">
               <button onclick="playTruckHorn();" style="width:34px;height:32px;border:1px solid #f59e0b;border-radius:50%;background:rgba(2,6,23,0.58);color:#fde047;font-weight:900;font-size:11px;">📢</button>
               <button onclick="gear=(gear==='D'?'R':'D');this.innerText=gear;" style="width:28px;height:32px;border:1px solid rgba(255,255,255,0.5);border-radius:50%;background:rgba(2,6,23,0.52);color:{acc};font-weight:900;font-size:11px;">D</button>
@@ -1785,9 +1785,20 @@ def render_live_mobile_preview(locked_bus):
         scene.add(sun);
 
         // Daytime Ground, Textured Highway & Shoulders
-        const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 280), new THREE.MeshStandardMaterial({{ color: gameMode === 'CONSTRUCTION' ? 0x78553a : 0x3f6212 }}));
+        function makeGrainTex(baseCol, speckCol, repX, repY) {{
+          const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+          const c2 = cv.getContext('2d'); c2.fillStyle = baseCol; c2.fillRect(0, 0, 128, 128);
+          c2.fillStyle = speckCol;
+          for (let i = 0; i < 900; i++) c2.fillRect(Math.random()*128, Math.random()*128, 2, 2);
+          const tx = new THREE.CanvasTexture(cv);
+          tx.wrapS = THREE.RepeatWrapping; tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(repX, repY);
+          return tx;
+        }}
+        const grassTex = makeGrainTex(gameMode === 'CONSTRUCTION' ? '#6b4c35' : '#365314', '#1a2e05', 24, 24);
+        const roadTex = makeGrainTex('#28303d', '#475569', 2, 28);
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 280), new THREE.MeshStandardMaterial({{ map: grassTex, roughness: 0.95 }}));
         ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 280), new THREE.MeshStandardMaterial({{ color: 0x334155, roughness: 0.85 }}));
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 280), new THREE.MeshStandardMaterial({{ map: roadTex, bumpMap: roadTex, bumpScale: 0.12, roughness: 0.85 }}));
         road.rotation.x = -Math.PI / 2; road.position.y = 0.02; road.receiveShadow = true; scene.add(road);
         for (let sx of [-5.6, 5.6]) {{
           const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 280), new THREE.MeshBasicMaterial({{ color: 0xf8fafc }}));
@@ -1869,37 +1880,55 @@ def render_live_mobile_preview(locked_bus):
         const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshStandardMaterial({{ color: 0xfacc15 }}));
         crate.position.set(2.2, 0.7, -36); scene.add(crate);
 
-        // Window-Tracked Smooth Finger Steering Wheel + 360-Degree Touch Orbit Camera
-        let wheelActive = false, wheelCx = 0, orbitYaw = 0, orbitPitch = 0.35, orbitDrag = false, lastOx = 0, lastOy = 0;
+        // Multi-Touch Independent Steering (by touch.identifier!) + 360-Degree Orbit Camera
+        let wheelTouchId = null, wheelCx = 0, wheelCy = 0, wheelActive = false;
+        let orbitTouchId = null, orbitYaw = 0, orbitPitch = 0.35, orbitDrag = false, lastOx = 0, lastOy = 0;
         const wheelEl = document.getElementById('wheelSvg');
         if (wheelEl) {{
-          const startWheel = (ev) => {{
+          wheelEl.addEventListener('touchstart', (ev) => {{
+            ev.preventDefault(); ev.stopPropagation();
+            if (autoBot) toggleSelfPlay();
+            const tc = ev.changedTouches[0];
+            wheelTouchId = tc.identifier; wheelActive = true;
+            const r = wheelEl.getBoundingClientRect();
+            wheelCx = r.left + r.width / 2; wheelCy = r.top + r.height / 2;
+          }}, {{ passive: false }});
+          wheelEl.addEventListener('mousedown', (ev) => {{
             ev.preventDefault(); ev.stopPropagation();
             if (autoBot) toggleSelfPlay();
             wheelActive = true;
             const r = wheelEl.getBoundingClientRect();
-            wheelCx = r.left + r.width / 2;
-          }};
-          wheelEl.addEventListener('touchstart', startWheel, {{ passive: false }});
-          wheelEl.addEventListener('mousedown', startWheel);
+            wheelCx = r.left + r.width / 2; wheelCy = r.top + r.height / 2;
+          }});
         }}
         wrap.addEventListener('touchstart', (ev) => {{
-          orbitDrag = true;
-          lastOx = ev.touches[0].clientX; lastOy = ev.touches[0].clientY;
+          const tc = ev.changedTouches[0];
+          orbitTouchId = tc.identifier; orbitDrag = true;
+          lastOx = tc.clientX; lastOy = tc.clientY;
         }}, {{ passive: true }});
         wrap.addEventListener('mousedown', (ev) => {{ orbitDrag = true; lastOx = ev.clientX; lastOy = ev.clientY; }});
         window.addEventListener('touchmove', (ev) => {{
-          const cx = ev.touches[0].clientX, cy = ev.touches[0].clientY;
-          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (cx - wheelCx) / 42)); }}
-          else if (orbitDrag) {{ orbitYaw -= (cx - lastOx) * 0.012; orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (cy - lastOy) * 0.008)); lastOx = cx; lastOy = cy; }}
+          for (let tc of ev.changedTouches) {{
+            if (wheelTouchId !== null && tc.identifier === wheelTouchId) {{
+              steerVal = Math.max(-1, Math.min(1, (tc.clientX - wheelCx) / 38));
+            }} else if (orbitTouchId !== null && tc.identifier === orbitTouchId) {{
+              orbitYaw -= (tc.clientX - lastOx) * 0.012;
+              orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (tc.clientY - lastOy) * 0.008));
+              lastOx = tc.clientX; lastOy = tc.clientY;
+            }}
+          }}
         }}, {{ passive: true }});
         window.addEventListener('mousemove', (ev) => {{
-          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (ev.clientX - wheelCx) / 42)); }}
+          if (wheelActive) {{ steerVal = Math.max(-1, Math.min(1, (ev.clientX - wheelCx) / 38)); }}
           else if (orbitDrag) {{ orbitYaw -= (ev.clientX - lastOx) * 0.012; orbitPitch = Math.max(0.12, Math.min(1.1, orbitPitch + (ev.clientY - lastOy) * 0.008)); lastOx = ev.clientX; lastOy = ev.clientY; }}
         }});
-        const stopAll = () => {{ wheelActive = false; steerVal = 0; orbitDrag = false; }};
-        window.addEventListener('touchend', stopAll);
-        window.addEventListener('mouseup', stopAll);
+        window.addEventListener('touchend', (ev) => {{
+          for (let tc of ev.changedTouches) {{
+            if (tc.identifier === wheelTouchId) {{ wheelTouchId = null; wheelActive = false; steerVal = 0; }}
+            if (tc.identifier === orbitTouchId) {{ orbitTouchId = null; orbitDrag = false; }}
+          }}
+        }});
+        window.addEventListener('mouseup', () => {{ wheelActive = false; steerVal = 0; orbitDrag = false; }});
 
         let tx = 1.6;
         function animate() {{
@@ -2239,7 +2268,7 @@ def render_scout_command_board(scout_st):
 # ==============================================================================
 # PHASE 1: 16-DEPT DESIGN-FIRST PIPELINE (STEPS 1-8 — ZERO CODE WRITTEN!)
 # ==============================================================================
-def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, selected_factory="AUTO", design_feedback="", scout_brief=None):
+def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, selected_factory="AUTO", design_feedback="", scout_brief=None, target_engine="Flutter 3.50 (Apps + Three.js 3D WebGL)"):
     """Executes Depts 1-8: Factory ID Router, Iconify Fetcher, Gemini Search, Human UX Brain, Frame Director, Premium Studio, Brand Logo & Live Preview."""
     stages = [
         {"title": "Dept 1-2: Factory ID Router + Live Iconify/Game-Icons Fetcher", "status": "running", "sync": "User Prompt + External Icon API", "note": "Routing to GAMING_FACTORY_01 or MARKET_FACTORY_02..."},
@@ -2252,6 +2281,7 @@ def run_phase1_design_studio(app_title, user_prompt, cmd_slot, sync_slot, select
         "app_title": app_title,
         "user_prompt": user_prompt,
         "factory_id": selected_factory,
+        "target_engine": target_engine,
         "boss_status": "Orchestrator routing Factory ID...",
         "radar_status": "Watching Dept 1...",
         "repair_status": "Kimi Self-Repair monitoring from Dept 1.",
@@ -2416,6 +2446,27 @@ def run_phase2_flutter_coding(project_bus, cmd_slot, sync_slot):
     """Executes Depts 9-16 sequentially — each coder writes 100% of its file cleanly."""
     app_title = project_bus["app_title"]
     user_prompt = project_bus["user_prompt"]
+    t_eng = project_bus.get("target_engine", "Flutter")
+    if project_bus.get("factory_id") == "GAMING_FACTORY_01" and ("Unity 3D" in t_eng or "Godot 4" in t_eng):
+        app_slug = re.sub(r'[^a-z0-9_]', '_', app_title.lower()) or "smart_app"
+        if not app_slug[0].isalpha():
+            app_slug = "sf_" + app_slug
+        project_bus["pkg_slug"] = app_slug
+        project_bus["backend_dart"] = "// Direct " + t_eng
+        project_bus["gateway_dart"] = "// Direct " + t_eng
+        project_bus["screens_dart"] = "// Direct " + t_eng
+        project_bus["main_dart"] = "// Direct " + t_eng
+        project_bus["pubspec_yaml"] = build_pubspec_yaml(app_title, {})
+        if "Unity 3D" in t_eng:
+            u_files = build_unity_3d_project_files(app_title, app_slug)
+            project_bus["unity_files"] = u_files
+            project_bus["review_verdict"] = "APPROVED (Direct Unity 3D C# + AutoBuildScene + Audio/Touch HUD)"
+        else:
+            g_files = build_godot4_3d_project_files(app_title, app_slug, project_bus.get("design_doc", {}).get("palette", {}))
+            project_bus["godot_files"] = g_files
+            project_bus["review_verdict"] = "APPROVED (Direct Godot 4 VehicleBody3D + Touch HUD)"
+        save_json_file(CODED_APP_FILE, project_bus)
+        return project_bus, None
     app_type = project_bus["app_type"]
     factory_id = project_bus.get("factory_id", "MARKET_FACTORY_02")
     design_doc = project_bus["design_doc"]
@@ -2587,7 +2638,7 @@ st.markdown(f"""
       <p style="margin:0;font-size:11px;color:#38bdf8;">16 Depts &bull; 3D Studio &bull; 3D Human Team + Open-Source Playable APK</p>
     </div>
   </div>
-  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v14.0 CINEMA-STUDIO</span>
+  <span style="background:rgba(16,185,129,0.18);border:1px solid #10b981;color:#34d399;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;">v15.0 UNITY-DIRECT</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2715,6 +2766,9 @@ with tab_build:
         fac_idx = 1 if p_fac_ss == "GAMING_FACTORY_01" else (2 if p_fac_ss == "MARKET_FACTORY_02" else 0)
         fac_choice = st.selectbox("Factory Lane:", fac_opts, index=fac_idx)
         fac_key = "AUTO" if fac_choice.startswith("AUTO") else fac_choice.split(" ")[0]
+        eng_opts = ["Unity 3D Engine (Direct C# APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)", "Flutter 3.50 (Apps + Three.js 3D WebGL)"]
+        eng_idx = 2 if fac_key == "MARKET_FACTORY_02" else 0
+        target_eng_choice = st.selectbox("Target APK Engine:", eng_opts, index=eng_idx)
         in_title = st.text_input("Your Own Brand / App Title:", value=st.session_state.get("preset_title", locked_bus.get("app_title", "") if locked_bus else ""), placeholder="e.g. MegaSite 3D Builder or HisabFlow Pro")
         in_prompt = st.text_area("Describe Features:", value=st.session_state.get("preset_prompt", locked_bus.get("user_prompt", "") if locked_bus else ""), height=105)
 
@@ -2736,6 +2790,7 @@ with tab_build:
                 active_scout.get("user_prompt", ""),
                 cmd_slot, sync_slot,
                 selected_factory=active_scout.get("selected_factory", "AUTO"),
+                target_engine=active_scout.get("target_engine", "Unity 3D Engine (Direct C# APK)"),
                 scout_brief=active_scout.get("scout_brief")
             )
             remove_json_file(SCOUT_STATE_FILE)
@@ -2761,6 +2816,7 @@ with tab_build:
                     "user_prompt": in_prompt.strip(),
                     "selected_factory": fac_key,
                     "factory_id": fac_key,
+                    "target_engine": target_eng_choice,
                     "pass_msg": "Launching World Scout Bot in background thread...",
                     "workers_status": "STANDBY - Reading Scout Board (Waiting for Chief Commander ACCESS GRANTED)"
                 }
@@ -2821,7 +2877,10 @@ with tab_build:
 
             c_b1, c_b2 = st.columns(2)
             with c_b1:
-                apk_engine = st.radio("Select APK Build Engine:", ["Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)", "Unity 3D Engine (game-ci Personal APK)"], horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
+                d3_opts = ["Unity 3D Engine (game-ci Personal APK)", "Godot 4 Native 3D Engine (VehicleBody3D APK)", "Flutter 3.50 + Three.js 3D WebGL (Fast 2-Min APK)"]
+            cb_eng = coded_bundle.get("target_engine", "")
+            d3_idx = 0 if "Unity" in cb_eng else (1 if "Godot" in cb_eng else 2)
+            apk_engine = st.radio("Select APK Build Engine:", d3_opts, index=d3_idx, horizontal=True) if coded_bundle.get("factory_id") == "GAMING_FACTORY_01" else "Flutter"
             if st.button("Approve & Build Native Android APK on GitHub", use_container_width=True):
                     safe_repo = re.sub(r'[^a-z0-9-]', '', coded_bundle["app_title"].lower().replace(" ", "-")) or "flutter-app"
                     safe_repo = f"{safe_repo}-{int(time.time()) % 100000}"
