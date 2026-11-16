@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v31.2 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v32.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -265,6 +265,17 @@ def fetch_file_from_github(repo_name, file_path):
         return base64.b64decode(res["content"]).decode("utf-8", errors="ignore")
     return ""
 
+
+def verify_github_apk_release(repo_name):
+    """Checks GitHub Releases API for an actual compiled .apk binary asset."""
+    res = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/releases/latest", "GET", timeout=10)
+    if isinstance(res, dict) and res.get("assets"):
+        for a in res["assets"]:
+            if str(a.get("name", "")).lower().endswith(".apk"):
+                return a.get("browser_download_url", "")
+    return ""
+
+
 def get_live_build_telemetry(repo_name):
     runs = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=8", "GET", timeout=10)
     if isinstance(runs, dict) and runs.get("error"):
@@ -485,8 +496,13 @@ def search_and_sync_glb(user_prompt, target_repo):
                     break
     except Exception:
         pass
+    p_low = (user_prompt or "").lower()
     if not found_url:
-        found_url = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb"
+        if any(k in p_low for k in ["car", "ferrari", "sports", "supercar", "drift", "race"]):
+            found_url = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb"
+        else:
+            # No mismatched car override for truck/bus/tractor — use built-in High-Detail Multi-Part 3D Truck/Vehicle
+            return "", 0
     try:
         req = urllib.request.Request(found_url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=20) as r:
@@ -534,41 +550,76 @@ def build_custom_preview_html(user_prompt, is_game):
     if "<html" in raw.lower() and (not is_game or "webglrenderer" in raw.lower()):
         return raw
 
-    # Deterministic rich 3D fallback if AI call fails
+    # High-Detail Play-Store 3D World + Vehicle + Steering/GAS/BRK HUD
     return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{box-sizing:border-box;user-select:none;-webkit-user-select:none;}body{margin:0;overflow:hidden;background:#60a5fa;font-family:system-ui;}#hud{position:absolute;top:10px;left:10px;color:#fff;font-weight:800;font-size:12px;background:rgba(15,23,42,0.7);padding:6px 10px;border-radius:10px;}</style>
-</head><body><div id="hud">360 Touch Drag 3D Scene</div><canvas id="c"></canvas>
+<style>*{box-sizing:border-box;user-select:none;-webkit-user-select:none;}body{margin:0;overflow:hidden;background:#60a5fa;font-family:system-ui;touch-action:none;}
+#hud{position:absolute;top:8px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none;color:#fff;font-weight:800;font-size:11px;text-shadow:0 1px 3px #000;}
+#steer{position:absolute;bottom:14px;left:14px;width:72px;height:72px;border-radius:50%;border:6px solid rgba(255,255,255,0.9);background:rgba(15,23,42,0.55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;}
+#pedals{position:absolute;bottom:14px;right:14px;display:flex;gap:8px;align-items:flex-end;}
+.pbtn{border:none;border-radius:10px;padding:12px 14px;font-weight:900;color:#fff;font-size:12px;cursor:pointer;}
+#spd{position:absolute;bottom:68px;right:14px;background:rgba(15,23,42,0.85);color:#38bdf8;border:1px solid #38bdf8;padding:4px 9px;border-radius:8px;font-size:12px;font-weight:900;}
+</style></head><body>
+<div id="hud"><span>360 Touch Drag 3D World</span><span>GODOT 4 READY</span></div>
+<div id="spd">38 km/h</div>
+<div id="steer">STEER</div>
+<div id="pedals"><button class="pbtn" style="background:#ef4444;" onmousedown="gas=0" ontouchstart="gas=0">BRK</button><button class="pbtn" style="background:#10b981;padding:16px 16px;" onmousedown="gas=1" onmouseup="gas=0.4" ontouchstart="gas=1" ontouchend="gas=0.4">GAS</button></div>
+<canvas id="c"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
 <script>
+var gas=0.4;
 const cv=document.getElementById('c'),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
-ren.setSize(window.innerWidth,window.innerHeight);ren.shadowMap.enabled=true;
-const sc=new THREE.Scene();sc.background=new THREE.Color('#7dd3fc');sc.fog=new THREE.Fog('#bae6fd',25,110);
-const cam=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,160);
-let ang=0.5,dist=9;
+ren.setSize(window.innerWidth,window.innerHeight);ren.shadowMap.enabled=true;ren.shadowMap.type=THREE.PCFSoftShadowMap;
+const sc=new THREE.Scene();sc.background=new THREE.Color('#7dd3fc');sc.fog=new THREE.Fog('#bae6fd',30,120);
+const cam=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,180);
+let ang=0.35,dist=8.5;
 sc.add(new THREE.HemisphereLight('#e0f2fe','#334155',0.8));
-const sun=new THREE.DirectionalLight('#fffbeb',1.3);sun.position.set(12,24,10);sun.castShadow=true;sc.add(sun);
-const gnd=new THREE.Mesh(new THREE.PlaneGeometry(180,180),new THREE.MeshStandardMaterial({color:'#3f6212',roughness:0.9}));
-gnd.rotation.x=-Math.PI/2;gnd.receiveShadow=true;sc.add(gnd);
-const road=new THREE.Mesh(new THREE.PlaneGeometry(9,180),new THREE.MeshStandardMaterial({color:'#1f2937',roughness:0.8}));
-road.rotation.x=-Math.PI/2;road.position.y=0.02;sc.add(road);
+const sun=new THREE.DirectionalLight('#fffbeb',1.35);sun.position.set(14,26,12);sun.castShadow=true;sc.add(sun);
+for(let k=0;k<7;k++){const cl=new THREE.Mesh(new THREE.SphereGeometry(2.6,10,8),new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:0.85}));cl.scale.set(2.4,0.55,1.2);cl.position.set((k%2?-18:18)+k*3,16+(k%3)*2,-28-k*11);sc.add(cl);}
+const rCv=document.createElement('canvas');rCv.width=128;rCv.height=128;const rCx=rCv.getContext('2d');rCx.fillStyle='#1f2937';rCx.fillRect(0,0,128,128);
+for(let i=0;i<500;i++){rCx.fillStyle=Math.random()>0.5?'#374151':'#111827';rCx.fillRect(Math.random()*128,Math.random()*128,2,2);}
+const rTex=new THREE.CanvasTexture(rCv);rTex.wrapS=rTex.wrapT=THREE.RepeatWrapping;rTex.repeat.set(2,22);
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(200,240),new THREE.MeshStandardMaterial({color:'#3f6212',roughness:0.95}));gnd.rotation.x=-Math.PI/2;gnd.receiveShadow=true;sc.add(gnd);
+const road=new THREE.Mesh(new THREE.PlaneGeometry(10.5,240),new THREE.MeshStandardMaterial({map:rTex,roughness:0.78}));road.rotation.x=-Math.PI/2;road.position.y=0.02;road.receiveShadow=true;sc.add(road);
+const dashes=[];for(let z=-100;z<100;z+=7){const d=new THREE.Mesh(new THREE.PlaneGeometry(0.26,3.2),new THREE.MeshBasicMaterial({color:'#facc15'}));d.rotation.x=-Math.PI/2;d.position.set(0,0.03,z);sc.add(d);dashes.push(d);}
+const props=[];
+for(let i=0;i<14;i++){
+  const side=i%2?-9.5:9.5,g=new THREE.Group(),bh=5+(i%4)*2.5;
+  const bCv=document.createElement('canvas');bCv.width=64;bCv.height=64;const bx=bCv.getContext('2d');bx.fillStyle=i%2?'#334155':'#475569';bx.fillRect(0,0,64,64);
+  for(let wy=6;wy<58;wy+=12)for(let wx=6;wx<58;wx+=14){bx.fillStyle=(wx+wy+i)%3===0?'#fef08a':'#bae6fd';bx.fillRect(wx,wy,8,7);}
+  const bm=new THREE.Mesh(new THREE.BoxGeometry(4.5,bh,5),new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(bCv),roughness:0.65}));bm.position.y=bh/2;bm.castShadow=true;
+  const pl=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,4.6,8),new THREE.MeshStandardMaterial({color:'#cbd5e1',metalness:0.8}));pl.position.set(side<0?3.6:-3.6,2.3,0);
+  g.add(bm,pl);g.position.set(side,0,-i*14);sc.add(g);props.push(g);
+}
 const grp=new THREE.Group();
-const pMat=new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.78,roughness:0.2});
-const cMat=new THREE.MeshStandardMaterial({color:'#e2e8f0',metalness:0.9,roughness:0.15});
-const tMat=new THREE.MeshStandardMaterial({color:'#111827',roughness:0.85});
+const pMat=new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.78,roughness:0.2}),cMat=new THREE.MeshStandardMaterial({color:'#e2e8f0',metalness:0.9,roughness:0.15}),tMat=new THREE.MeshStandardMaterial({color:'#111827',roughness:0.85});
 const cab=new THREE.Mesh(new THREE.BoxGeometry(2.1,1.6,1.9),pMat);cab.position.set(0,1.2,-1.2);cab.castShadow=true;
 const glass=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.65,0.08),new THREE.MeshStandardMaterial({color:'#0f172a',metalness:0.9,roughness:0.1}));glass.position.set(0,1.5,-2.16);
 const grille=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.55,0.1),cMat);grille.position.set(0,0.85,-2.16);
 const bed=new THREE.Mesh(new THREE.BoxGeometry(2.3,1.9,3.4),new THREE.MeshStandardMaterial({color:'#f8fafc',roughness:0.4}));bed.position.set(0,1.4,1.5);bed.castShadow=true;
 grp.add(cab,glass,grille,bed);
-[[-1.05,0.44,-1.3],[1.05,0.44,-1.3],[-1.05,0.44,1.2],[1.05,0.44,1.2],[-1.05,0.44,2.4],[1.05,0.44,2.4]].forEach(p=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,16),tMat);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);grp.add(w);});
-for(let i=0;i<10;i++){const b=new THREE.Mesh(new THREE.BoxGeometry(4,5+(i%3)*3,4.5),new THREE.MeshStandardMaterial({color:i%2?0x475569:0x334155}));b.position.set(i%2?-10:10,3,-i*14);sc.add(b);}
+const whs=[];
+[[-1.05,0.44,-1.3],[1.05,0.44,-1.3],[-1.05,0.44,1.2],[1.05,0.44,1.2],[-1.05,0.44,2.4],[1.05,0.44,2.4]].forEach(p=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,16),tMat);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);grp.add(w);whs.push(w);});
 sc.add(grp);
-if(typeof THREE.GLTFLoader!=='undefined'){const gl=new THREE.GLTFLoader();if(typeof THREE.DRACOLoader!=='undefined'){const dr=new THREE.DRACOLoader();dr.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.1/');gl.setDRACOLoader(dr);}gl.load('__GLB_URL__',g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),s=b.getSize(new THREE.Vector3()),scF=4.2/(Math.max(s.x,s.y,s.z)||1);m.scale.set(scF,scF,scF);const c=b.getCenter(new THREE.Vector3());m.position.set(-c.x*scF,-b.min.y*scF,-c.z*scF);grp.clear();grp.add(m);},undefined,()=>{});}
+if('__GLB_URL__'.startsWith('http')&&typeof THREE.GLTFLoader!=='undefined'){
+  const gl=new THREE.GLTFLoader();
+  if(typeof THREE.DRACOLoader!=='undefined'){const dr=new THREE.DRACOLoader();dr.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.1/');gl.setDRACOLoader(dr);}
+  gl.load('__GLB_URL__',g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),s=b.getSize(new THREE.Vector3()),scF=4.2/(Math.max(s.x,s.y,s.z)||1);m.scale.set(scF,scF,scF);const c=b.getCenter(new THREE.Vector3());m.position.set(-c.x*scF,-b.min.y*scF,-c.z*scF);grp.clear();grp.add(m);},undefined,()=>{});
+}
 window.addEventListener('touchmove',e=>{if(e.touches[0])ang=(e.touches[0].clientX/window.innerWidth)*Math.PI*2;},{passive:true});
 window.addEventListener('mousemove',e=>{if(e.buttons)ang=(e.clientX/window.innerWidth)*Math.PI*2;});
-(function loop(){requestAnimationFrame(loop);cam.position.set(Math.sin(ang)*dist,4.2,Math.cos(ang)*dist);cam.lookAt(0,1,0);ren.render(sc,cam);})();
+(function loop(){
+  requestAnimationFrame(loop);
+  const sp=0.15+gas*0.55;
+  rTex.offset.y-=sp*0.08;
+  dashes.forEach(d=>{d.position.z+=sp;if(d.position.z>20)d.position.z-=200;});
+  props.forEach(p=>{p.position.z+=sp;if(p.position.z>20)p.position.z-=196;});
+  whs.forEach(w=>{w.rotation.x-=sp*0.6;});
+  document.getElementById('spd').innerText=Math.round(sp*130)+' km/h';
+  cam.position.set(Math.sin(ang)*dist,4.0,Math.cos(ang)*dist);cam.lookAt(0,1.2,0);
+  ren.render(sc,cam);
+})();
 </script></body></html>"""
 
 def build_godot4_files(app_title, user_prompt):
@@ -838,8 +889,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v31.2", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v31.2 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v32.0", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v32.0 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -884,7 +935,9 @@ with tab_factory:
         # Check Live APK Build Status + Silent Auto-Heal
         tele = get_live_build_telemetry(st_state["repo"])
         conc = tele.get("conclusion")
-        if conc == "success":
+        apk_dl = verify_github_apk_release(st_state["repo"]) if conc == "success" else ""
+        if conc == "success" and apk_dl:
+            st_state["apk_dl_url"] = apk_dl
             st_state["status"] = "done"
             save_json_file(STATE_FILE, st_state)
             save_to_vault({
@@ -895,7 +948,7 @@ with tab_factory:
                 "time": datetime.now().strftime("%d %b %Y, %I:%M %p"),
             })
             st.success("Native APK Ready!")
-            st.markdown(f"**Download APK:** {st_state['releases_url']}  \n**Admin Link:** {st_state['admin_url']}")
+            st.markdown(f"**Direct APK Download:** {st_state.get('apk_dl_url', st_state['releases_url'])}  \n**Releases Page:** {st_state['releases_url']}  \n**Admin Link:** {st_state['admin_url']}")
         elif conc == "failure":
             hp = st_state.get("heal_passes", 0)
             if hp < 3:
@@ -970,7 +1023,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v31.2 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.0 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
