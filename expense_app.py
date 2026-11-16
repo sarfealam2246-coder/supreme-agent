@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v32.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v32.1 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -593,7 +593,7 @@ for(let i=0;i<14;i++){
   g.add(bm,pl);g.position.set(side,0,-i*14);sc.add(g);props.push(g);
 }
 const grp=new THREE.Group();
-const pMat=new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.78,roughness:0.2}),cMat=new THREE.MeshStandardMaterial({color:'#e2e8f0',metalness:0.9,roughness:0.15}),tMat=new THREE.MeshStandardMaterial({color:'#111827',roughness:0.85});
+const isArmy=/army|fauji|military|tank|convoy/i.test(document.title+" "+"__PROMPT_LOW__");const pMat=new THREE.MeshStandardMaterial({color:isArmy?'#3f6212':'#dc2626',metalness:0.65,roughness:0.28}),cMat=new THREE.MeshStandardMaterial({color:'#e2e8f0',metalness:0.9,roughness:0.15}),tMat=new THREE.MeshStandardMaterial({color:'#111827',roughness:0.85});
 const cab=new THREE.Mesh(new THREE.BoxGeometry(2.1,1.6,1.9),pMat);cab.position.set(0,1.2,-1.2);cab.castShadow=true;
 const glass=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.65,0.08),new THREE.MeshStandardMaterial({color:'#0f172a',metalness:0.9,roughness:0.1}));glass.position.set(0,1.5,-2.16);
 const grille=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.55,0.1),cMat);grille.position.set(0,0.85,-2.16);
@@ -835,12 +835,29 @@ def run_autonomous_build(user_prompt):
 
         glb_url = ""
         if is_game:
-            _log("Dept 3 (World GLB Asset Bot): Searching GitHub for matching 3D .glb vehicle/object...")
+            _log("Dept 3A (World GLB Asset Bot): Searching GitHub for matching 3D .glb vehicle...")
             glb_url, glb_sz = search_and_sync_glb(user_prompt, repo_name)
-            _log(f"Dept 3: Synced .glb ({glb_url.split('/')[-1]}, {glb_sz} bytes) to assets/models/vehicle.glb")
+            _log(f"Dept 3A: Synced vehicle ({glb_url.split('/')[-1] if glb_url else 'Multi-Part 3D Mesh'}, {glb_sz} bytes)")
+            _log("Dept 3B (World Background Bot): Syncing PolyHaven CC0 Asphalt + Terrain PBR textures...")
+            for tex_n, tex_u in [
+                ("assets/textures/asphalt_diff.jpg", "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_diff_1k.jpg"),
+                ("assets/textures/terrain_diff.jpg", "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocky_terrain_02/rocky_terrain_02_diff_1k.jpg"),
+            ]:
+                try:
+                    t_req = urllib.request.Request(tex_u, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(t_req, timeout=15) as tr:
+                        t_raw = tr.read()
+                    if len(t_raw) > 1024:
+                        t_b64 = base64.b64encode(t_raw).decode("utf-8")
+                        t_api = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/contents/{tex_n}"
+                        github_api(t_api, "PUT", {"message": f"World BG Bot: {tex_n}", "content": t_b64}, timeout=20)
+                except Exception:
+                    pass
+            _log("Dept 3B: World Background PBR textures synced to assets/textures/!")
 
         _log("Dept 4 (AI 3D / UI Architect): Writing custom interactive HTML5 preview...")
         preview_html = build_custom_preview_html(user_prompt, is_game)
+        preview_html = preview_html.replace("__PROMPT_LOW__", re.sub(r"[^a-zA-Z0-9 ]", " ", user_prompt.lower()))
         if glb_url:
             preview_html = preview_html.replace("__GLB_URL__", glb_url)
         p_res = push_file_to_github(repo_name, "assets/game.html", preview_html, "Add live interactive preview")
@@ -889,8 +906,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v32.0", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v32.0 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v32.1", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v32.1 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -1023,7 +1040,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.0 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.1 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
