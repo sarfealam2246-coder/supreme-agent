@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v32.2 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v32.3 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -405,7 +405,14 @@ jobs:
           if [ ! -f "$KS_PATH" ]; then
             keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$KS_PATH" -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 || true
           fi
-          printf '%s\n' '[gd_resource type="EditorSettings" format=3]' '' '[resource]' "export/android/java_sdk_path = \"$JAVA_DIR\"" "export/android/android_sdk_path = \"$ANDROID_DIR\"" "export/android/debug_keystore = \"$KS_PATH\"" 'export/android/debug_keystore_user = "androiddebugkey"' 'export/android/debug_keystore_pass = "android"' > "$HOME/.config/godot/editor_settings-4.3.tres" 
+          echo '[gd_resource type="EditorSettings" format=3]' > "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo '' >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo '[resource]' >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo "export/android/java_sdk_path = \"$JAVA_DIR\"" >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo "export/android/android_sdk_path = \"$ANDROID_DIR\"" >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo "export/android/debug_keystore = \"$KS_PATH\"" >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo 'export/android/debug_keystore_user = "androiddebugkey"' >> "$HOME/.config/godot/editor_settings-4.3.tres"
+          echo 'export/android/debug_keystore_pass = "android"' >> "$HOME/.config/godot/editor_settings-4.3.tres"
           godot --headless --quit --editor || true
 
       - name: Export Native Godot 4 3D Release APK
@@ -466,7 +473,7 @@ jobs:
 
 def search_and_sync_glb(user_prompt, target_repo):
     """Dept 2 (World GLB Bot): Searches GitHub public .glb files matching prompt and syncs to 3d-assets + target repo."""
-    q_words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", (user_prompt or "truck")).split() if len(w) > 2][:2]
+    q_words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", (user_prompt or "truck").lower()).split() if w in ("truck","dumper","bus","tractor","tank","army","train","plane","helicopter","crane","jcb","car","bike","ship")] or ["truck"]
     q_str = "+".join(q_words) if q_words else "truck"
     found_url = ""
     try:
@@ -489,7 +496,7 @@ def search_and_sync_glb(user_prompt, target_repo):
         pass
     p_low = (user_prompt or "").lower()
     if not found_url:
-        if any(k in p_low for k in ["car", "ferrari", "sports", "supercar", "drift", "race"]):
+        if re.search(r"\b(car|ferrari|sports|supercar|drift|racecar)\b", p_low) and not re.search(r"\b(truck|dumper|bus|tractor|army|fauji|tank)\b", p_low):
             found_url = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb"
         else:
             # No mismatched car override for truck/bus/tractor — use built-in High-Detail Multi-Part 3D Truck/Vehicle
@@ -897,8 +904,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v32.2", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v32.2 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v32.3", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v32.3 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -1031,7 +1038,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.2 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.3 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
