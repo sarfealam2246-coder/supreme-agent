@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v30.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v31.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -267,8 +267,10 @@ def fetch_file_from_github(repo_name, file_path):
 
 def get_live_build_telemetry(repo_name):
     runs = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=3", "GET", timeout=10)
+    if isinstance(runs, dict) and runs.get("error"):
+        return {"status": "api_error", "error": runs["error"], "conclusion": None, "steps": []}
     if not isinstance(runs, dict) or not runs.get("workflow_runs"):
-        return {"status": "queued", "conclusion": None, "steps": []}
+        return {"status": "waiting_for_runner", "conclusion": None, "steps": []}
     run = runs["workflow_runs"][0]
     jobs = github_api(run.get("jobs_url", ""), "GET", timeout=10)
     steps = []
@@ -454,6 +456,51 @@ jobs:
 # AUTONOMOUS GENERATORS (ANY PROMPT -> 3D SCENE / GODOT 4 / FLUTTER)
 # ==============================================================================
 
+
+def search_and_sync_glb(user_prompt, target_repo):
+    """Dept 2 (World GLB Bot): Searches GitHub public .glb files matching prompt and syncs to 3d-assets + target repo."""
+    q_words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", (user_prompt or "truck")).split() if len(w) > 2][:2]
+    q_str = "+".join(q_words) if q_words else "truck"
+    found_url = ""
+    try:
+        res = github_api(f"https://api.github.com/search/repositories?q={q_str}+glb+3d&sort=stars&per_page=4", "GET", timeout=10)
+        if isinstance(res, dict) and res.get("items"):
+            for repo in res["items"][:3]:
+                fn = repo.get("full_name", "")
+                if not fn:
+                    continue
+                tree = github_api(f"https://api.github.com/repos/{fn}/git/trees/HEAD?recursive=1", "GET", timeout=10)
+                for node in (tree.get("tree", []) if isinstance(tree, dict) else []):
+                    p = node.get("path", "")
+                    if p.lower().endswith(".glb") and any(w.lower() in p.lower() for w in q_words):
+                        br = repo.get("default_branch", "main")
+                        found_url = f"https://raw.githubusercontent.com/{fn}/{br}/{p}"
+                        break
+                if found_url:
+                    break
+    except Exception:
+        pass
+    if not found_url:
+        found_url = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/ferrari.glb"
+    try:
+        req = urllib.request.Request(found_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            raw_glb = r.read()
+        if len(raw_glb) > 1024:
+            b64_glb = base64.b64encode(raw_glb).decode("utf-8")
+            # Push binary .glb directly to target_repo/assets/models/vehicle.glb
+            api_u = f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{target_repo}/contents/assets/models/vehicle.glb"
+            cur = github_api(api_u, "GET", timeout=8)
+            pl = {"message": f"World GLB Bot: attach {found_url.split('/')[-1]}", "content": b64_glb}
+            if isinstance(cur, dict) and cur.get("sha"):
+                pl["sha"] = cur["sha"]
+            github_api(api_u, "PUT", pl, timeout=25)
+            return found_url, len(raw_glb)
+    except Exception:
+        pass
+    return found_url, 0
+
+
 def detect_is_game(prompt_text):
     p = (prompt_text or "").lower()
     game_kws = ["game", "3d", "truck", "bus", "tractor", "car", "bike", "train", "plane", "crane", "jcb", "dumper", "racing", "simulator", "driving", "building", "stepwell"]
@@ -487,6 +534,7 @@ def build_custom_preview_html(user_prompt, is_game):
 <style>*{box-sizing:border-box;user-select:none;-webkit-user-select:none;}body{margin:0;overflow:hidden;background:#60a5fa;font-family:system-ui;}#hud{position:absolute;top:10px;left:10px;color:#fff;font-weight:800;font-size:12px;background:rgba(15,23,42,0.7);padding:6px 10px;border-radius:10px;}</style>
 </head><body><div id="hud">360 Touch Drag 3D Scene</div><canvas id="c"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 const cv=document.getElementById('c'),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 ren.setSize(window.innerWidth,window.innerHeight);ren.shadowMap.enabled=true;
@@ -500,10 +548,18 @@ gnd.rotation.x=-Math.PI/2;gnd.receiveShadow=true;sc.add(gnd);
 const road=new THREE.Mesh(new THREE.PlaneGeometry(9,180),new THREE.MeshStandardMaterial({color:'#1f2937',roughness:0.8}));
 road.rotation.x=-Math.PI/2;road.position.y=0.02;sc.add(road);
 const grp=new THREE.Group();
-const cab=new THREE.Mesh(new THREE.BoxGeometry(2.1,1.6,1.9),new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.75,roughness:0.2}));
-cab.position.set(0,1.2,-1.2);cab.castShadow=true;
-const bed=new THREE.Mesh(new THREE.BoxGeometry(2.3,1.9,3.4),new THREE.MeshStandardMaterial({color:'#f8fafc',roughness:0.4}));
-bed.position.set(0,1.4,1.5);bed.castShadow=true;grp.add(cab,bed);sc.add(grp);
+const pMat=new THREE.MeshStandardMaterial({color:'#dc2626',metalness:0.78,roughness:0.2});
+const cMat=new THREE.MeshStandardMaterial({color:'#e2e8f0',metalness:0.9,roughness:0.15});
+const tMat=new THREE.MeshStandardMaterial({color:'#111827',roughness:0.85});
+const cab=new THREE.Mesh(new THREE.BoxGeometry(2.1,1.6,1.9),pMat);cab.position.set(0,1.2,-1.2);cab.castShadow=true;
+const glass=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.65,0.08),new THREE.MeshStandardMaterial({color:'#0f172a',metalness:0.9,roughness:0.1}));glass.position.set(0,1.5,-2.16);
+const grille=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.55,0.1),cMat);grille.position.set(0,0.85,-2.16);
+const bed=new THREE.Mesh(new THREE.BoxGeometry(2.3,1.9,3.4),new THREE.MeshStandardMaterial({color:'#f8fafc',roughness:0.4}));bed.position.set(0,1.4,1.5);bed.castShadow=true;
+grp.add(cab,glass,grille,bed);
+[[-1.05,0.44,-1.3],[1.05,0.44,-1.3],[-1.05,0.44,1.2],[1.05,0.44,1.2],[-1.05,0.44,2.4],[1.05,0.44,2.4]].forEach(p=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,16),tMat);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);grp.add(w);});
+for(let i=0;i<10;i++){const b=new THREE.Mesh(new THREE.BoxGeometry(4,5+(i%3)*3,4.5),new THREE.MeshStandardMaterial({color:i%2?0x475569:0x334155}));b.position.set(i%2?-10:10,3,-i*14);sc.add(b);}
+sc.add(grp);
+if(typeof THREE.GLTFLoader!=='undefined'){new THREE.GLTFLoader().load('__GLB_URL__',g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),s=b.getSize(new THREE.Vector3()),scF=4.2/(Math.max(s.x,s.y,s.z)||1);m.scale.set(scF,scF,scF);const c=b.getCenter(new THREE.Vector3());m.position.set(-c.x*scF,-b.min.y*scF,-c.z*scF);grp.clear();grp.add(m);},undefined,()=>{});}
 window.addEventListener('touchmove',e=>{if(e.touches[0])ang=(e.touches[0].clientX/window.innerWidth)*Math.PI*2;},{passive:true});
 window.addEventListener('mousemove',e=>{if(e.buttons)ang=(e.clientX/window.innerWidth)*Math.PI*2;});
 (function loop(){requestAnimationFrame(loop);cam.position.set(Math.sin(ang)*dist,4.2,Math.cos(ang)*dist);cam.lookAt(0,1,0);ren.render(sc,cam);})();
@@ -693,34 +749,71 @@ def run_autonomous_build(user_prompt):
     slug = re.sub(r"[^a-z0-9-]", "", app_title.lower().replace(" ", "-")) or "auto-app"
     repo_name = f"{slug}-{int(time.time()) % 100000}"
 
-    logs = [f"[{datetime.now().strftime('%H:%M:%S')}] Started Auto-Studio for '{app_title}' ({'3D Game / Godot 4' if is_game else 'App / Flutter 3.50'})"]
+    logs = []
+    with st.status(f"Auto-Studio Live Pipeline: {app_title}", expanded=True) as live_box:
+        def _log(msg):
+            line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
+            logs.append(line)
+            st.write(line)
 
-    # Step 1: Generate live preview HTML + repo files
-    preview_html = build_custom_preview_html(user_prompt, is_game)
-    logs.append("Generated custom live HTML5/3D preview directly from prompt.")
+        _log(f"Dept 1 (Router): Selected {'Godot 4 Native 3D + Three.js' if is_game else 'Flutter 3.50 + Play-Store 3D UI'}")
 
-    repo_res = create_github_repo(repo_name, f"{app_title} - Sarfealam Auto-Studio")
-    repo_url = repo_res.get("html_url", f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}")
-    push_file_to_github(repo_name, "assets/game.html", preview_html, "Add live interactive preview")
-    push_file_to_github(repo_name, ".github/workflows/visual_verify.yml", VISION_AUDIT_WORKFLOW, "Add Playwright visual verify")
+        _log("Dept 2 (GitHub Cloud): Creating repository...")
+        repo_res = create_github_repo(repo_name, f"{app_title} - Sarfealam Auto-Studio")
+        if isinstance(repo_res, dict) and repo_res.get("error"):
+            _log(f"GitHub Repo Error: {repo_res['error']}")
+            live_box.update(label="GitHub Connection Error", state="error")
+            state = {
+                "app_title": app_title, "prompt": user_prompt, "is_game": is_game,
+                "repo": repo_name, "repo_url": f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}",
+                "actions_url": f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions",
+                "releases_url": f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}/releases",
+                "admin_url": "", "preview_html": "", "vision_passes": 0, "heal_passes": 0,
+                "logs": logs, "status": "error", "error_msg": repo_res["error"],
+            }
+            save_json_file(STATE_FILE, state)
+            return state
+        repo_url = repo_res.get("html_url", f"https://github.com/{DEFAULT_GITHUB_USERNAME}/{repo_name}")
+        _log(f"Dept 2: Repo Ready -> {repo_url}")
 
-    if is_game:
-        g_files = build_godot4_files(app_title, user_prompt)
-        for fp, body in g_files.items():
-            push_file_to_github(repo_name, fp, body, f"Add {fp}")
-        push_file_to_github(repo_name, ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, "Activate Godot 4 3D APK Build")
-        logs.append("Pushed Godot 4 3D project + Playwright Visual Audit to GitHub.")
-    else:
-        f_files = build_flutter_files(app_title, user_prompt)
-        for fp, body in f_files.items():
-            push_file_to_github(repo_name, fp, body, f"Add {fp}")
-        push_file_to_github(repo_name, ".github/workflows/build_flutter_apk.yml", FLUTTER_APK_WORKFLOW, "Activate Flutter 3.50 APK Build")
-        logs.append("Pushed Flutter 3.50 project + Playwright Visual Audit to GitHub.")
+        glb_url = ""
+        if is_game:
+            _log("Dept 3 (World GLB Asset Bot): Searching GitHub for matching 3D .glb vehicle/object...")
+            glb_url, glb_sz = search_and_sync_glb(user_prompt, repo_name)
+            _log(f"Dept 3: Synced .glb ({glb_url.split('/')[-1]}, {glb_sz} bytes) to assets/models/vehicle.glb")
+
+        _log("Dept 4 (AI 3D / UI Architect): Writing custom interactive HTML5 preview...")
+        preview_html = build_custom_preview_html(user_prompt, is_game)
+        if glb_url:
+            preview_html = preview_html.replace("__GLB_URL__", glb_url)
+        p_res = push_file_to_github(repo_name, "assets/game.html", preview_html, "Add live interactive preview")
+        if isinstance(p_res, dict) and p_res.get("error"):
+            _log(f"Push Warning: {p_res['error']}")
+
+        _log("Dept 5 (Playwright Visual Audit): Activating Chromium screenshot workflow...")
+        push_file_to_github(repo_name, ".github/workflows/visual_verify.yml", VISION_AUDIT_WORKFLOW, "Add Playwright visual verify")
+
+        if is_game:
+            _log("Dept 6 (Godot 4 Native 3D): Generating project.godot, export_presets.cfg, vehicle_ctrl.gd & main.tscn...")
+            g_files = build_godot4_files(app_title, user_prompt)
+            for fp, body in g_files.items():
+                push_file_to_github(repo_name, fp, body, f"Add {fp}")
+            push_file_to_github(repo_name, ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, "Activate Godot 4 3D APK Build")
+        else:
+            _log("Dept 6 (Flutter 3.50): Generating pubspec.yaml & lib/main.dart...")
+            f_files = build_flutter_files(app_title, user_prompt)
+            for fp, body in f_files.items():
+                push_file_to_github(repo_name, fp, body, f"Add {fp}")
+            push_file_to_github(repo_name, ".github/workflows/build_flutter_apk.yml", FLUTTER_APK_WORKFLOW, "Activate Flutter 3.50 APK Build")
+
+        _log("All files pushed! Playwright + Vision AI + APK Compiler now running on GitHub Cloud.")
+        live_box.update(label="Auto-Studio Pushed -> Live Playwright & APK Running!", state="complete")
 
     state = {
         "app_title": app_title,
         "prompt": user_prompt,
         "is_game": is_game,
+        "glb_url": glb_url,
         "repo": repo_name,
         "repo_url": repo_url,
         "actions_url": f"{repo_url}/actions",
@@ -739,8 +832,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v30.0", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v30.0 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v31.0", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v31.0 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -819,10 +912,14 @@ with tab_factory:
                 st.rerun()
             else:
                 st.error(f"Build stopped after 3 Auto-Heal retries. Logs: {st_state['actions_url']}")
+        elif st_state.get("status") == "error" or tele.get("status") == "api_error":
+            err_txt = st_state.get("error_msg") or tele.get("error") or "Unknown GitHub API error"
+            st.error(f"GitHub Connection Error: {err_txt}")
+            st.markdown(f"Check Repo: {st_state['repo_url']}")
         else:
-            st.info(f"GitHub Cloud Building APK & Running Playwright... ({tele.get('status', 'queued')})")
+            st.info(f"GitHub Cloud Building APK & Running Playwright... ({tele.get('status', 'waiting_for_runner')}) | Actions: {st_state['actions_url']}")
 
-        with st.expander("Autonomous AI Execution Log", expanded=False):
+        with st.expander("Autonomous AI Execution Log (Live Feed)", expanded=True):
             for lg in st_state.get("logs", []):
                 st.write("-", lg)
 
@@ -863,7 +960,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v30.0 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v31.0 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
