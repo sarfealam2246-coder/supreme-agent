@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v32.1 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v32.2 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -321,7 +321,7 @@ def fetch_latest_playwright_screenshot(repo_name):
         for art in arts.get("artifacts", []):
             if art.get("name") == "visual-audit-capture" and not art.get("expired"):
                 dl_url = art.get("archive_download_url")
-                req = urllib.request.Request(dl_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "User-Agent": "Sarfealam-Auto-Studio"})
+                req = urllib.request.Request(dl_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "User-Agent": "Sarfealam-Auto-Studio", "Accept": "application/vnd.github+json"})
                 with urllib.request.urlopen(req, timeout=25) as r:
                     zbytes = io.BytesIO(r.read())
                 with zipfile.ZipFile(zbytes) as zf:
@@ -405,16 +405,7 @@ jobs:
           if [ ! -f "$KS_PATH" ]; then
             keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$KS_PATH" -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 || true
           fi
-          cat > "$HOME/.config/godot/editor_settings-4.3.tres" <<EOF
-[gd_resource type="EditorSettings" format=3]
-
-[resource]
-export/android/java_sdk_path = "$JAVA_DIR"
-export/android/android_sdk_path = "$ANDROID_DIR"
-export/android/debug_keystore = "$KS_PATH"
-export/android/debug_keystore_user = "androiddebugkey"
-export/android/debug_keystore_pass = "android"
-EOF
+          printf '%s\n' '[gd_resource type="EditorSettings" format=3]' '' '[resource]' "export/android/java_sdk_path = \"$JAVA_DIR\"" "export/android/android_sdk_path = \"$ANDROID_DIR\"" "export/android/debug_keystore = \"$KS_PATH\"" 'export/android/debug_keystore_user = "androiddebugkey"' 'export/android/debug_keystore_pass = "android"' > "$HOME/.config/godot/editor_settings-4.3.tres" 
           godot --headless --quit --editor || true
 
       - name: Export Native Godot 4 3D Release APK
@@ -906,8 +897,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v32.1", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v32.1 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v32.2", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v32.2 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -1040,7 +1031,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.1 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v32.2 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
