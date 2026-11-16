@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# SARFEALAM AUTO-STUDIO v31.0 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
+# SARFEALAM AUTO-STUDIO v31.2 (GROK-MODE: 1-PROMPT -> PLAYWRIGHT VISION -> APK)
 # ==============================================================================
 
 def _get_secret(key_name, fallback=""):
@@ -266,12 +266,14 @@ def fetch_file_from_github(repo_name, file_path):
     return ""
 
 def get_live_build_telemetry(repo_name):
-    runs = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=3", "GET", timeout=10)
+    runs = github_api(f"https://api.github.com/repos/{DEFAULT_GITHUB_USERNAME}/{repo_name}/actions/runs?per_page=8", "GET", timeout=10)
     if isinstance(runs, dict) and runs.get("error"):
         return {"status": "api_error", "error": runs["error"], "conclusion": None, "steps": []}
     if not isinstance(runs, dict) or not runs.get("workflow_runs"):
         return {"status": "waiting_for_runner", "conclusion": None, "steps": []}
-    run = runs["workflow_runs"][0]
+    wruns = runs["workflow_runs"]
+    apk_runs = [r for r in wruns if "APK" in (r.get("name") or "")]
+    run = apk_runs[0] if apk_runs else wruns[0]
     jobs = github_api(run.get("jobs_url", ""), "GET", timeout=10)
     steps = []
     job_id = None
@@ -336,14 +338,17 @@ permissions:
 jobs:
   visual-verify:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.48.0-jammy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Capture Live 3D / UI Screenshot via Playwright
         run: |
           if [ -f assets/game.html ]; then
-            npx -y playwright@1.48.0 install chromium --with-deps || true
-            node -e "const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const p=await b.newPage({viewport:{width:800,height:450}});await p.goto('file://'+process.cwd()+'/assets/game.html');await p.waitForTimeout(2500);await p.screenshot({path:'preview_capture.png'});await b.close();})().catch(()=>process.exit(0));"
+            npm init -y >/dev/null 2>&1 || true
+            npm install playwright@1.48.0 >/dev/null 2>&1 || true
+            node -e "const {chromium}=require('playwright');(async()=>{const b=await chromium.launch({args:['--no-sandbox']});const p=await b.newPage({viewport:{width:800,height:450}});await p.goto('file://'+process.cwd()+'/assets/game.html');await p.waitForTimeout(3000);await p.screenshot({path:'preview_capture.png'});await b.close();})().catch(e=>{console.error(e);process.exit(0);});"
           fi
       - name: Upload Visual Capture
         if: always()
@@ -535,6 +540,7 @@ def build_custom_preview_html(user_prompt, is_game):
 </head><body><div id="hud">360 Touch Drag 3D Scene</div><canvas id="c"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
 <script>
 const cv=document.getElementById('c'),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 ren.setSize(window.innerWidth,window.innerHeight);ren.shadowMap.enabled=true;
@@ -559,7 +565,7 @@ grp.add(cab,glass,grille,bed);
 [[-1.05,0.44,-1.3],[1.05,0.44,-1.3],[-1.05,0.44,1.2],[1.05,0.44,1.2],[-1.05,0.44,2.4],[1.05,0.44,2.4]].forEach(p=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.34,16),tMat);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);grp.add(w);});
 for(let i=0;i<10;i++){const b=new THREE.Mesh(new THREE.BoxGeometry(4,5+(i%3)*3,4.5),new THREE.MeshStandardMaterial({color:i%2?0x475569:0x334155}));b.position.set(i%2?-10:10,3,-i*14);sc.add(b);}
 sc.add(grp);
-if(typeof THREE.GLTFLoader!=='undefined'){new THREE.GLTFLoader().load('__GLB_URL__',g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),s=b.getSize(new THREE.Vector3()),scF=4.2/(Math.max(s.x,s.y,s.z)||1);m.scale.set(scF,scF,scF);const c=b.getCenter(new THREE.Vector3());m.position.set(-c.x*scF,-b.min.y*scF,-c.z*scF);grp.clear();grp.add(m);},undefined,()=>{});}
+if(typeof THREE.GLTFLoader!=='undefined'){const gl=new THREE.GLTFLoader();if(typeof THREE.DRACOLoader!=='undefined'){const dr=new THREE.DRACOLoader();dr.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.1/');gl.setDRACOLoader(dr);}gl.load('__GLB_URL__',g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),s=b.getSize(new THREE.Vector3()),scF=4.2/(Math.max(s.x,s.y,s.z)||1);m.scale.set(scF,scF,scF);const c=b.getCenter(new THREE.Vector3());m.position.set(-c.x*scF,-b.min.y*scF,-c.z*scF);grp.clear();grp.add(m);},undefined,()=>{});}
 window.addEventListener('touchmove',e=>{if(e.touches[0])ang=(e.touches[0].clientX/window.innerWidth)*Math.PI*2;},{passive:true});
 window.addEventListener('mousemove',e=>{if(e.buttons)ang=(e.clientX/window.innerWidth)*Math.PI*2;});
 (function loop(){requestAnimationFrame(loop);cam.position.set(Math.sin(ang)*dist,4.2,Math.cos(ang)*dist);cam.lookAt(0,1,0);ren.render(sc,cam);})();
@@ -832,8 +838,8 @@ def run_autonomous_build(user_prompt):
 # CLEAN 4-TAB STREAMLIT UI (FACTORY | LIVE TRACKER | VAULT | ADMIN)
 # ==============================================================================
 
-st.set_page_config(page_title="Sarfealam Auto-Studio v31.0", layout="wide")
-st.title("SARFEALAM AUTO-STUDIO v31.0 (Grok-Mode)")
+st.set_page_config(page_title="Sarfealam Auto-Studio v31.2", layout="wide")
+st.title("SARFEALAM AUTO-STUDIO v31.2 (Grok-Mode)")
 st.caption("1 Prompt -> Self-Dependent AI Code -> Playwright Browser Screenshot -> Vision Auto-Fix -> Native APK")
 
 tab_factory, tab_tracker, tab_vault, tab_admin = st.tabs(["Factory", "Live Tracker", "Vault", "Admin"])
@@ -895,7 +901,8 @@ with tab_factory:
             if hp < 3:
                 st_state["heal_passes"] = hp + 1
                 err_tail = fetch_github_job_error_tail(st_state["repo"], tele.get("job_id"))
-                st_state["logs"].append(f"Auto-Heal #{st_state['heal_passes']}: Reading GitHub error & repairing automatically...")
+                err_snip = (err_tail.splitlines()[-1] if err_tail else "unknown")[:140]
+                st_state["logs"].append(f"Auto-Heal #{st_state['heal_passes']} ({err_snip}) -> Repairing...")
                 if st_state.get("is_game"):
                     push_file_to_github(st_state["repo"], ".github/workflows/build_godot_apk.yml", GODOT_APK_WORKFLOW, f"Auto-Heal Godot #{st_state['heal_passes']}")
                 else:
@@ -918,6 +925,9 @@ with tab_factory:
             st.markdown(f"Check Repo: {st_state['repo_url']}")
         else:
             st.info(f"GitHub Cloud Building APK & Running Playwright... ({tele.get('status', 'waiting_for_runner')}) | Actions: {st_state['actions_url']}")
+            for sp in tele.get("steps", []):
+                ic = "OK" if sp.get("conclusion") == "success" else ("..." if sp.get("status") == "in_progress" else "-")
+                st.caption(f"[{ic}] {sp.get('name')}")
 
         with st.expander("Autonomous AI Execution Log (Live Feed)", expanded=True):
             for lg in st_state.get("logs", []):
@@ -960,7 +970,7 @@ with tab_vault:
 with tab_admin:
     pin = st.text_input("Admin Password", type="password")
     if pin == ADMIN_PASSWORD:
-        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v31.0 Active")
+        st.success(f"Welcome {OWNER_NAME} — Auto-Studio v31.2 Active")
         st.write("Configured Engines:", {
             "Gemini": bool(GEMINI_KEY),
             "Groq": bool(GROQ_KEY),
