@@ -532,6 +532,18 @@ def world_hunter_polyhaven_pbr():
 # PART-BY-PART 3D ASSEMBLY PREVIEW (STAYS LIVE UNTIL APK FINISHES)
 # ==============================================================================
 
+def wrap_3d_iframe(raw_html):
+    if not raw_html:
+        return ""
+    if raw_html.lstrip().startswith("<iframe"):
+        return raw_html
+    escaped = html_lib.escape(raw_html, quote=True)
+    return (
+        f'<iframe srcdoc="{escaped}" '
+        f'style="width:100%;height:460px;border:1px solid rgba(56,189,248,0.35);border-radius:16px;background:#060913;" '
+        f'sandbox="allow-scripts allow-same-origin"></iframe>'
+    )
+
 def assemble_3d_stage_html(stage_num, prompt_text, sub_genre, glb_url, pbr):
     stages = [
         "1. Sky & HDRI Lighting",
@@ -554,7 +566,7 @@ def assemble_3d_stage_html(stage_num, prompt_text, sub_genre, glb_url, pbr):
     show_hero = "true" if stage_num >= 3 else "false"
     show_hud = "true" if stage_num >= 4 else "false"
 
-    return f"""<!DOCTYPE html>
+    raw_doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -720,6 +732,7 @@ animate();
 </script>
 </body>
 </html>"""
+    return wrap_3d_iframe(raw_doc)
 
 # ==============================================================================
 # GODOT 4.3 MOBILE VULKAN + FLUTTER 3.50 MULTI-FILE PROJECT GENERATORS
@@ -926,7 +939,7 @@ def build_modular_project_files(app_title, prompt_text, is_game, sub_genre, glb_
 
 def start_autonomous_build(user_prompt):
     if not user_prompt or not user_prompt.strip():
-        return "Please enter a prompt.", "", load_studio_state() or {}
+        return "Please enter a prompt.", "", load_studio_state() or {}, gr.update(), gr.update()
     is_game, sub_genre = classify_prompt_all_rounder(user_prompt)
     words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", user_prompt).split() if len(w) > 2][:3]
     app_title = " ".join(w.capitalize() for w in words) or ("Auto 3D World" if is_game else "Auto Commercial App")
@@ -939,7 +952,7 @@ def start_autonomous_build(user_prompt):
         logs.append(f"GitHub Error: {repo_res['error']}")
         st = {"app_title": app_title, "prompt": user_prompt, "repo": repo_name, "status": "error", "logs": logs, "stage": 1}
         save_studio_state(st)
-        return "\n".join(logs), assemble_3d_stage_html(1, user_prompt, sub_genre, "", world_hunter_polyhaven_pbr()), st
+        return "\n".join(logs), assemble_3d_stage_html(1, user_prompt, sub_genre, "", world_hunter_polyhaven_pbr()), st, gr.update(choices=[], value=None), "// GitHub error" 
 
     repo_url = repo_res.get("html_url", f"https://github.com/{GITHUB_USERNAME}/{repo_name}")
     logs.append(f"GitHub Repo Ready: {repo_url}")
@@ -967,14 +980,17 @@ def start_autonomous_build(user_prompt):
         "apk_dl_url": "",
         "admin_url": f"?admin_app={repo_name}",
         "preview_html": preview_html,
+        "files": {k: v[:12000] for k, v in files.items()},
         "logs": logs,
         "stage": 5,
         "status": "building",
         "otp_service": "",
+        "chat_history": (load_studio_state() or {}).get("chat_history", []),
     }
     save_studio_state(st)
     save_to_factory_vault(st)
-    return "\n".join(logs), preview_html, st
+    dd_upd, code_val = get_code_explorer_update(st)
+    return "\n".join(logs), preview_html, st, dd_upd, code_val
 
 def check_build_progress():
     st = load_studio_state()
@@ -999,7 +1015,7 @@ def check_build_progress():
                     return f"APK READY! Download: {st['apk_dl_url']}", st["preview_html"]
     except Exception:
         pass
-    return f"Building on GitHub Cloud... Actions: {st.get('actions_url', '')}", st.get("preview_html", "")
+    return f"Building on GitHub Cloud... Actions: {st.get('actions_url', '')}", wrap_3d_iframe(st.get("preview_html", ""))
 
 def human_live_chat(message, audio_file, history):
     text_in = (message or "").strip()
@@ -1020,11 +1036,72 @@ def human_live_chat(message, audio_file, history):
     reply = call_ai(sys_p, text_in, max_tokens=1200, prefer="groq") or "Connected! Ready for your command."
     history = history or []
     history.append((text_in, reply))
+    st_cur = load_studio_state() or {}
+    st_cur["chat_history"] = history
+    save_studio_state(st_cur)
     return history, ""
+
+
+def get_code_explorer_update(st=None):
+    st = st if st is not None else (load_studio_state() or {})
+    files = st.get("files") or {}
+    if not files:
+        return gr.update(choices=[], value=None), "// No active project files yet. Launch a build to inspect live code!"
+    keys = list(files.keys())
+    first = keys[0]
+    return gr.update(choices=keys, value=first), files.get(first, "")
+
+def on_select_code_file(filename):
+    if not filename:
+        return ""
+    st = load_studio_state() or {}
+    files = st.get("files") or {}
+    return files.get(filename, "// File not found in active project.")
+
+def restore_studio_on_load():
+    st = load_studio_state()
+    vault_text = get_vault_markdown()
+    dd_upd, code_val = get_code_explorer_update(st)
+    if not st:
+        return (
+            "",
+            "Ready! Enter an App or 3D Game idea and click Launch Build & APK.",
+            assemble_3d_stage_html(1, "Studio Ready", "3d_world", "", world_hunter_polyhaven_pbr()),
+            [],
+            vault_text,
+            dd_upd,
+            code_val,
+        )
+    prompt_val = st.get("prompt", "")
+    chat_val = st.get("chat_history", [])
+    logs = st.get("logs", [])
+    status_val = "\n".join(logs) if isinstance(logs, list) and logs else st.get("status", "")
+    if st.get("status") == "building" and st.get("repo"):
+        live_status, live_prev = check_build_progress()
+        if "APK READY!" in live_status:
+            status_val = live_status
+        else:
+            status_val = (status_val + "\n\n" + live_status).strip()
+        return prompt_val, status_val, wrap_3d_iframe(live_prev), chat_val, vault_text, dd_upd, code_val
+    if st.get("apk_dl_url"):
+        status_val = f"APK READY! Download: {st['apk_dl_url']}\n\n" + status_val
+    prev_html = st.get("preview_html") or assemble_3d_stage_html(
+        st.get("stage", 1),
+        prompt_val or "Studio Ready",
+        st.get("category", "3d_world"),
+        st.get("glb_url", ""),
+        world_hunter_polyhaven_pbr(),
+    )
+    return prompt_val, status_val, wrap_3d_iframe(prev_html), chat_val, vault_text, dd_upd, code_val
 
 def cancel_active_project():
     clear_studio_state()
-    return "Active project cleared. Ready for a fresh idea!", assemble_3d_stage_html(1, "Ready for New Project", "ready", "", world_hunter_polyhaven_pbr())
+    return (
+        "Active project cleared. Ready for a fresh idea!",
+        assemble_3d_stage_html(1, "Ready for New Project", "ready", "", world_hunter_polyhaven_pbr()),
+        gr.update(choices=[], value=None),
+        "// Project cleared.",
+    )
 
 def submit_otp_resume(otp_code):
     st = load_studio_state()
@@ -1058,34 +1135,201 @@ def toggle_skill(skill_key, enabled_val):
     return f"Updated {skill_key} -> {'ON' if enabled_val else 'OFF'}"
 
 # ==============================================================================
-# GRADIO 3D COLORFUL GLASSMORPHIC STUDIO UI + FASTAPI MOUNT
+# DARK IDE CODING STUDIO UI + ALWAYS-ON TOGGLEABLE LIVE VOICE
 # ==============================================================================
 
+LIVE_VOICE_HEAD = """
+<script>
+(function() {
+  window.__liveVoiceOn = false;
+  window.__recog = null;
+  window.__lastSpokenText = "";
+
+  function setStatusBadge(text, active) {
+    const btn = document.getElementById("live-voice-toggle");
+    if (!btn) return;
+    btn.innerText = text;
+    btn.style.background = active
+      ? "linear-gradient(135deg, #ef4444, #b91c1c)"
+      : "linear-gradient(135deg, #0ea5e9, #6366f1)";
+    btn.style.boxShadow = active
+      ? "0 0 18px rgba(239, 68, 68, 0.65)"
+      : "0 0 12px rgba(14, 165, 233, 0.35)";
+  }
+
+  function speakText(txt) {
+    if (!window.__liveVoiceOn || !("speechSynthesis" in window) || !txt) return;
+    if (txt === window.__lastSpokenText) return;
+    window.__lastSpokenText = txt;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(txt.slice(0, 450));
+      u.lang = /[\u0900-\u097F]/.test(txt) ? "hi-IN" : "en-IN";
+      u.rate = 1.05;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  function startListening() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      alert("Browser live speech recognition is not supported here. Use the Mic button below or open Direct App URL in Chrome.");
+      window.__liveVoiceOn = false;
+      setStatusBadge("Live Voice: OFF (Click to Start)", false);
+      return;
+    }
+    if (window.__recog) {
+      try { window.__recog.stop(); } catch (e) {}
+    }
+    const r = new SR();
+    r.lang = "hi-IN";
+    r.continuous = true;
+    r.interimResults = true;
+    r.onresult = function(ev) {
+      let finalTxt = "";
+      let interimTxt = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalTxt += t + " ";
+        else interimTxt += t;
+      }
+      const box = document.querySelector("#chat-input-box textarea");
+      if (box) {
+        box.value = (finalTxt || interimTxt).trim();
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (finalTxt.trim()) {
+        const sendBtn = document.querySelector("#chat-send-btn");
+        if (sendBtn) sendBtn.click();
+      }
+    };
+    r.onerror = function() {
+      if (window.__liveVoiceOn) {
+        setTimeout(() => { if (window.__liveVoiceOn) startListening(); }, 900);
+      }
+    };
+    r.onend = function() {
+      if (window.__liveVoiceOn) {
+        setTimeout(() => { if (window.__liveVoiceOn) startListening(); }, 400);
+      }
+    };
+    window.__recog = r;
+    try { r.start(); } catch (e) {}
+  }
+
+  window.toggleLiveVoice = function() {
+    window.__liveVoiceOn = !window.__liveVoiceOn;
+    if (window.__liveVoiceOn) {
+      setStatusBadge("Live Voice: ON (Listening... Tap to Stop)", true);
+      startListening();
+    } else {
+      setStatusBadge("Live Voice: OFF (Tap to Start)", false);
+      if (window.__recog) {
+        try { window.__recog.stop(); } catch (e) {}
+      }
+      if ("speechSynthesis" in window) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+    }
+  };
+
+  // Watch chatbot for new bot replies to auto-speak when Live Voice is ON
+  setInterval(function() {
+    if (!window.__liveVoiceOn) return;
+    const msgs = document.querySelectorAll("#chatbot-box .bot, #chatbot-box [data-testid='bot']");
+    if (msgs && msgs.length) {
+      const last = msgs[msgs.length - 1].innerText || "";
+      if (last && last !== window.__lastSpokenText) {
+        speakText(last);
+      }
+    }
+  }, 1200);
+})();
+</script>
+"""
+
 CUSTOM_CSS = """
-body, .gradio-container {
-  background: radial-gradient(circle at top left, #0f172a, #050814 65%) !important;
+:root, .dark, body, .gradio-container {
+  --body-background-fill: #070b14 !important;
+  --background-fill-primary: #0d1322 !important;
+  --background-fill-secondary: #111827 !important;
+  --block-background-fill: #0d1322 !important;
+  --block-border-color: rgba(56, 189, 248, 0.25) !important;
+  --block-label-background-fill: #111a2e !important;
+  --block-label-text-color: #38bdf8 !important;
+  --block-title-text-color: #f1f5f9 !important;
+  --body-text-color: #e2e8f0 !important;
+  --body-text-color-subdued: #94a3b8 !important;
+  --input-background-fill: #090e1a !important;
+  --input-border-color: rgba(56, 189, 248, 0.35) !important;
+  --input-placeholder-color: #64748b !important;
+  --button-secondary-background-fill: #1e293b !important;
+  --button-secondary-text-color: #f1f5f9 !important;
+  --button-secondary-border-color: rgba(148, 163, 184, 0.3) !important;
+  --border-color-primary: rgba(56, 189, 248, 0.25) !important;
+  background: radial-gradient(circle at top left, #0f172a, #050814 70%) !important;
   color: #e2e8f0 !important;
 }
-.glass-card {
-  background: rgba(15, 23, 42, 0.72) !important;
+.gradio-container input, .gradio-container textarea, .gradio-container select {
+  background-color: #090e1a !important;
+  color: #f8fafc !important;
   border: 1px solid rgba(56, 189, 248, 0.35) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45) !important;
+}
+.gradio-container h1, .gradio-container h2, .gradio-container h3,
+.gradio-container .prose, .gradio-container .prose p, .gradio-container .prose strong,
+.gradio-container label, .gradio-container span {
+  color: #e2e8f0 !important;
+}
+.gradio-container .tab-nav button {
+  color: #94a3b8 !important;
+  background: transparent !important;
+}
+.gradio-container .tab-nav button.selected {
+  color: #38bdf8 !important;
+  border-bottom: 2px solid #38bdf8 !important;
+}
+#live-voice-toggle {
+  width: 100%;
+  padding: 11px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+#terminal-feed textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 12px !important;
+  color: #34d399 !important;
+  background: #030712 !important;
 }
 """
 
-with gr.Blocks(theme=gr.themes.Base(primary_hue="cyan", secondary_hue="purple", neutral_hue="slate"), css=CUSTOM_CSS, title="Sarfealam Auto-Studio") as demo:
-    gr.Markdown("# 🚀 SARFEALAM AUTO-STUDIO\n**All-Rounder 3D Game & Commercial App Factory • Live Voice/Chat • Part-by-Part 3D Assembly • Supabase Vault**")
+with gr.Blocks(
+    theme=gr.themes.Base(primary_hue="cyan", secondary_hue="purple", neutral_hue="slate"),
+    css=CUSTOM_CSS,
+    head=LIVE_VOICE_HEAD,
+    title="Sarfealam Auto-Studio IDE",
+) as demo:
+    gr.Markdown(
+        "# 🚀 SARFEALAM AUTO-STUDIO IDE\n"
+        "**3D Game & Commercial App Factory • Always-On Live Voice • Live 3D Preview + Code Explorer • Permanent Supabase State**  |  "
+        "[Open Fullscreen Direct App](https://sarfealam22-sarfealam-auto-studio.hf.space)"
+    )
 
     with gr.Tabs():
-        with gr.Tab("Live Studio & 3D Assembly"):
+        with gr.Tab("Live Studio IDE & 3D Assembly"):
             with gr.Row():
                 with gr.Column(scale=5):
-                    chatbot = gr.Chatbot(label="Live Co-Developer (Hindi/Hinglish/English)", height=270)
+                    gr.HTML('<button id="live-voice-toggle" type="button" onclick="window.toggleLiveVoice()">Live Voice: OFF (Tap to Start)</button>')
+                    chatbot = gr.Chatbot(label="Live Co-Developer (Hindi/Hinglish/English)", height=250, elem_id="chatbot-box")
                     with gr.Row():
-                        chat_in = gr.Textbox(placeholder="Bolkar ya likhkar baat karein...", show_label=False, scale=4)
-                        voice_in = gr.Audio(sources=["microphone"], type="filepath", label="Voice", scale=2)
-                    chat_btn = gr.Button("Send / Speak", variant="secondary")
+                        chat_in = gr.Textbox(placeholder="Bolkar ya likhkar command dein...", show_label=False, scale=4, elem_id="chat-input-box")
+                        voice_in = gr.Audio(sources=["microphone"], type="filepath", label="Mic Fallback", scale=2)
+                    chat_btn = gr.Button("Send / Speak", variant="secondary", elem_id="chat-send-btn")
 
                     gr.Markdown("### 1-Prompt Autonomous Build")
                     prompt_box = gr.Textbox(label="App / 3D Game Idea", lines=3, placeholder="e.g. Build a 3D Fauji Army Cargo Truck OR Open-World Survival Shooter OR Delivery App with Maps & QR")
@@ -1093,20 +1337,26 @@ with gr.Blocks(theme=gr.themes.Base(primary_hue="cyan", secondary_hue="purple", 
                         build_btn = gr.Button("Launch Build & APK", variant="primary")
                         refresh_btn = gr.Button("Check Live APK Status")
                         cancel_btn = gr.Button("Cancel / Reject Project")
-                    status_box = gr.Textbox(label="Live Execution Feed", lines=4, interactive=False)
+                    status_box = gr.Textbox(label="Live Terminal & Execution Feed", lines=5, interactive=False, elem_id="terminal-feed")
 
                     with gr.Accordion("OTP / Login Pause-Resume Gate", open=False):
                         otp_in = gr.Textbox(label=f"Enter OTP sent to {OWNER_EMAIL}")
                         otp_btn = gr.Button("Verify & Resume Build")
                         otp_out = gr.Textbox(label="Gate Status", interactive=False)
 
-                with gr.Column(scale=6):
-                    preview_view = gr.HTML(value=assemble_3d_stage_html(1, "Studio Ready", "3d_world", "", world_hunter_polyhaven_pbr()))
+                with gr.Column(scale=7):
+                    with gr.Tabs():
+                        with gr.Tab("Live 3D Preview"):
+                            preview_view = gr.HTML(value=assemble_3d_stage_html(1, "Studio Ready", "3d_world", "", world_hunter_polyhaven_pbr()))
+                        with gr.Tab("Code Explorer (Generated Files)"):
+                            file_dropdown = gr.Dropdown(label="Select Project File", choices=[], interactive=True)
+                            code_viewer = gr.Code(label="Live Source Code", language="python", lines=22, interactive=False)
+                            file_dropdown.change(on_select_code_file, [file_dropdown], [code_viewer])
 
             chat_btn.click(human_live_chat, [chat_in, voice_in, chatbot], [chatbot, chat_in])
-            build_btn.click(start_autonomous_build, [prompt_box], [status_box, preview_view, gr.State({})])
+            build_btn.click(start_autonomous_build, [prompt_box], [status_box, preview_view, gr.State({}), file_dropdown, code_viewer])
             refresh_btn.click(check_build_progress, None, [status_box, preview_view])
-            cancel_btn.click(cancel_active_project, None, [status_box, preview_view])
+            cancel_btn.click(cancel_active_project, None, [status_box, preview_view, file_dropdown, code_viewer])
             otp_btn.click(submit_otp_resume, [otp_in], [otp_out])
 
         with gr.Tab("Factory Vault & Owner Admin"):
@@ -1152,6 +1402,8 @@ with gr.Blocks(theme=gr.themes.Base(primary_hue="cyan", secondary_hue="purple", 
                 "Owner Email": OWNER_EMAIL,
             }
             gr.JSON(value=health, label="Connected Engines & Secrets")
+
+    demo.load(restore_studio_on_load, None, [prompt_box, status_box, preview_view, chatbot, vault_md, file_dropdown, code_viewer])
 
 if __name__ == "__main__":
     demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860)
