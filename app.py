@@ -1776,4 +1776,4 @@ with gr.Blocks(
     demo.load(restore_studio_on_load, None, [prompt_box, status_box, preview_view, chatbot, vault_md, file_dropdown, code_viewer])
 
 if __name__ == "__main__":
-    demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860) ok 
+    demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860)
