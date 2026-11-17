@@ -499,7 +499,12 @@ def world_hunter_fetch_glb(prompt_text):
                     html_u = it.get("html_url", "")
                     if "/blob/" in html_u:
                         raw_u = html_u.replace("https://github.com/", "https://raw.githubusercontent.com/").replace("/blob/", "/")
-                        return raw_u, os.path.basename(raw_u)
+                        try:
+                            chk = requests.get(raw_u, headers={"Range": "bytes=0-15"}, timeout=5)
+                            if chk.status_code in (200, 206) and chk.content[:4] == b"glTF":
+                                return raw_u, os.path.basename(raw_u)
+                        except Exception:
+                            pass
         except Exception:
             pass
 
@@ -544,7 +549,25 @@ def wrap_3d_iframe(raw_html):
         f'sandbox="allow-scripts allow-same-origin"></iframe>'
     )
 
-def assemble_3d_stage_html(stage_num, prompt_text, sub_genre, glb_url, pbr):
+
+def generate_ai_scene_js(user_prompt, sub_genre):
+    sys_p = (
+        "You are a Three.js 3D Scene Builder. Given a user prompt, output ONLY raw JavaScript (no markdown, no backticks, no import statements). "
+        "Available variables already in scope: THREE, scene, heroGroup, wheelMeshes, ground, road. "
+        "Build custom 3D environment meshes (buildings, neon signs, mountains, desert dunes, trees, or props matching the prompt) added to `scene`, "
+        "and build the custom 3D hero vehicle/character/object matching the prompt added to `heroGroup` (push wheel meshes to `wheelMeshes` if wheeled). "
+        "Use only THREE.MeshStandardMaterial and built-in geometries (BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry). Keep under 55 lines."
+    )
+    raw = call_ai(sys_p, f"Genre: {sub_genre}. Prompt: {user_prompt[:500]}", max_tokens=1200, prefer="gemini")
+    if not raw:
+        return ""
+    raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw.strip())
+    raw = re.sub(r"```$", "", raw.strip()).strip()
+    if "import " in raw or "</script>" in raw.lower():
+        return ""
+    return raw
+
+def assemble_3d_stage_html(stage_num, prompt_text, sub_genre, glb_url, pbr, ai_scene_js=""):
     stages = [
         "1. Sky & HDRI Lighting",
         "2. Terrain & Buildings",
@@ -675,56 +698,212 @@ road.receiveShadow = true;
 scene.add(road);
 
 if ({show_buildings}) {{
-  const bMat = new THREE.MeshStandardMaterial({{ color: 0x334155, roughness: 0.6, metalness: 0.2 }});
+  // Mountain Peaks on both sides & horizon
+  const mtnMat = new THREE.MeshStandardMaterial({{ color: 0x334155, roughness: 0.92, flatShading: true }});
+  const snowMat = new THREE.MeshStandardMaterial({{ color: 0xe2e8f0, roughness: 0.7, flatShading: true }});
+  for (let i = -5; i <= 5; i++) {{
+    const mh = 18 + (Math.abs(i * 7) % 16);
+    const mw = 14 + (Math.abs(i * 3) % 8);
+    const mL = new THREE.Mesh(new THREE.ConeGeometry(mw, mh, 6), mtnMat);
+    mL.position.set(-34 - (Math.abs(i) % 3) * 8, mh / 2 - 1, i * 26);
+    scene.add(mL);
+    const capL = new THREE.Mesh(new THREE.ConeGeometry(mw * 0.38, mh * 0.38, 6), snowMat);
+    capL.position.set(mL.position.x, mh * 0.81 - 1, mL.position.z);
+    scene.add(capL);
+
+    const mR = new THREE.Mesh(new THREE.ConeGeometry(mw, mh + 4, 6), mtnMat);
+    mR.position.set(34 + (Math.abs(i) % 3) * 8, (mh + 4) / 2 - 1, i * 26);
+    scene.add(mR);
+    const capR = new THREE.Mesh(new THREE.ConeGeometry(mw * 0.38, (mh + 4) * 0.38, 6), snowMat);
+    capR.position.set(mR.position.x, (mh + 4) * 0.81 - 1, mR.position.z);
+    scene.add(capR);
+  }}
+
+  // Houses / Army Basecamp Structures, Watchtowers & Pine Trees
+  const wallMat = new THREE.MeshStandardMaterial({{ color: 0x4b5320, roughness: 0.8 }});
+  const roofMat = new THREE.MeshStandardMaterial({{ color: 0x365314, roughness: 0.7 }});
+  const winMat = new THREE.MeshStandardMaterial({{ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.6 }});
+  const trunkMat = new THREE.MeshStandardMaterial({{ color: 0x451a03, roughness: 0.9 }});
+  const leafMat = new THREE.MeshStandardMaterial({{ color: 0x14532d, roughness: 0.85, flatShading: true }});
+
   for (let i = -3; i <= 3; i++) {{
-    if (i === 0) continue;
-    const h = 4 + Math.abs(i) * 2.2;
-    const b1 = new THREE.Mesh(new THREE.BoxGeometry(5, h, 5), bMat);
-    b1.position.set(-14, h / 2, i * 16);
-    b1.castShadow = true;
-    scene.add(b1);
-    const b2 = new THREE.Mesh(new THREE.BoxGeometry(5, h + 1.5, 5), bMat);
-    b2.position.set(14, (h + 1.5) / 2, i * 16);
-    b2.castShadow = true;
-    scene.add(b2);
+    // Basecamp / Barracks with pitched roof & glowing windows
+    const side = i % 2 === 0 ? -12 : 12;
+    const hGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(6.5, 3.6, 5.2), wallMat);
+    body.position.y = 1.8;
+    body.castShadow = true;
+    hGroup.add(body);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(5.2, 2.2, 4), roofMat);
+    roof.position.y = 4.7;
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+    hGroup.add(roof);
+    const win = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 0.2), winMat);
+    win.position.set(0, 2.0, side < 0 ? 2.62 : -2.62);
+    hGroup.add(win);
+    hGroup.position.set(side, 0, i * 18);
+    scene.add(hGroup);
+
+    // Watchtower
+    if (i % 2 !== 0) {{
+      const tw = new THREE.Group();
+      const post = new THREE.Mesh(new THREE.BoxGeometry(1.8, 7.0, 1.8), trunkMat);
+      post.position.y = 3.5;
+      tw.add(post);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 3.2), roofMat);
+      cabin.position.y = 7.6;
+      tw.add(cabin);
+      tw.position.set(-side, 0, i * 18 + 6);
+      scene.add(tw);
+    }}
+
+    // Pine trees
+    for (let t = 0; t < 2; t++) {{
+      const tree = new THREE.Group();
+      const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.2, 6), trunkMat);
+      tr.position.y = 1.1;
+      tree.add(tr);
+      const lf = new THREE.Mesh(new THREE.ConeGeometry(1.8, 4.5, 7), leafMat);
+      lf.position.y = 3.8;
+      tree.add(lf);
+      tree.position.set((t === 0 ? -19 : 19), 0, i * 18 + t * 8);
+      scene.add(tree);
+    }}
   }}
 }}
 
 let heroGroup = new THREE.Group();
+let wheelMeshes = [];
 scene.add(heroGroup);
+
+function buildProceduralHero(genre, promptStr) {{
+  const g = new THREE.Group();
+  const lowP = (promptStr || "").toLowerCase();
+  const isCar = /\b(car|ferrari|lambo|drift|racing|supercar|sedan|suv)\b/.test(lowP) && !/\b(truck|army|fauji|military|cargo|tank)\b/.test(lowP);
+  if (isCar) {{
+    const bodyMat = new THREE.MeshStandardMaterial({{ color: 0xdc2626, roughness: 0.25, metalness: 0.75 }});
+    const glassMat = new THREE.MeshStandardMaterial({{ color: 0x38bdf8, roughness: 0.1, metalness: 0.9 }});
+    const tireMat = new THREE.MeshStandardMaterial({{ color: 0x0f172a, roughness: 0.9 }});
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.65, 4.6), bodyMat);
+    base.position.y = 0.65;
+    base.castShadow = true;
+    g.add(base);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.55, 2.2), glassMat);
+    cabin.position.set(0, 1.2, 0.1);
+    g.add(cabin);
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 0.45), bodyMat);
+    spoiler.position.set(0, 1.25, 2.05);
+    g.add(spoiler);
+    [-1.08, 1.08].forEach(wx => {{
+      [-1.4, 1.4].forEach(wz => {{
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.34, 16), tireMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(wx, 0.42, wz);
+        g.add(w);
+        wheelMeshes.push(w);
+      }});
+    }});
+  }} else if (genre === "3d_vehicle" || genre === "3d_world") {{
+    const olive = new THREE.MeshStandardMaterial({{ color: 0x3f6212, roughness: 0.55, metalness: 0.2 }});
+    const darkMetal = new THREE.MeshStandardMaterial({{ color: 0x1e293b, roughness: 0.4, metalness: 0.7 }});
+    const canvasMat = new THREE.MeshStandardMaterial({{ color: 0x4d7c0f, roughness: 0.85 }});
+    const glassMat = new THREE.MeshStandardMaterial({{ color: 0x38bdf8, roughness: 0.15, metalness: 0.8 }});
+    const tireMat = new THREE.MeshStandardMaterial({{ color: 0x0f172a, roughness: 0.9 }});
+    const lightMat = new THREE.MeshStandardMaterial({{ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 1.5 }});
+
+    // Chassis
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.45, 6.2), darkMetal);
+    chassis.position.y = 0.85;
+    chassis.castShadow = true;
+    g.add(chassis);
+    // Cab
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.55, 2.0), olive);
+    cab.position.set(0, 1.75, -1.8);
+    cab.castShadow = true;
+    g.add(cab);
+    // Windshield
+    const wind = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 0.12), glassMat);
+    wind.position.set(0, 2.0, -2.81);
+    g.add(wind);
+    // Headlights
+    [-0.75, 0.75].forEach(hx => {{
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.12), lightMat);
+      hl.position.set(hx, 1.25, -2.82);
+      g.add(hl);
+    }});
+    // Cargo Bed + Canvas Cover
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.65, 3.6), canvasMat);
+    bed.position.set(0, 1.85, 1.15);
+    bed.castShadow = true;
+    g.add(bed);
+    // 6x6 Wheels
+    [-1.22, 1.22].forEach(wx => {{
+      [-1.9, 0.5, 2.1].forEach(wz => {{
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.42, 16), tireMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(wx, 0.55, wz);
+        w.castShadow = true;
+        g.add(w);
+        wheelMeshes.push(w);
+      }});
+    }});
+  }} else {{
+    const armor = new THREE.MeshStandardMaterial({{ color: 0x365314, roughness: 0.5 }});
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.6), armor);
+    torso.position.y = 1.6;
+    g.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), new THREE.MeshStandardMaterial({{ color: 0x4d7c0f }}));
+    head.position.y = 2.65;
+    g.add(head);
+  }}
+  return g;
+}}
+
 if ({show_hero}) {{
+  // Instant procedural 3D Fauji Truck / Hero so viewport is NEVER empty
+  const procHero = buildProceduralHero("{sub_genre}", "{safe_prompt}");
+  try {{ {ai_scene_js} }} catch(e) {{ console.warn(e); }}
+  if (heroGroup.children.length === 0)
+  heroGroup.add(procHero);
   const gltfLoader = new GLTFLoader();
   const draco = new DRACOLoader();
-  draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+  draco.setDecoderPath(https://www.gstatic.com/draco/versioned/decoders/1.5.7/);
   gltfLoader.setDRACOLoader(draco);
-  gltfLoader.load('{safe_glb}', (gltf) => {{
-    const m = gltf.scene;
-    const box = new THREE.Box3().setFromObject(m);
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const s = 4.2 / maxDim;
-    m.scale.setScalar(s);
-    const b2 = new THREE.Box3().setFromObject(m);
-    m.position.y -= b2.min.y;
-    m.traverse(c => {{ if (c.isMesh) {{ c.castShadow = true; c.receiveShadow = true; }} }});
-    heroGroup.add(m);
-  }}, undefined, () => {{
-    const fallback = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4, 1.8, 5.2),
-      new THREE.MeshStandardMaterial({{ color: 0x3f6212, roughness: 0.5 }})
-    );
-    fallback.position.y = 1.0;
-    heroGroup.add(fallback);
-  }});
+  if ({safe_glb} && {safe_glb}.endsWith(.glb)) {{
+    gltfLoader.load({safe_glb}, (gltf) => {{
+      const m = gltf.scene;
+      const box = new THREE.Box3().setFromObject(m);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      if (isFinite(maxDim) && maxDim > 0.01) {{
+        const s = 4.6 / maxDim;
+        m.scale.setScalar(s);
+        const b2 = new THREE.Box3().setFromObject(m);
+        m.position.y -= b2.min.y;
+        m.traverse(c => {{ if (c.isMesh) {{ c.castShadow = true; c.receiveShadow = true; }} }});
+        heroGroup.remove(procHero);
+        heroGroup.add(m);
+      }}
+    }});
+  }}
 }}
 
 let speed = 0;
-document.getElementById('gasBtn')?.addEventListener('click', () => {{ speed = 0.15; controls.autoRotate = false; }});
-document.getElementById('brkBtn')?.addEventListener('click', () => {{ speed = 0; }});
+let steerDir = 0;
+document.getElementById(gasBtn)?.addEventListener(click, () => {{ speed = 0.22; controls.autoRotate = false; }});
+document.getElementById(brkBtn)?.addEventListener(click, () => {{ speed = 0; }});
+document.getElementById(steerBtn)?.addEventListener(click, () => {{ steerDir = steerDir === 0 ? 1 : (steerDir === 1 ? -1 : 0); }});
 
 function animate() {{
   requestAnimationFrame(animate);
-  if (speed > 0) heroGroup.position.z -= speed;
+  if (speed > 0) {{
+    heroGroup.position.z -= speed;
+    heroGroup.position.x = Math.max(-4, Math.min(4, heroGroup.position.x + steerDir * 0.05));
+    if (heroGroup.position.z < -70) heroGroup.position.z = 70;
+    wheelMeshes.forEach(w => w.rotation.x -= speed * 1.4);
+    controls.target.copy(heroGroup.position).add(new THREE.Vector3(0, 1.5, 0));
+  }}
   controls.update();
   renderer.render(scene, camera);
 }}
@@ -966,7 +1145,8 @@ def start_autonomous_build(user_prompt):
     push_files_atomic(repo_name, files, "Sarfealam Auto-Studio Multi-File Build")
     logs.append("All files pushed! Playwright QA + APK Compiler running on GitHub Cloud.")
 
-    preview_html = assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr)
+    ai_js = generate_ai_scene_js(user_prompt, sub_genre)
+    preview_html = assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr, ai_scene_js=ai_js)
     st = {
         "app_title": app_title,
         "prompt": user_prompt,
@@ -998,7 +1178,7 @@ def check_build_progress():
         return "No active project. Start a new build!", assemble_3d_stage_html(1, "Waiting for Prompt", "ready", "", world_hunter_polyhaven_pbr())
 
     if st.get("status") == "waiting_for_otp":
-        return f"PAUSED FOR OTP ({st.get('otp_service', 'Login')}): Waiting for {OWNER_EMAIL} verification...", st.get("preview_html", "")
+        return f"PAUSED FOR OTP ({st.get('otp_service', 'Login')}): Waiting for {OWNER_EMAIL} verification...", wrap_3d_iframe(st.get("preview_html", ""))
 
     repo = st["repo"]
     try:
@@ -1015,7 +1195,38 @@ def check_build_progress():
                     return f"APK READY! Download: {st['apk_dl_url']}", st["preview_html"]
     except Exception:
         pass
-    return f"Building on GitHub Cloud... Actions: {st.get('actions_url', '')}", wrap_3d_iframe(st.get("preview_html", ""))
+
+    # Query exact GitHub Actions workflow run + active step
+    live_detail = "Queued on GitHub Cloud..."
+    try:
+        runs_r = requests.get(f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/actions/runs?per_page=1", headers=gh_headers(), timeout=8)
+        if runs_r.status_code == 200 and runs_r.json().get("workflow_runs"):
+            run = runs_r.json()["workflow_runs"][0]
+            r_status = run.get("status", "")
+            r_concl = run.get("conclusion", "")
+            run_id = run.get("id")
+            live_detail = f"Workflow: {r_status} ({r_concl or 'running'})"
+            if run_id:
+                jobs_r = requests.get(f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/actions/runs/{run_id}/jobs", headers=gh_headers(), timeout=8)
+                if jobs_r.status_code == 200 and jobs_r.json().get("jobs"):
+                    job = jobs_r.json()["jobs"][0]
+                    steps = job.get("steps", [])
+                    done_cnt = sum(1 for s in steps if s.get("status") == "completed")
+                    cur_step = next((s.get("name") for s in steps if s.get("status") == "in_progress"), None)
+                    if cur_step:
+                        live_detail = f"Running Step ({done_cnt+1}/{len(steps)}): {cur_step}"
+                    elif r_concl == "failure":
+                        fail_step = next((s.get("name") for s in steps if s.get("conclusion") == "failure"), "Build Step")
+                        live_detail = f"FAILED at Step: {fail_step} — Open Actions URL to view log."
+                    elif r_concl == "success":
+                        live_detail = "Build finished! Checking APK Release..."
+    except Exception:
+        pass
+
+    return (
+        f"[CLOUD BUILD] {live_detail}\nRepo: {st.get('repo_url', '')}\nActions: {st.get('actions_url', '')}",
+        wrap_3d_iframe(st.get("preview_html", "")),
+    )
 
 def human_live_chat(message, audio_file, history):
     text_in = (message or "").strip()
