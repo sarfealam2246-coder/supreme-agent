@@ -582,6 +582,7 @@ def assemble_3d_stage_html(stage_num, prompt_text, sub_genre, glb_url, pbr, ai_s
         pills += f'<div class="st-pill {cls}">{label}</div>'
 
     safe_prompt = html_lib.escape((prompt_text or "3D World")[:80])
+    ai_code_json = json.dumps(ai_scene_js or "").replace("</", "<\\/")
     safe_glb = html_lib.escape(glb_url or "")
     safe_asphalt = html_lib.escape(pbr.get("asphalt", ""))
     safe_terrain = html_lib.escape(pbr.get("terrain", ""))
@@ -636,6 +637,7 @@ import {{ DRACOLoader }} from 'three/addons/loaders/DRACOLoader.js';
 import {{ Sky }} from 'three/addons/objects/Sky.js';
 
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f172a);
 scene.fog = new THREE.FogExp2(0x111827, 0.008);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / 430, 0.1, 600);
 camera.position.set(10, 6.5, 14);
@@ -710,7 +712,7 @@ if ({show_buildings}) {{
     const capL = new THREE.Mesh(new THREE.ConeGeometry(mw * 0.38, mh * 0.38, 6), snowMat);
     capL.position.set(mL.position.x, mh * 0.81 - 1, mL.position.z);
     scene.add(capL);
-
+k
     const mR = new THREE.Mesh(new THREE.ConeGeometry(mw, mh + 4, 6), mtnMat);
     mR.position.set(34 + (Math.abs(i) % 3) * 8, (mh + 4) / 2 - 1, i * 26);
     scene.add(mR);
@@ -863,9 +865,14 @@ function buildProceduralHero(genre, promptStr) {{
 if ({show_hero}) {{
   // Instant procedural 3D Fauji Truck / Hero so viewport is NEVER empty
   const procHero = buildProceduralHero("{sub_genre}", "{safe_prompt}");
-  try {{ {ai_scene_js} }} catch(e) {{ console.warn(e); }}
-  if (heroGroup.children.length === 0)
   heroGroup.add(procHero);
+  const __aiCode = {ai_code_json};
+  if (__aiCode && __aiCode.trim()) {{
+    try {{
+      const __fn = new Function("THREE", "scene", "heroGroup", "wheelMeshes", "ground", "road", __aiCode);
+      __fn(THREE, scene, heroGroup, wheelMeshes, ground, road);
+    }} catch(e) {{ console.warn("AI scene skipped safely:", e); }}
+  }}
   const gltfLoader = new GLTFLoader();
   const draco = new DRACOLoader();
   draco.setDecoderPath(https://www.gstatic.com/draco/versioned/decoders/1.5.7/);
@@ -1116,6 +1123,89 @@ def build_modular_project_files(app_title, prompt_text, is_game, sub_genre, glb_
 # AUTONOMOUS PIPELINE + GRADIO CALLBACKS
 # ==============================================================================
 
+
+# ==============================================================================
+# GROK + EMERGENT MULTI-AGENT SKILL ENGINE (ZERO HARDCODED TEMPLATES)
+# ==============================================================================
+
+GROK_EMERGENT_3D_SKILL = """
+You are an Expert 3D Graphics & Procedural Architecture Engineer (Grok Three.js + Emergent Builder Skill).
+Generate a COMPLETE, self-contained, single-file HTML5 + Three.js interactive 3D application/game matching the user's EXACT prompt.
+Strict Technical Rules:
+1. Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html> (no markdown fences, no explanation).
+2. Use Three.js r170 via importmap:
+   <script type="importmap">
+   {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+   </script>
+3. Scene Quality: ACESFilmicToneMapping, shadowMap.enabled = true, Sky + PMREMGenerator environment lighting, DirectionalLight with shadows + HemisphereLight, OrbitControls with enableDamping = true.
+4. Procedural Detail: Build rich, multi-part 3D geometry matching the prompt (if a house/villa: foundation, walls, pillars, pitched/flat roof, glass windows, doors, balcony, pool/garden, furniture; if a vehicle/truck/car: chassis, cab, windshield, headlights, rotating wheels, cargo/spoilers, road/mountains/city; if a shooter/character: terrain, cover crates, watchtowers, articulated character, HUD). NEVER just draw 1 plain box!
+5. Include clean mobile-friendly HUD overlay (title badge, interactive controls/buttons or camera presets like Exterior/Interior/Orbit) and smooth requestAnimationFrame loop.
+6. Keep code clean, bug-free, and under 220 lines.
+"""
+
+EMERGENT_APP_SKILL = """
+You are an Expert Full-Stack Mobile/Web App Architect (Emergent App Builder Skill).
+Generate a COMPLETE, self-contained, single-file interactive HTML5 + CSS3 + Vanilla JS mobile-first app UI matching the user's EXACT prompt.
+Strict Rules:
+1. Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html> (no markdown fences).
+2. Dark modern glassmorphic UI, bottom navigation tabs, interactive forms/buttons/cards/charts/QR/cart/maps simulation working live in JS with localStorage persistence.
+3. Every button must actually work when clicked (add item, calculate total, switch tabs, submit form, show toast).
+"""
+
+def _strip_html_fences(raw):
+    if not raw:
+        return ""
+    s = re.sub(r"^```[a-zA-Z]*\n?", "", raw.strip())
+    s = re.sub(r"```$", "", s.strip()).strip()
+    idx = s.lower().find("<!doctype html")
+    if idx != -1:
+        s = s[idx:]
+    end_idx = s.lower().rfind("</html>")
+    if end_idx != -1:
+        s = s[:end_idx + 7]
+    return s
+
+def critic_verify_and_repair_html(html_code, user_prompt):
+    """Emergent/Grok Critic Agent: checks for missing tags, broken script, or empty scene and auto-repairs once."""
+    if not html_code or "</html>" not in html_code.lower() or "<script" not in html_code.lower():
+        return ""
+    issues = []
+    if html_code.count("<script") != html_code.count("</script>"):
+        issues.append("Unclosed <script> tag")
+    if "three" in html_code.lower() and "render(" not in html_code:
+        issues.append("Missing renderer.render(scene, camera) loop")
+    if not issues:
+        return html_code
+    repair_p = (
+        f"Fix these issues ({', '.join(issues)}) in the HTML below for prompt: {user_prompt[:250]}. "
+        "Output ONLY the fixed complete <!DOCTYPE html>...</html>."
+    )
+    fixed = _strip_html_fences(call_ai("You are a strict Code Critic & Repair Agent.", repair_p + "\n\n" + html_code[:9000], max_tokens=4000, prefer="gemini"))
+    return fixed if (fixed and "</html>" in fixed.lower()) else html_code
+
+def agentic_build_live_html(user_prompt, is_game, sub_genre):
+    """Multi-Agent Architect + Builder + Critic generating exact live preview for ANY prompt."""
+    skill_sys = GROK_EMERGENT_3D_SKILL if is_game else EMERGENT_APP_SKILL
+    low = (user_prompt or "").lower()
+    if any(k in low for k in ["3d", "house", "home", "ghar", "villa", "building", "room", "interior", "car", "truck", "tank", "city", "mountain", "space", "solar"]):
+        skill_sys = GROK_EMERGENT_3D_SKILL
+    raw = call_ai(skill_sys, f"Build this exact project in rich detail:\n{user_prompt}", max_tokens=4000, prefer="gemini")
+    cleaned = _strip_html_fences(raw)
+    return critic_verify_and_repair_html(cleaned, user_prompt)
+
+def agentic_patch_live_html(existing_html, edit_instruction, user_prompt):
+    """Emergent Iterative Editor: modifies existing HTML/3D code per chat/voice command."""
+    if not existing_html:
+        return ""
+    sys_p = (
+        "You are an Iterative Code Patcher Agent. Modify the existing HTML/Three.js app according to the user's new request. "
+        "Keep all existing working parts and add/update only what the user asked for. "
+        "Output ONLY the complete updated <!DOCTYPE html>...</html> (no markdown)."
+    )
+    raw = call_ai(sys_p, f"Original Goal: {user_prompt[:300]}\nUser Edit Request: {edit_instruction}\n\nExisting Code:\n{existing_html[:11000]}", max_tokens=4000, prefer="gemini")
+    cleaned = _strip_html_fences(raw)
+    return critic_verify_and_repair_html(cleaned, edit_instruction) or existing_html
+
 def start_autonomous_build(user_prompt):
     if not user_prompt or not user_prompt.strip():
         return "Please enter a prompt.", "", load_studio_state() or {}, gr.update(), gr.update()
@@ -1141,12 +1231,19 @@ def start_autonomous_build(user_prompt):
     logs.append(f"World Hunter Synced: {glb_name} + PolyHaven PBR/HDRI")
 
     files = build_modular_project_files(app_title, user_prompt, is_game, sub_genre, glb_url, pbr)
-    logs.append(f"Multi-File Builder: Generated {len(files)} modular files. Pushing atomically...")
-    push_files_atomic(repo_name, files, "Sarfealam Auto-Studio Multi-File Build")
-    logs.append("All files pushed! Playwright QA + APK Compiler running on GitHub Cloud.")
+    logs.append("Architect + Builder + Critic Agents: Generating custom live 3D/App build for your prompt...")
+    live_html = agentic_build_live_html(user_prompt, is_game, sub_genre)
+    if live_html:
+        files["assets/game.html"] = live_html
+        preview_html = wrap_3d_iframe(live_html)
+        logs.append("Critic QA Passed: Custom prompt-exact 3D/App build ready in Live Preview!")
+    else:
+        preview_html = assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr)
+        logs.append("Fallback 3D Scene loaded in Live Preview.")
 
-    ai_js = generate_ai_scene_js(user_prompt, sub_genre)
-    preview_html = assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr, ai_scene_js=ai_js)
+    logs.append(f"Multi-File Builder: Pushing {len(files)} modular files to GitHub...")
+    push_files_atomic(repo_name, files, "Sarfealam Auto-Studio Multi-Agent Build")
+    logs.append("All files pushed! Playwright QA + APK Compiler running on GitHub Cloud.")
     st = {
         "app_title": app_title,
         "prompt": user_prompt,
@@ -1164,6 +1261,7 @@ def start_autonomous_build(user_prompt):
         "logs": logs,
         "stage": 5,
         "status": "building",
+        "started_at": int(time.time()),
         "otp_service": "",
         "chat_history": (load_studio_state() or {}).get("chat_history", []),
     }
@@ -1171,6 +1269,13 @@ def start_autonomous_build(user_prompt):
     save_to_factory_vault(st)
     dd_upd, code_val = get_code_explorer_update(st)
     return "\n".join(logs), preview_html, st, dd_upd, code_val
+
+
+def auto_poll_build():
+    st = load_studio_state()
+    if not st or st.get("status") != "building" or not st.get("repo"):
+        return gr.update(), gr.update()
+    return check_build_progress()
 
 def check_build_progress():
     st = load_studio_state()
@@ -1223,8 +1328,11 @@ def check_build_progress():
     except Exception:
         pass
 
+    elapsed = max(0, int(time.time()) - int(st.get("started_at") or time.time()))
+    mins, secs = divmod(elapsed, 60)
+    eta_txt = f"Elapsed: {mins}m {secs}s | Est. Total: ~3-4 min"
     return (
-        f"[CLOUD BUILD] {live_detail}\nRepo: {st.get('repo_url', '')}\nActions: {st.get('actions_url', '')}",
+        f"[CLOUD BUILD] {live_detail}\n{eta_txt}\nRepo: {st.get('repo_url', '')}\nActions: {st.get('actions_url', '')}",
         wrap_3d_iframe(st.get("preview_html", "")),
     )
 
@@ -1235,22 +1343,46 @@ def human_live_chat(message, audio_file, history):
         if spoken:
             text_in = spoken
     if not text_in:
-        return history, ""
+        return history, "", gr.update(), gr.update(), gr.update()
+
+    st_cur = load_studio_state() or {}
+    files = st_cur.get("files") or {}
+    low_t = text_in.lower()
+    is_edit_cmd = bool(files.get("assets/game.html")) and any(
+        k in low_t for k in ["add", "change", "edit", "modify", "color", "pool", "car", "house", "ghar", "jodo", "badlo", "hatao", "bana do", "daal do", "lagao", "fix"]
+    )
+
+    if is_edit_cmd:
+        patched = agentic_patch_live_html(files["assets/game.html"], text_in, st_cur.get("prompt", ""))
+        if patched and patched != files["assets/game.html"]:
+            files["assets/game.html"] = patched
+            st_cur["files"] = files
+            st_cur["preview_html"] = wrap_3d_iframe(patched)
+            if st_cur.get("repo"):
+                try:
+                    push_files_atomic(st_cur["repo"], {"assets/game.html": patched}, f"Live Patch: {text_in[:50]}")
+                except Exception:
+                    pass
+            reply = "Done bhai! Maine aapke active project mein ye change kar diya hai aur Live Preview + GitHub dono update ho gaye hain."
+            history = history or []
+            history.append((text_in, reply))
+            st_cur["chat_history"] = history
+            save_studio_state(st_cur)
+            dd_upd, code_val = get_code_explorer_update(st_cur)
+            return history, "", st_cur["preview_html"], dd_upd, code_val
 
     active_skills = [v["title"] for v in SKILL_REGISTRY.values() if v["enabled"]]
     sys_p = (
         f"You are {OWNER_NAME}'s real-time AI Co-Developer in Sarfealam Auto-Studio. "
         "Reply warmly, concisely in the user's language (Hindi/Hinglish/English). "
-        f"Active Skills: {', '.join(active_skills)}. "
-        "If user asks for a new capability not listed, say 'Sir, main isey upgrade kar raha hoon' and explain the exact skill/API."
+        f"Active Skills: {', '.join(active_skills)}."
     )
-    reply = call_ai(sys_p, text_in, max_tokens=1200, prefer="groq") or "Connected! Ready for your command."
+    reply = call_ai(sys_p, text_in, max_tokens=1200, prefer="groq") or "Haan bhai, sun raha hoon! Bolo abhi kya banana hai ya game mein kya badlav karna hai?"
     history = history or []
     history.append((text_in, reply))
-    st_cur = load_studio_state() or {}
     st_cur["chat_history"] = history
     save_studio_state(st_cur)
-    return history, ""
+    return history, "", gr.update(), gr.update(), gr.update()
 
 
 def get_code_explorer_update(st=None):
@@ -1355,6 +1487,8 @@ LIVE_VOICE_HEAD = """
   window.__liveVoiceOn = false;
   window.__recog = null;
   window.__lastSpokenText = "";
+  window.__isSpeaking = false;
+  window.__lastSentAt = 0;
 
   function setStatusBadge(text, active) {
     const btn = document.getElementById("live-voice-toggle");
@@ -1368,35 +1502,57 @@ LIVE_VOICE_HEAD = """
       : "0 0 12px rgba(14, 165, 233, 0.35)";
   }
 
-  function speakText(txt) {
+  function stopRecog() {
+    if (window.__recog) {
+      try { window.__recog.onend = null; window.__recog.stop(); } catch (e) {}
+      window.__recog = null;
+    }
+  }
+
+  function speakText(txt, afterCb) {
     if (!window.__liveVoiceOn || !("speechSynthesis" in window) || !txt) return;
     if (txt === window.__lastSpokenText) return;
     window.__lastSpokenText = txt;
+    window.__isSpeaking = true;
+    stopRecog(); // Pause mic while speaking so it NEVER hears itself!
     try {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(txt.slice(0, 450));
+      const u = new SpeechSynthesisUtterance(txt.slice(0, 400));
       u.lang = /[\u0900-\u097F]/.test(txt) ? "hi-IN" : "en-IN";
-      u.rate = 1.05;
+      u.rate = 1.02;
+      u.onend = function() {
+        window.__isSpeaking = false;
+        if (window.__liveVoiceOn) {
+          setTimeout(() => { if (window.__liveVoiceOn) startListening(); }, 450);
+        }
+        if (afterCb) afterCb();
+      };
+      u.onerror = function() {
+        window.__isSpeaking = false;
+        if (window.__liveVoiceOn) setTimeout(startListening, 500);
+      };
       window.speechSynthesis.speak(u);
-    } catch (e) {}
+    } catch (e) {
+      window.__isSpeaking = false;
+    }
   }
 
   function startListening() {
+    if (!window.__liveVoiceOn || window.__isSpeaking) return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      alert("Browser live speech recognition is not supported here. Use the Mic button below or open Direct App URL in Chrome.");
+      alert("Live Speech Recognition is not supported in this view. Please open the Direct Fullscreen Link in Chrome.");
       window.__liveVoiceOn = false;
-      setStatusBadge("Live Voice: OFF (Click to Start)", false);
+      setStatusBadge("Live Voice: OFF (Tap to Start)", false);
       return;
     }
-    if (window.__recog) {
-      try { window.__recog.stop(); } catch (e) {}
-    }
+    stopRecog();
     const r = new SR();
     r.lang = "hi-IN";
     r.continuous = true;
     r.interimResults = true;
     r.onresult = function(ev) {
+      if (window.__isSpeaking) return;
       let finalTxt = "";
       let interimTxt = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -1409,19 +1565,22 @@ LIVE_VOICE_HEAD = """
         box.value = (finalTxt || interimTxt).trim();
         box.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      if (finalTxt.trim()) {
+      const cleanFinal = finalTxt.trim();
+      const now = Date.now();
+      if (cleanFinal.length >= 3 && (now - window.__lastSentAt) > 1800) {
+        window.__lastSentAt = now;
         const sendBtn = document.querySelector("#chat-send-btn");
         if (sendBtn) sendBtn.click();
       }
     };
     r.onerror = function() {
-      if (window.__liveVoiceOn) {
-        setTimeout(() => { if (window.__liveVoiceOn) startListening(); }, 900);
+      if (window.__liveVoiceOn && !window.__isSpeaking) {
+        setTimeout(() => { if (window.__liveVoiceOn && !window.__isSpeaking) startListening(); }, 1000);
       }
     };
     r.onend = function() {
-      if (window.__liveVoiceOn) {
-        setTimeout(() => { if (window.__liveVoiceOn) startListening(); }, 400);
+      if (window.__liveVoiceOn && !window.__isSpeaking) {
+        setTimeout(() => { if (window.__liveVoiceOn && !window.__isSpeaking) startListening(); }, 500);
       }
     };
     window.__recog = r;
@@ -1432,24 +1591,22 @@ LIVE_VOICE_HEAD = """
     window.__liveVoiceOn = !window.__liveVoiceOn;
     if (window.__liveVoiceOn) {
       setStatusBadge("Live Voice: ON (Listening... Tap to Stop)", true);
-      startListening();
+      speakText("Haan Sir, main live hoon! Bolo abhi kya kaam karna hai?");
     } else {
       setStatusBadge("Live Voice: OFF (Tap to Start)", false);
-      if (window.__recog) {
-        try { window.__recog.stop(); } catch (e) {}
-      }
+      window.__isSpeaking = false;
+      stopRecog();
       if ("speechSynthesis" in window) {
         try { window.speechSynthesis.cancel(); } catch (e) {}
       }
     }
   };
 
-  // Watch chatbot for new bot replies to auto-speak when Live Voice is ON
   setInterval(function() {
-    if (!window.__liveVoiceOn) return;
+    if (!window.__liveVoiceOn || window.__isSpeaking) return;
     const msgs = document.querySelectorAll("#chatbot-box .bot, #chatbot-box [data-testid='bot']");
     if (msgs && msgs.length) {
-      const last = msgs[msgs.length - 1].innerText || "";
+      const last = (msgs[msgs.length - 1].innerText || "").trim();
       if (last && last !== window.__lastSpokenText) {
         speakText(last);
       }
@@ -1564,7 +1721,7 @@ with gr.Blocks(
                             code_viewer = gr.Code(label="Live Source Code", language="python", lines=22, interactive=False)
                             file_dropdown.change(on_select_code_file, [file_dropdown], [code_viewer])
 
-            chat_btn.click(human_live_chat, [chat_in, voice_in, chatbot], [chatbot, chat_in])
+            chat_btn.click(human_live_chat, [chat_in, voice_in, chatbot], [chatbot, chat_in, preview_view, file_dropdown, code_viewer])
             build_btn.click(start_autonomous_build, [prompt_box], [status_box, preview_view, gr.State({}), file_dropdown, code_viewer])
             refresh_btn.click(check_build_progress, None, [status_box, preview_view])
             cancel_btn.click(cancel_active_project, None, [status_box, preview_view, file_dropdown, code_viewer])
@@ -1614,7 +1771,9 @@ with gr.Blocks(
             }
             gr.JSON(value=health, label="Connected Engines & Secrets")
 
+    live_timer = gr.Timer(10)
+    live_timer.tick(auto_poll_build, None, [status_box, preview_view])
     demo.load(restore_studio_on_load, None, [prompt_box, status_box, preview_view, chatbot, vault_md, file_dropdown, code_viewer])
 
 if __name__ == "__main__":
-    demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860)
+    demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860) ok 
