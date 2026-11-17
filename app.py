@@ -537,6 +537,40 @@ def world_hunter_polyhaven_pbr():
 # PART-BY-PART 3D ASSEMBLY PREVIEW (STAYS LIVE UNTIL APK FINISHES)
 # ==============================================================================
 
+
+def render_stage_bar_html(stage_num, subtitle=""):
+    stages = [
+        "1. Sky & HDRI",
+        "2. World & Terrain",
+        "3. 3D Hero / Structure",
+        "4. Physics & HUD",
+        "5. Playwright QA",
+        "6. Native APK Ready",
+    ]
+    pills = []
+    for idx, label in enumerate(stages, 1):
+        if idx < stage_num:
+            bg, col, brd = "rgba(16,185,129,0.22)", "#34d399", "rgba(16,185,129,0.5)"
+        elif idx == stage_num:
+            bg, col, brd = "rgba(56,189,248,0.25)", "#38bdf8", "#38bdf8"
+        else:
+            bg, col, brd = "rgba(255,255,255,0.06)", "#94a3b8", "rgba(148,163,184,0.25)"
+        pills.append(
+            f'<span style="font-size:11px;padding:4px 9px;border-radius:999px;'
+            f'background:{bg};color:{col};border:1px solid {brd};white-space:nowrap;">{label}</span>'
+        )
+    sub_html = f'<div style="font-size:11px;color:#cbd5e1;margin-top:6px;">{html_lib.escape(subtitle)}</div>' if subtitle else ""
+    return (
+        '<div style="background:rgba(10,15,30,0.92);border:1px solid rgba(56,189,248,0.35);'
+        'border-radius:12px;padding:10px;margin-bottom:8px;">'
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + "".join(pills) + '</div>'
+        + sub_html +
+        '</div>'
+    )
+
+def wrap_preview_with_stages(stage_num, raw_html, subtitle=""):
+    return render_stage_bar_html(stage_num, subtitle) + wrap_3d_iframe(raw_html)
+
 def wrap_3d_iframe(raw_html):
     if not raw_html:
         return ""
@@ -712,7 +746,7 @@ if ({show_buildings}) {{
     const capL = new THREE.Mesh(new THREE.ConeGeometry(mw * 0.38, mh * 0.38, 6), snowMat);
     capL.position.set(mL.position.x, mh * 0.81 - 1, mL.position.z);
     scene.add(capL);
-k
+
     const mR = new THREE.Mesh(new THREE.ConeGeometry(mw, mh + 4, 6), mtnMat);
     mR.position.set(34 + (Math.abs(i) % 3) * 8, (mh + 4) / 2 - 1, i * 26);
     scene.add(mR);
@@ -1208,7 +1242,7 @@ def agentic_patch_live_html(existing_html, edit_instruction, user_prompt):
 
 def start_autonomous_build(user_prompt):
     if not user_prompt or not user_prompt.strip():
-        return "Please enter a prompt.", "", load_studio_state() or {}, gr.update(), gr.update()
+        return "Please enter a prompt in App / 3D Game Idea (or speak 'build ...' in Live Voice).", gr.update(), load_studio_state() or {}, gr.update(), gr.update()
     is_game, sub_genre = classify_prompt_all_rounder(user_prompt)
     words = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", user_prompt).split() if len(w) > 2][:3]
     app_title = " ".join(w.capitalize() for w in words) or ("Auto 3D World" if is_game else "Auto Commercial App")
@@ -1235,10 +1269,11 @@ def start_autonomous_build(user_prompt):
     live_html = agentic_build_live_html(user_prompt, is_game, sub_genre)
     if live_html:
         files["assets/game.html"] = live_html
-        preview_html = wrap_3d_iframe(live_html)
+        preview_html = wrap_preview_with_stages(5, live_html, f"Assembling: {app_title} • Building APK on Cloud")
         logs.append("Critic QA Passed: Custom prompt-exact 3D/App build ready in Live Preview!")
     else:
-        preview_html = assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr)
+        live_html = ""
+        preview_html = render_stage_bar_html(5, f"Assembling: {app_title} • Building APK on Cloud") + assemble_3d_stage_html(5, user_prompt, sub_genre, glb_url, pbr)
         logs.append("Fallback 3D Scene loaded in Live Preview.")
 
     logs.append(f"Multi-File Builder: Pushing {len(files)} modular files to GitHub...")
@@ -1256,6 +1291,7 @@ def start_autonomous_build(user_prompt):
         "releases_url": f"{repo_url}/releases",
         "apk_dl_url": "",
         "admin_url": f"?admin_app={repo_name}",
+        "raw_live_html": live_html,
         "preview_html": preview_html,
         "files": {k: v[:12000] for k, v in files.items()},
         "logs": logs,
@@ -1294,7 +1330,11 @@ def check_build_progress():
                     st["apk_dl_url"] = asset.get("browser_download_url", st["releases_url"])
                     st["status"] = "done"
                     st["stage"] = 6
-                    st["preview_html"] = assemble_3d_stage_html(6, st["prompt"], st.get("category", "3D"), st.get("glb_url", ""), world_hunter_polyhaven_pbr())
+                    raw_live = st.get("raw_live_html", "")
+                    if raw_live:
+                        st["preview_html"] = wrap_preview_with_stages(6, raw_live, f"APK Ready! {st.get('app_title', 'App')}")
+                    else:
+                        st["preview_html"] = render_stage_bar_html(6, "APK Ready!") + assemble_3d_stage_html(6, st["prompt"], st.get("category", "3D"), st.get("glb_url", ""), world_hunter_polyhaven_pbr())
                     save_studio_state(st)
                     save_to_factory_vault(st)
                     return f"APK READY! Download: {st['apk_dl_url']}", st["preview_html"]
@@ -1343,7 +1383,7 @@ def human_live_chat(message, audio_file, history):
         if spoken:
             text_in = spoken
     if not text_in:
-        return history, "", gr.update(), gr.update(), gr.update()
+        return history, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     st_cur = load_studio_state() or {}
     files = st_cur.get("files") or {}
@@ -1352,12 +1392,27 @@ def human_live_chat(message, audio_file, history):
         k in low_t for k in ["add", "change", "edit", "modify", "color", "pool", "car", "house", "ghar", "jodo", "badlo", "hatao", "bana do", "daal do", "lagao", "fix"]
     )
 
+    is_new_build_cmd = any(
+        k in low_t for k in ["banao", "bana do", "create a ", "build a ", "naya game", "new game", "naya app", "new app", "3d ghar", "3d house", "truck game", "gaming bana"]
+    ) and not any(k in low_t for k in ["isme ", "add ", "change ", "color", "badlo", "hatao"])
+
+    if is_new_build_cmd and len(text_in) >= 8:
+        logs_txt, prev_h, _, dd_u, code_v = start_autonomous_build(text_in)
+        reply = "Bilkul bhai! Maine aapke voice/chat command par naya build shuru kar diya hai. Neeche Live 3D Preview aur Terminal mein dekhein!"
+        history = history or []
+        history.append((text_in, reply))
+        st_cur = load_studio_state() or {}
+        st_cur["chat_history"] = history
+        save_studio_state(st_cur)
+        return history, "", prev_h, dd_u, code_v, text_in, logs_txt
+
     if is_edit_cmd:
         patched = agentic_patch_live_html(files["assets/game.html"], text_in, st_cur.get("prompt", ""))
         if patched and patched != files["assets/game.html"]:
             files["assets/game.html"] = patched
             st_cur["files"] = files
-            st_cur["preview_html"] = wrap_3d_iframe(patched)
+            st_cur["raw_live_html"] = patched
+            st_cur["preview_html"] = wrap_preview_with_stages(st_cur.get("stage", 5), patched, f"Live Patched: {text_in[:45]}")
             if st_cur.get("repo"):
                 try:
                     push_files_atomic(st_cur["repo"], {"assets/game.html": patched}, f"Live Patch: {text_in[:50]}")
@@ -1369,7 +1424,7 @@ def human_live_chat(message, audio_file, history):
             st_cur["chat_history"] = history
             save_studio_state(st_cur)
             dd_upd, code_val = get_code_explorer_update(st_cur)
-            return history, "", st_cur["preview_html"], dd_upd, code_val
+            return history, "", st_cur["preview_html"], dd_upd, code_val, gr.update(), gr.update()
 
     active_skills = [v["title"] for v in SKILL_REGISTRY.values() if v["enabled"]]
     sys_p = (
@@ -1382,7 +1437,7 @@ def human_live_chat(message, audio_file, history):
     history.append((text_in, reply))
     st_cur["chat_history"] = history
     save_studio_state(st_cur)
-    return history, "", gr.update(), gr.update(), gr.update()
+    return history, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
 
 def get_code_explorer_update(st=None):
@@ -1721,7 +1776,7 @@ with gr.Blocks(
                             code_viewer = gr.Code(label="Live Source Code", language="python", lines=22, interactive=False)
                             file_dropdown.change(on_select_code_file, [file_dropdown], [code_viewer])
 
-            chat_btn.click(human_live_chat, [chat_in, voice_in, chatbot], [chatbot, chat_in, preview_view, file_dropdown, code_viewer])
+            chat_btn.click(human_live_chat, [chat_in, voice_in, chatbot], [chatbot, chat_in, preview_view, file_dropdown, code_viewer, prompt_box, status_box])
             build_btn.click(start_autonomous_build, [prompt_box], [status_box, preview_view, gr.State({}), file_dropdown, code_viewer])
             refresh_btn.click(check_build_progress, None, [status_box, preview_view])
             cancel_btn.click(cancel_active_project, None, [status_box, preview_view, file_dropdown, code_viewer])
