@@ -12,6 +12,14 @@ import gradio as gr
 import requests
 from fastapi import FastAPI
 
+try:
+    import spaces
+    @spaces.GPU
+    def _hf_zerogpu_keepalive():
+        return 'OK'
+except Exception:
+    pass
+
 # ==============================================================================
 # SARFEALAM AUTO-STUDIO (HUGGING FACE GRADIO + FASTAPI EDITION)
 # 100% Universal 3D Game & Commercial App Factory | Pure 3D Gaming + Universal Apps
