@@ -10,7 +10,6 @@ from datetime import datetime
 
 import gradio as gr
 import requests
-from fastapi import FastAPI
 
 try:
     import spaces
@@ -1075,7 +1074,7 @@ body, .gradio-container {
 }
 """
 
-with gr.Blocks(css=CUSTOM_CSS, title="Sarfealam Auto-Studio") as demo:
+with gr.Blocks(theme=gr.themes.Base(primary_hue="cyan", secondary_hue="purple", neutral_hue="slate"), css=CUSTOM_CSS, title="Sarfealam Auto-Studio") as demo:
     gr.Markdown("# 🚀 SARFEALAM AUTO-STUDIO\n**All-Rounder 3D Game & Commercial App Factory • Live Voice/Chat • Part-by-Part 3D Assembly • Supabase Vault**")
 
     with gr.Tabs():
@@ -1154,13 +1153,5 @@ with gr.Blocks(css=CUSTOM_CSS, title="Sarfealam Auto-Studio") as demo:
             }
             gr.JSON(value=health, label="Connected Engines & Secrets")
 
-app = FastAPI()
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "studio": "Sarfealam Auto-Studio"}
-
-app = gr.mount_gradio_app(app, demo, path="/")
-
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(ssr_mode=False, server_name="0.0.0.0", server_port=7860)
